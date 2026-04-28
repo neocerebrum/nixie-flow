@@ -727,6 +727,18 @@
     };
   }
 
+  // Outward unit normal of a cluster's rect bg at the given local boundary
+  // point. Used to make cluster-incident edges leave perpendicular to the
+  // subgraph border, distinguishing them visually from node↔node lines.
+  function clusterOutwardNormal(n, boundaryLocal) {
+    const lx = boundaryLocal.x - n.centerLocal.x;
+    const ly = boundaryLocal.y - n.centerLocal.y;
+    const rx = n.halfW > 0 ? Math.abs(lx) / n.halfW : 0;
+    const ry = n.halfH > 0 ? Math.abs(ly) / n.halfH : 0;
+    if (rx >= ry) return { x: Math.sign(lx) || 1, y: 0 };
+    return { x: 0, y: Math.sign(ly) || 1 };
+  }
+
   function rerouteEdge(edge) {
     const sn = endpointInfo(edge.source);
     const tn = endpointInfo(edge.target);
@@ -741,11 +753,39 @@
     const tBoundary = findShapeBoundary(tn, -dx, -dy);
     const sx = sT.x + sBoundary.x, sy = sT.y + sBoundary.y;
     const tx = tT.x + tBoundary.x, ty = tT.y + tBoundary.y;
-    edge.path.setAttribute("d", `M ${sx},${sy} L ${tx},${ty}`);
+    const sIsCluster = !!clusterMap[edge.source];
+    const tIsCluster = !!clusterMap[edge.target];
+    let labelX, labelY;
+    if (sIsCluster || tIsCluster) {
+      const dist = Math.hypot(tx - sx, ty - sy) || 1;
+      const cl = Math.max(40, Math.min(200, dist * 0.3));
+      let snx, sny;
+      if (sIsCluster) {
+        const nrm = clusterOutwardNormal(sn, sBoundary);
+        snx = nrm.x; sny = nrm.y;
+      } else {
+        snx = (tx - sx) / dist; sny = (ty - sy) / dist;
+      }
+      let tnx, tny;
+      if (tIsCluster) {
+        const nrm = clusterOutwardNormal(tn, tBoundary);
+        tnx = nrm.x; tny = nrm.y;
+      } else {
+        tnx = (sx - tx) / dist; tny = (sy - ty) / dist;
+      }
+      const c1x = sx + snx * cl, c1y = sy + sny * cl;
+      const c2x = tx + tnx * cl, c2y = ty + tny * cl;
+      edge.path.setAttribute("d", `M ${sx},${sy} C ${c1x},${c1y} ${c2x},${c2y} ${tx},${ty}`);
+      // Cubic Bezier midpoint at t=0.5
+      labelX = (sx + 3 * c1x + 3 * c2x + tx) / 8;
+      labelY = (sy + 3 * c1y + 3 * c2y + ty) / 8;
+    } else {
+      edge.path.setAttribute("d", `M ${sx},${sy} L ${tx},${ty}`);
+      labelX = (sx + tx) / 2;
+      labelY = (sy + ty) / 2;
+    }
     if (edge.label) {
-      const mx = (sx + tx) / 2;
-      const my = (sy + ty) / 2;
-      edge.label.setAttribute("transform", `translate(${mx}, ${my})`);
+      edge.label.setAttribute("transform", `translate(${labelX}, ${labelY})`);
     }
   }
 

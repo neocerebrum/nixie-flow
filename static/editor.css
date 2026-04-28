@@ -187,6 +187,12 @@ body.deleting g.cluster:hover > *:first-child {
     stroke: #bf616a !important; stroke-width: 3px !important;
 }
 
+/* Edge selection: thicker cyan stroke; overrides Mermaid's per-edge stroke */
+#diagram path.flowchart-link.selected {
+    stroke: #88c0d0 !important;
+    stroke-width: 3.5px !important;
+}
+
 /* Edge labels readability */
 #diagram g.edgeLabels foreignObject .labelBkg,
 #diagram g.edgeLabels foreignObject span.edgeLabel,

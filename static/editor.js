@@ -68,6 +68,7 @@
   const addEdgeBtn = document.getElementById("addEdgeBtn");
   const delEdgeBtn = document.getElementById("delEdgeBtn");
   const delSubgraphBtn = document.getElementById("delSubgraphBtn");
+  const toggleEdgeStyleBtn = document.getElementById("toggleEdgeStyleBtn");
   const exportBtn = document.getElementById("exportBtn");
   const saveBtn = document.getElementById("saveBtn");
   const fitBtn = document.getElementById("fitBtn");
@@ -114,6 +115,7 @@
   let connectSource = null;
   let selectedNodeId = null;
   let selectedClusterId = null;
+  let selectedEdgeKey = null; // "<src>|<tgt>|<ordinal>"
   let initialViewBox = null;
   let viewState = null;
   let skipSourceSync = false;
@@ -448,6 +450,16 @@
     attachLabelEditors();
     attachEdgeClickHandlers();
     setupPanZoom(svgEl);
+    // Restore edge selection visual after re-render (DOM was rebuilt; the path
+    // referenced by selectedEdgeKey is gone — re-bind it to the new path).
+    if (selectedEdgeKey) {
+      const e = findEdgeByKey(selectedEdgeKey);
+      if (e) e.path.classList.add("selected");
+      else {
+        selectedEdgeKey = null;
+        if (toggleEdgeStyleBtn) toggleEdgeStyleBtn.disabled = true;
+      }
+    }
     if (!skipSourceSync) setSourceValue(currentSource);
     setSourceValidity(true);
   }
@@ -800,6 +812,7 @@
       labelX = (sx + tx) / 2;
       labelY = (sy + ty) / 2;
     }
+    if (edge.hitPath) edge.hitPath.setAttribute("d", edge.path.getAttribute("d"));
     if (edge.label) {
       edge.label.setAttribute("transform", `translate(${labelX}, ${labelY})`);
     }
@@ -830,9 +843,13 @@
     const x = minX - pad, y = minY - pad;
     const w = (maxX - minX) + 2 * pad;
     const h = (maxY - minY) + 2 * pad;
-    svgEl.setAttribute("viewBox", `${x} ${y} ${w} ${h}`);
     initialViewBox = { x, y, width: w, height: h };
-    viewState = { ...initialViewBox };
+    // Preserve the user's current pan/zoom across re-renders (color toggle,
+    // edge style, drag commit, etc.). Only fall back to the freshly computed
+    // fit bbox on the very first render when no view state exists yet.
+    if (!viewState) viewState = { ...initialViewBox };
+    svgEl.setAttribute("viewBox",
+      `${viewState.x} ${viewState.y} ${viewState.width} ${viewState.height}`);
   }
 
   function computeMemberWorldBboxFromIds(idsIterable) {
@@ -1093,19 +1110,158 @@
     return { ok: true, source: lines.join("\n") };
   }
 
-  function rewriteEdgeLabelInSource(source, src, tgt, newLabel) {
+  // Line-based edge label rewrite. Handles:
+  //   - existing label  → replace
+  //   - missing label   → insert |newLabel|
+  //   - newLabel === '' → remove existing label (leaving plain edge)
+  // Disambiguates multiple <src>→<tgt> via ordinal (matches the same scan as
+  // deleteEdgeFromSource). Refuses chain lines (A --> B --> C).
+  function rewriteEdgeLabelInSource(source, src, tgt, ordinal, newLabel) {
     if (/[|\n]/.test(newLabel)) return { ok: false, error: "edge label: niente | o newline" };
     const sEsc = regexEscape(src), tEsc = regexEscape(tgt);
-    const re = new RegExp(
-      `(\\b${sEsc}\\s*[-=.~<>xo]+)\\|([^|\\n]*)\\|(\\s*[-=.~<>xo]*\\s*\\b${tEsc}\\b)`, "g"
-    );
-    const matches = [...source.matchAll(re)];
-    if (matches.length === 0) return { ok: false, error: `edge ${src}→${tgt}: label non trovata` };
-    if (matches.length > 1) return { ok: false, error: `edge ${src}→${tgt}: ambigua` };
-    const m = matches[0];
-    const before = source.slice(0, m.index);
-    const after = source.slice(m.index + m[0].length);
-    return { ok: true, source: before + m[1] + "|" + newLabel + "|" + m[3] + after };
+    const edgeRe = new RegExp(`\\b${sEsc}\\b\\s*[-=.~][-=.~<>xo]*\\s*\\b${tEsc}\\b`);
+    const lines = source.split("\n");
+    let matched = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const stripped = stripEdgeLabels(lines[i])
+        .replace(/\[[^\]\n]*\]/g, " ")
+        .replace(/\([^)\n]*\)/g, " ")
+        .replace(/\{[^}\n]*\}/g, " ");
+      if (!edgeRe.test(stripped)) continue;
+      if (matched !== ordinal) { matched++; continue; }
+      const arrowSegs = (stripped.match(/[-=.~][-=.~<>xo]*\s*\w+/g) || []).length;
+      if (arrowSegs > 1) {
+        return { ok: false, error: "edge in chain: dividi la linea per modificarne la label" };
+      }
+      const re = new RegExp(`(\\b${sEsc})(\\s+)([-=.~][-=.~<>xo]*)(\\s*)(?:\\|([^|\\n]*)\\|(\\s*))?(${tEsc}\\b)`);
+      const m = lines[i].match(re);
+      if (!m) return { ok: false, error: `edge ${src}→${tgt}: pattern interno non trovato` };
+      const arrow = m[3];
+      const rebuilt = newLabel === ""
+        ? `${m[1]} ${arrow} ${m[7]}`
+        : `${m[1]} ${arrow}|${newLabel}| ${m[7]}`;
+      lines[i] = lines[i].replace(re, rebuilt);
+      return { ok: true, source: lines.join("\n") };
+    }
+    return { ok: false, error: `edge ${src}→${tgt} #${ordinal} non trovata` };
+  }
+
+  // Toggle edge style between solid and dashed for a specific (src,tgt,ordinal)
+  // edge, line-based. Supports common connector forms only; thick (==>) and
+  // less common variants are refused with an explanatory error.
+  function toggleEdgeStyleInSource(source, src, tgt, ordinal) {
+    const sEsc = regexEscape(src), tEsc = regexEscape(tgt);
+    const edgeRe = new RegExp(`\\b${sEsc}\\b\\s*[-=.~][-=.~<>xo]*\\s*\\b${tEsc}\\b`);
+    const STYLE_TOGGLE = {
+      "-->": "-.->",
+      "-.->": "-->",
+      "---": "-.-",
+      "-.-": "---",
+    };
+    const lines = source.split("\n");
+    let matched = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const stripped = stripEdgeLabels(lines[i])
+        .replace(/\[[^\]\n]*\]/g, " ")
+        .replace(/\([^)\n]*\)/g, " ")
+        .replace(/\{[^}\n]*\}/g, " ");
+      if (!edgeRe.test(stripped)) continue;
+      if (matched !== ordinal) { matched++; continue; }
+      const arrowSegs = (stripped.match(/[-=.~][-=.~<>xo]*\s*\w+/g) || []).length;
+      if (arrowSegs > 1) {
+        return { ok: false, error: "edge in chain: dividi la linea per cambiare stile" };
+      }
+      const re = new RegExp(`(\\b${sEsc}\\s+)([-=.~][-=.~<>xo]*)(\\s*(?:\\|[^|\\n]*\\|\\s*)?${tEsc}\\b)`);
+      const m = lines[i].match(re);
+      if (!m) return { ok: false, error: `edge ${src}→${tgt}: pattern interno non trovato` };
+      const newConn = STYLE_TOGGLE[m[2]];
+      if (!newConn) return { ok: false, error: `connettore '${m[2]}': toggle non supportato (solo --> ↔ -.->, --- ↔ -.-)` };
+      lines[i] = lines[i].replace(re, `${m[1]}${newConn}${m[3]}`);
+      return { ok: true, source: lines.join("\n"), from: m[2], to: newConn };
+    }
+    return { ok: false, error: `edge ${src}→${tgt} #${ordinal} non trovata` };
+  }
+
+  // Open inline editor at the curve midpoint to add/edit/remove an edge label.
+  // Works for edges with or without an existing label.
+  async function startEdgeLabelEdit(edge) {
+    if (!requireValidSource("edit edge label")) return;
+    const path = edge.path;
+    let screenX, screenY;
+    try {
+      const len = path.getTotalLength();
+      const pt = path.getPointAtLength(len / 2);
+      const ctm = path.getScreenCTM();
+      if (!ctm) return;
+      screenX = pt.x * ctm.a + pt.y * ctm.c + ctm.e;
+      screenY = pt.x * ctm.b + pt.y * ctm.d + ctm.f;
+    } catch (_) {
+      return;
+    }
+    const initialText = edge.label
+      ? getLabelText(findLabelTextElement(edge.label) || edge.label)
+      : "";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = initialText;
+    input.placeholder = "label (vuoto = rimuove)";
+    Object.assign(input.style, {
+      position: "fixed",
+      left: `${screenX - 80}px`,
+      top: `${screenY - 14}px`,
+      minWidth: "160px",
+      height: "28px",
+      fontSize: "14px", padding: "2px 6px",
+      border: "2px solid #5e81ac", background: "#1c242e",
+      color: "#eceff4", zIndex: "1000", borderRadius: "3px", fontFamily: "inherit",
+    });
+    document.body.appendChild(input);
+    input.focus(); input.select();
+    let done = false;
+    function cleanup() {
+      input.removeEventListener("keydown", onKey);
+      input.removeEventListener("blur", onBlur);
+      if (input.parentNode) input.parentNode.removeChild(input);
+    }
+    function cancel() { if (done) return; done = true; cleanup(); }
+    async function commit() {
+      if (done) return;
+      done = true;
+      const newText = input.value;
+      cleanup();
+      if (newText === initialText) return;
+      const result = rewriteEdgeLabelInSource(currentSource, edge.source, edge.target, edge.ordinal, newText);
+      if (!result.ok) { setStatus(`edit rifiutato: ${result.error}`, true); return; }
+      currentSource = result.source;
+      markDirtySource();
+      await renderDiagram();
+      pushHistory();
+      const lbl = `${edge.source}→${edge.target}`;
+      if (newText === "") setStatus(`${lbl}: label rimossa`);
+      else if (initialText === "") setStatus(`${lbl}: + "${newText}"`);
+      else setStatus(`${lbl}: "${initialText}" → "${newText}"`);
+    }
+    function onKey(e) {
+      if (e.key === "Enter") { e.preventDefault(); commit(); }
+      else if (e.key === "Escape") { e.preventDefault(); cancel(); }
+    }
+    function onBlur() { commit(); }
+    input.addEventListener("keydown", onKey);
+    input.addEventListener("blur", onBlur);
+  }
+
+  async function applyToggleEdgeStyle() {
+    if (!selectedEdgeKey) { setStatus("seleziona prima un edge", true); return; }
+    if (!requireValidSource("toggle edge style")) return;
+    const edge = findEdgeByKey(selectedEdgeKey);
+    if (!edge) return;
+    const result = toggleEdgeStyleInSource(currentSource, edge.source, edge.target, edge.ordinal);
+    if (!result.ok) { setStatus(`toggle stile: ${result.error}`, true); return; }
+    currentSource = result.source;
+    markDirtySource();
+    await renderDiagram();
+    pushHistory();
+    setStatus(`${edge.source}→${edge.target}: ${result.from} → ${result.to}`);
   }
 
   function startLabelEdit(el, kind, meta) {
@@ -1149,8 +1305,8 @@
         result = rewriteSubgraphLabelInSource(currentSource, meta.subgraphId, newText);
         who = `subgraph ${meta.subgraphId}`;
       } else {
-        result = rewriteEdgeLabelInSource(currentSource, meta.source, meta.target, newText);
-        who = `${meta.source}→${meta.target}`;
+        // Edge editing goes through startEdgeLabelEdit; this branch shouldn't fire.
+        return;
       }
       if (!result.ok) { setStatus(`edit rifiutato: ${result.error}`, true); return; }
       currentSource = result.source;
@@ -1187,16 +1343,9 @@
         startLabelEdit(labelEl, "subgraph", { subgraphId: id });
       });
     }
-    for (const edge of edges) {
-      if (!edge.label) continue;
-      const labelEl = findLabelTextElement(edge.label);
-      if (!labelEl || !getLabelText(labelEl)) continue;
-      labelEl.style.cursor = "text";
-      labelEl.addEventListener("dblclick", (ev) => {
-        ev.stopPropagation(); ev.preventDefault();
-        startLabelEdit(labelEl, "edge", { source: edge.source, target: edge.target });
-      });
-    }
+    // Edge labels are handled by startEdgeLabelEdit (wired through
+    // attachEdgeClickHandlers) — that path also supports labelling edges that
+    // currently have no label, so we don't dual-attach here.
   }
 
   // ── Add/delete node/edge ─────────────────────────────────────────────────
@@ -1376,16 +1525,47 @@
     setStatus(`− subgraph ${id}`);
   }
 
+  // Inserts an invisible thick-stroke "hit path" alongside each visible edge
+  // path so clicks land easily even on thin or curved lines. The hit path's
+  // `d` is kept in sync by rerouteEdge.
+  function ensureEdgeHitPath(edge) {
+    if (edge.hitPath && edge.hitPath.parentNode) return edge.hitPath;
+    const SVG_NS = "http://www.w3.org/2000/svg";
+    const hp = document.createElementNS(SVG_NS, "path");
+    hp.setAttribute("class", "edge-hit");
+    hp.setAttribute("d", edge.path.getAttribute("d") || "");
+    hp.setAttribute("fill", "none");
+    hp.setAttribute("stroke", "rgba(0,0,0,0)");
+    hp.setAttribute("stroke-width", "14");
+    hp.setAttribute("pointer-events", "stroke");
+    hp.style.cursor = "pointer";
+    // Insert after the visible path so it sits on top in stacking order.
+    edge.path.parentNode.insertBefore(hp, edge.path.nextSibling);
+    edge.hitPath = hp;
+    return hp;
+  }
+
   function attachEdgeClickHandlers() {
     for (const edge of edges) {
-      const targets = [edge.path];
+      const hit = ensureEdgeHitPath(edge);
+      const targets = [hit];
       if (edge.label) targets.push(edge.label);
       for (const t of targets) {
-        t.style.pointerEvents = "auto";
+        if (t === edge.label) t.style.pointerEvents = "auto";
         t.addEventListener("click", (ev) => {
-          if (connectingState !== "delete-edge") return;
+          if (connectingState === "delete-edge") {
+            ev.stopPropagation(); ev.preventDefault();
+            handleDeleteEdgeClick(edge);
+            return;
+          }
+          if (connectingState) return;
           ev.stopPropagation(); ev.preventDefault();
-          handleDeleteEdgeClick(edge);
+          toggleEdgeSelection(edge);
+        });
+        t.addEventListener("dblclick", (ev) => {
+          if (connectingState) return;
+          ev.stopPropagation(); ev.preventDefault();
+          startEdgeLabelEdit(edge);
         });
       }
     }
@@ -1620,6 +1800,7 @@
   function toggleNodeSelection(id) {
     if (selectedNodeId === id) { deselectNode(); return; }
     deselectCluster();
+    deselectEdge();
     if (selectedNodeId && nodeMap[selectedNodeId]) {
       nodeMap[selectedNodeId].g.classList.remove("selected");
     }
@@ -1637,6 +1818,7 @@
   function toggleClusterSelection(id) {
     if (selectedClusterId === id) { deselectCluster(); return; }
     deselectNode();
+    deselectEdge();
     if (selectedClusterId && clusterMap[selectedClusterId]) {
       clusterMap[selectedClusterId].g.classList.remove("selected");
     }
@@ -1649,6 +1831,35 @@
       clusterMap[selectedClusterId].g.classList.remove("selected");
     }
     selectedClusterId = null;
+  }
+
+  function edgeKey(edge) { return `${edge.source}|${edge.target}|${edge.ordinal}`; }
+  function findEdgeByKey(key) {
+    for (const e of edges) if (edgeKey(e) === key) return e;
+    return null;
+  }
+  function toggleEdgeSelection(edge) {
+    const key = edgeKey(edge);
+    if (selectedEdgeKey === key) { deselectEdge(); return; }
+    deselectNode();
+    deselectCluster();
+    if (selectedEdgeKey) {
+      const prev = findEdgeByKey(selectedEdgeKey);
+      if (prev) prev.path.classList.remove("selected");
+    }
+    selectedEdgeKey = key;
+    edge.path.classList.add("selected");
+    const lbl = `${edge.source} → ${edge.target}` + (edge.ordinal > 0 ? ` (#${edge.ordinal + 1})` : "");
+    setStatus(`selected edge: ${lbl}`);
+    if (toggleEdgeStyleBtn) toggleEdgeStyleBtn.disabled = false;
+  }
+  function deselectEdge() {
+    if (selectedEdgeKey) {
+      const prev = findEdgeByKey(selectedEdgeKey);
+      if (prev) prev.path.classList.remove("selected");
+    }
+    selectedEdgeKey = null;
+    if (toggleEdgeStyleBtn) toggleEdgeStyleBtn.disabled = true;
   }
 
   function setNodeStyleInSource(source, nodeId, styleStr) {
@@ -2561,6 +2772,9 @@
   delNodeBtn.addEventListener("click", startDeleteMode);
   addEdgeBtn.addEventListener("click", startConnectMode);
   delEdgeBtn.addEventListener("click", startDeleteEdgeMode);
+  if (toggleEdgeStyleBtn) {
+    toggleEdgeStyleBtn.addEventListener("click", applyToggleEdgeStyle);
+  }
   if (delSubgraphBtn) delSubgraphBtn.addEventListener("click", startDeleteSubgraphMode);
   exportBtn.addEventListener("click", exportSource);
   saveBtn.addEventListener("click", save);
@@ -2657,6 +2871,7 @@
       if (connectingState) { cancelConnectMode(); return; }
       if (selectedNodeId) { deselectNode(); setStatus(""); }
       if (selectedClusterId) { deselectCluster(); setStatus(""); }
+      if (selectedEdgeKey) { deselectEdge(); setStatus(""); }
       return;
     }
     if (e.key === "0" || e.key === "Home") { e.preventDefault(); fitView(); return; }
@@ -2688,6 +2903,10 @@
     }
     if (!e.target.closest("g.cluster") && selectedClusterId) {
       deselectCluster();
+      setStatus("");
+    }
+    if (!e.target.closest("path.flowchart-link, g.edgeLabel, g.edgeLabels") && selectedEdgeKey) {
+      deselectEdge();
       setStatus("");
     }
   });

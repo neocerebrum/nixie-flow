@@ -17,17 +17,8 @@
 <body>
 <header class="ed-header">
     <a href="/dashboard" class="ed-back" title="Torna alla dashboard">← Dashboard</a>
-    <h1 id="diagramTitle"><?= e($diagram['title']) ?></h1>
-    <span id="dirtyBadge" class="ed-badge hidden">modificato</span>
-    <span id="autosaveBadge" class="ed-badge ed-badge-auto hidden"></span>
 
     <div class="ed-toolbar">
-        <button id="addNodeBtn" title="Aggiungi nodo">+ Nodo</button>
-        <button id="delNodeBtn" title="Rimuovi nodo">− Nodo</button>
-        <button id="addEdgeBtn" title="Collega due nodi">+ Edge</button>
-        <button id="delEdgeBtn" title="Rimuovi edge">− Edge</button>
-        <button id="delSubgraphBtn" title="Rimuovi subgraph (mantiene il contenuto)">− Subgraph</button>
-        <button id="toggleEdgeStyleBtn" title="Edge selezionato: continuo ↔ tratteggiato" disabled>↔ Stile edge</button>
         <button id="undoBtn" title="Undo (Ctrl+Z)">↶</button>
         <button id="redoBtn" title="Redo (Ctrl+Shift+Z)">↷</button>
         <button id="fitBtn" title="Fit view">Fit</button>
@@ -45,7 +36,11 @@
 </header>
 
 <!-- Lock state banner (view-only / lock free / lock mine / lock other) -->
-<div id="lockBanner" class="lock-banner hidden">
+<div id="lockBanner" class="lock-banner">
+    <h1 id="diagramTitle"><?= e($diagram['title']) ?></h1>
+    <span id="dirtyBadge" class="ed-badge hidden">modificato</span>
+    <span id="autosaveBadge" class="ed-badge ed-badge-auto hidden"></span>
+    <span class="lock-sep"></span>
     <span id="lockMessage"></span>
     <span id="lockActions"></span>
 </div>
@@ -55,6 +50,8 @@
     <span id="colorPalette"></span>
     <span class="palette-label" style="margin-left: 16px;">Forma:</span>
     <span id="shapePalette"></span>
+    <span class="palette-label" style="margin-left: 16px;">Edge:</span>
+    <button id="toggleEdgeStyleBtn" class="palette-btn" title="Edge selezionato: continuo ↔ tratteggiato" disabled>↔ Stile</button>
 </div>
 
 <div id="main">
@@ -69,7 +66,17 @@
         </div>
     </aside>
     <div id="resizer" title="Trascina per ridimensionare"></div>
-    <div id="canvas"><div id="diagram"></div></div>
+    <div id="canvas">
+        <div id="canvasPad" class="canvas-pad">
+            <button id="addNodeBtn" title="Aggiungi nodo">+ Nodo</button>
+            <button id="delNodeBtn" title="Rimuovi nodo">− Nodo</button>
+            <button id="addEdgeBtn" title="Collega due nodi">+ Edge</button>
+            <button id="delEdgeBtn" title="Rimuovi edge">− Edge</button>
+            <button id="addSubgraphBtn" title="Crea subgraph dai nodi selezionati (Shift+click per multiselezione)" disabled>+ Subgraph</button>
+            <button id="delSubgraphBtn" title="Rimuovi subgraph (mantiene il contenuto)">− Subgraph</button>
+        </div>
+        <div id="diagram"></div>
+    </div>
 </div>
 
 <!-- Modal: nuovo nodo -->

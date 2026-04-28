@@ -67,6 +67,7 @@
   const delNodeBtn = document.getElementById("delNodeBtn");
   const addEdgeBtn = document.getElementById("addEdgeBtn");
   const delEdgeBtn = document.getElementById("delEdgeBtn");
+  const addSubgraphBtn = document.getElementById("addSubgraphBtn");
   const delSubgraphBtn = document.getElementById("delSubgraphBtn");
   const toggleEdgeStyleBtn = document.getElementById("toggleEdgeStyleBtn");
   const exportBtn = document.getElementById("exportBtn");
@@ -113,7 +114,7 @@
   let dirtyLayout = false;
   let connectingState = null;
   let connectSource = null;
-  let selectedNodeId = null;
+  let selectedNodeIds = new Set(); // multi-select via Shift/Ctrl/Cmd+click
   let selectedClusterId = null;
   let selectedEdgeKey = null; // "<src>|<tgt>|<ordinal>"
   let initialViewBox = null;
@@ -450,8 +451,16 @@
     attachLabelEditors();
     attachEdgeClickHandlers();
     setupPanZoom(svgEl);
-    // Restore edge selection visual after re-render (DOM was rebuilt; the path
-    // referenced by selectedEdgeKey is gone — re-bind it to the new path).
+    // Re-apply selection visuals after re-render (DOM was rebuilt).
+    for (const id of [...selectedNodeIds]) {
+      if (nodeMap[id]) nodeMap[id].g.classList.add("selected");
+      else selectedNodeIds.delete(id);
+    }
+    if (selectedClusterId) {
+      if (clusterMap[selectedClusterId]) clusterMap[selectedClusterId].g.classList.add("selected");
+      else selectedClusterId = null;
+    }
+    updateAddSubgraphBtnState();
     if (selectedEdgeKey) {
       const e = findEdgeByKey(selectedEdgeKey);
       if (e) e.path.classList.add("selected");
@@ -598,6 +607,25 @@
         if (t) { x += t.matrix.e; y += t.matrix.f; }
       }
       el = el.parentNode;
+    }
+    return { x, y };
+  }
+
+  // Cumulative translate from <svg> down to el's PARENT (excluding el itself).
+  // Mermaid nests subgraph-internal edges inside an inner `<g class="root">`
+  // with its own transform (e.g. translate(-7.5, 636)) — when we write a path's
+  // `d` in world coords without subtracting this, the path renders offset by
+  // that translate. Use this to convert world coords into the element's own
+  // parent frame before writing geometry.
+  function getElementParentTranslate(el) {
+    let x = 0, y = 0;
+    let p = el ? el.parentNode : null;
+    while (p && p.tagName && p.tagName.toLowerCase() !== "svg") {
+      if (p.transform && p.transform.baseVal) {
+        const t = p.transform.baseVal.consolidate();
+        if (t) { x += t.matrix.e; y += t.matrix.f; }
+      }
+      p = p.parentNode;
     }
     return { x, y };
   }
@@ -773,14 +801,19 @@
     if (!sn || !tn) return;
     const sT = getWorldTranslate(sn.g);
     const tT = getWorldTranslate(tn.g);
-    // Centers in svg coords (translate + local center)
     const scx = sT.x + sn.centerLocal.x, scy = sT.y + sn.centerLocal.y;
     const tcx = tT.x + tn.centerLocal.x, tcy = tT.y + tn.centerLocal.y;
     const dx = tcx - scx, dy = tcy - scy;
     const sBoundary = findShapeBoundary(sn, dx, dy);
     const tBoundary = findShapeBoundary(tn, -dx, -dy);
-    const sx = sT.x + sBoundary.x, sy = sT.y + sBoundary.y;
-    const tx = tT.x + tBoundary.x, ty = tT.y + tBoundary.y;
+    // Endpoints in WORLD coords first…
+    const sxW = sT.x + sBoundary.x, syW = sT.y + sBoundary.y;
+    const txW = tT.x + tBoundary.x, tyW = tT.y + tBoundary.y;
+    // …then convert to the path element's own parent frame. Subgraph-internal
+    // edges live inside a nested <g class="root"> with its own transform.
+    const eFrame = getElementParentTranslate(edge.path);
+    const sx = sxW - eFrame.x, sy = syW - eFrame.y;
+    const tx = txW - eFrame.x, ty = tyW - eFrame.y;
     const sIsCluster = !!clusterMap[edge.source];
     const tIsCluster = !!clusterMap[edge.target];
     let labelX, labelY;
@@ -804,7 +837,6 @@
       const c1x = sx + snx * cl, c1y = sy + sny * cl;
       const c2x = tx + tnx * cl, c2y = ty + tny * cl;
       edge.path.setAttribute("d", `M ${sx},${sy} C ${c1x},${c1y} ${c2x},${c2y} ${tx},${ty}`);
-      // Cubic Bezier midpoint at t=0.5
       labelX = (sx + 3 * c1x + 3 * c2x + tx) / 8;
       labelY = (sy + 3 * c1y + 3 * c2y + ty) / 8;
     } else {
@@ -814,7 +846,12 @@
     }
     if (edge.hitPath) edge.hitPath.setAttribute("d", edge.path.getAttribute("d"));
     if (edge.label) {
-      edge.label.setAttribute("transform", `translate(${labelX}, ${labelY})`);
+      // labelX/labelY are in the path's parent frame; the label has its own
+      // parent (g.edgeLabels), possibly under a different nested root.
+      const labelXW = labelX + eFrame.x;
+      const labelYW = labelY + eFrame.y;
+      const lFrame = getElementParentTranslate(edge.label);
+      edge.label.setAttribute("transform", `translate(${labelXW - lFrame.x}, ${labelYW - lFrame.y})`);
     }
   }
 
@@ -1009,6 +1046,16 @@
       return;
     }
     ev.preventDefault();
+    const additive = ev.shiftKey || ev.ctrlKey || ev.metaKey;
+    if (additive) {
+      // Shift/Ctrl/Cmd+click: don't drag, just toggle selection on mouseup.
+      function onUpAdditive() {
+        document.removeEventListener("mouseup", onUpAdditive);
+        toggleNodeSelection(id, true);
+      }
+      document.addEventListener("mouseup", onUpAdditive);
+      return;
+    }
     const n = nodeMap[id];
     n.g.classList.add("dragging");
     const start = screenToSvg(svgEl, ev.clientX, ev.clientY);
@@ -1031,7 +1078,7 @@
         pushHistory();
         setStatus(`${id} → (${t.x.toFixed(0)}, ${t.y.toFixed(0)})`, false);
       } else {
-        toggleNodeSelection(id);
+        toggleNodeSelection(id, false);
       }
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
@@ -1508,6 +1555,72 @@
     return { ok: true, source: lines.join("\n") };
   }
 
+  // Walk source tracking subgraph nesting; return {nodeId: owningSubgraphId} for
+  // every node id referenced inside any subgraph block (decl or bare ref).
+  function computeNodeSubgraphOwners(source) {
+    const owners = {};
+    const stack = [];
+    for (const line of source.split("\n")) {
+      const sg = line.match(/^\s*subgraph\s+([A-Za-z_]\w*)/i);
+      if (sg) { stack.push(sg[1]); continue; }
+      if (/^\s*end\s*$/i.test(line)) { stack.pop(); continue; }
+      if (!stack.length) continue;
+      const stripped = line
+        .replace(/\|[^|\n]*\|/g, " ")
+        .replace(/\[[^\]\n]*\]/g, " ")
+        .replace(/\([^)\n]*\)/g, " ")
+        .replace(/\{[^}\n]*\}/g, " ");
+      const ids = stripped.match(/\b[A-Za-z_]\w*\b/g) || [];
+      for (const id of ids) {
+        if (id === "subgraph" || id === "end") continue;
+        if (!nodeMap[id]) continue;
+        if (!owners[id]) owners[id] = stack[stack.length - 1];
+      }
+    }
+    return owners;
+  }
+
+  function addSubgraphToSource(source, id, title, memberIds) {
+    if (!/^[A-Za-z_][\w]*$/.test(id)) return { ok: false, error: `ID non valido: '${id}'` };
+    if (nodeMap[id] || clusterMap[id]) return { ok: false, error: `'${id}' esiste gia'` };
+    if (title && /[\]\n]/.test(title)) return { ok: false, error: "titolo non puo' contenere ] o newline" };
+    const head = title ? `subgraph ${id} [${title}]` : `subgraph ${id}`;
+    const body = memberIds.map(m => `    ${m}`).join("\n");
+    const block = `${head}\n${body}\nend`;
+    if (source.length && !source.endsWith("\n")) source += "\n";
+    return { ok: true, source: source + block + "\n" };
+  }
+
+  async function applyAddSubgraph() {
+    if (!requireValidSource("+ subgraph")) return;
+    if (selectedNodeIds.size < 2) {
+      setStatus("seleziona almeno 2 nodi (Shift+click)", true);
+      return;
+    }
+    const ids = [...selectedNodeIds];
+    const owners = computeNodeSubgraphOwners(currentSource);
+    const conflicts = ids.filter(id => owners[id]);
+    if (conflicts.length) {
+      setStatus(`gia' in altro subgraph: ${conflicts.join(", ")}`, true);
+      return;
+    }
+    const idRaw = (prompt("ID del subgraph (lettere/numeri/_, unico):", "") || "").trim();
+    if (!idRaw) { setStatus("creazione subgraph annullata"); return; }
+    if (!/^[A-Za-z_][\w]*$/.test(idRaw)) { setStatus(`ID non valido: '${idRaw}'`, true); return; }
+    if (nodeMap[idRaw] || clusterMap[idRaw]) { setStatus(`'${idRaw}' esiste gia'`, true); return; }
+    const titleRaw = prompt("Titolo del subgraph (vuoto = usa ID):", "");
+    if (titleRaw === null) { setStatus("creazione subgraph annullata"); return; }
+    const title = titleRaw.trim();
+    const result = addSubgraphToSource(currentSource, idRaw, title, ids);
+    if (!result.ok) { setStatus(`+ subgraph: ${result.error}`, true); return; }
+    currentSource = result.source;
+    markDirtySource();
+    deselectNode();
+    await renderDiagram();
+    pushHistory();
+    setStatus(`+ subgraph ${idRaw} con ${ids.length} nodi`);
+  }
+
   async function handleDeleteSubgraphClick(id) {
     cancelConnectMode();
     if (!confirm(`Eliminare il subgraph '${id}' (i contenuti restano)?`)) return;
@@ -1617,7 +1730,9 @@
       const src = connectSource, tgt = id;
       cancelConnectMode();
       if (src === tgt) { setStatus(`self-loop ${src}→${tgt} non supportato`, true); return; }
-      const label = (prompt(`Label della freccia ${src} → ${tgt} (vuoto = senza label):`, "") || "").trim();
+      const labelRaw = prompt(`Label della freccia ${src} → ${tgt} (vuoto = senza label):`, "");
+      if (labelRaw === null) { setStatus("creazione edge annullata"); return; }
+      const label = labelRaw.trim();
       const result = addEdgeToSource(currentSource, src, tgt, label);
       if (!result.ok) { setStatus(`add edge: ${result.error}`, true); return; }
       currentSource = result.source;
@@ -1797,22 +1912,46 @@
 
   // ── Selection / palette ──────────────────────────────────────────────────
 
-  function toggleNodeSelection(id) {
-    if (selectedNodeId === id) { deselectNode(); return; }
+  function toggleNodeSelection(id, additive) {
+    if (additive) {
+      // Shift/Ctrl/Cmd+click: toggle membership without disturbing the rest.
+      deselectCluster();
+      deselectEdge();
+      if (selectedNodeIds.has(id)) {
+        selectedNodeIds.delete(id);
+        if (nodeMap[id]) nodeMap[id].g.classList.remove("selected");
+      } else {
+        selectedNodeIds.add(id);
+        if (nodeMap[id]) nodeMap[id].g.classList.add("selected");
+      }
+      updateAddSubgraphBtnState();
+      const n = selectedNodeIds.size;
+      setStatus(n === 0 ? "" : (n === 1 ? `selected: ${[...selectedNodeIds][0]}` : `selected: ${n} nodi`));
+      return;
+    }
+    // Plain click: replace selection with [id]; clicking the only-selected node deselects.
+    if (selectedNodeIds.size === 1 && selectedNodeIds.has(id)) { deselectNode(); return; }
     deselectCluster();
     deselectEdge();
-    if (selectedNodeId && nodeMap[selectedNodeId]) {
-      nodeMap[selectedNodeId].g.classList.remove("selected");
+    for (const sid of selectedNodeIds) {
+      if (nodeMap[sid]) nodeMap[sid].g.classList.remove("selected");
     }
-    selectedNodeId = id;
-    nodeMap[id].g.classList.add("selected");
+    selectedNodeIds.clear();
+    selectedNodeIds.add(id);
+    if (nodeMap[id]) nodeMap[id].g.classList.add("selected");
+    updateAddSubgraphBtnState();
     setStatus(`selected: ${id}`);
   }
   function deselectNode() {
-    if (selectedNodeId && nodeMap[selectedNodeId]) {
-      nodeMap[selectedNodeId].g.classList.remove("selected");
+    for (const sid of selectedNodeIds) {
+      if (nodeMap[sid]) nodeMap[sid].g.classList.remove("selected");
     }
-    selectedNodeId = null;
+    selectedNodeIds.clear();
+    updateAddSubgraphBtnState();
+  }
+  function updateAddSubgraphBtnState() {
+    if (!addSubgraphBtn) return;
+    addSubgraphBtn.disabled = selectedNodeIds.size < 2;
   }
 
   function toggleClusterSelection(id) {
@@ -1881,32 +2020,23 @@
 
   async function applyPaletteColor(color) {
     if (!requireValidSource("applica colore")) return;
-    const isCluster = !selectedNodeId && !!selectedClusterId;
-    const id = selectedNodeId || selectedClusterId;
-    if (!id) { setStatus("seleziona prima un nodo o un subgraph", true); return; }
+    const ids = selectedNodeIds.size > 0 ? [...selectedNodeIds]
+              : (selectedClusterId ? [selectedClusterId] : []);
+    if (!ids.length) { setStatus("seleziona prima un nodo o un subgraph", true); return; }
     const styleStr = color.reset ? null
       : `fill:${color.fill},stroke:${color.stroke},color:${color.color}`;
-    const result = setNodeStyleInSource(currentSource, id, styleStr);
-    if (!result.changed) {
-      setStatus(`${id}: colore gia' applicato (o reset senza style)`);
-      return;
+    let next = currentSource, applied = 0;
+    for (const id of ids) {
+      const r = setNodeStyleInSource(next, id, styleStr);
+      if (r.changed) { next = r.source; applied++; }
     }
-    currentSource = result.source;
+    if (!applied) { setStatus(`colore gia' applicato (o reset senza style)`); return; }
+    currentSource = next;
     markDirtySource();
     await renderDiagram();
-    if (isCluster) {
-      if (clusterMap[id]) {
-        clusterMap[id].g.classList.add("selected");
-        selectedClusterId = id;
-      }
-    } else {
-      if (nodeMap[id]) {
-        nodeMap[id].g.classList.add("selected");
-        selectedNodeId = id;
-      }
-    }
     pushHistory();
-    setStatus(`${id}: color ${color.name}`);
+    setStatus(ids.length === 1 ? `${ids[0]}: color ${color.name}`
+                               : `color ${color.name} → ${applied}/${ids.length} elementi`);
   }
 
   function buildPalette() {
@@ -1946,16 +2076,22 @@
 
   async function applyShapeToSelected(shape) {
     if (!requireValidSource("cambia forma")) return;
-    if (!selectedNodeId) { setStatus("seleziona un nodo prima", true); return; }
-    const id = selectedNodeId;
-    const result = changeShapeInSource(currentSource, id, shape);
-    if (!result.ok) { setStatus(`cambia forma: ${result.error}`, true); return; }
-    currentSource = result.source;
+    if (selectedNodeIds.size === 0) { setStatus("seleziona un nodo prima", true); return; }
+    const ids = [...selectedNodeIds];
+    let next = currentSource, applied = 0, errs = [];
+    for (const id of ids) {
+      const r = changeShapeInSource(next, id, shape);
+      if (r.ok) { next = r.source; applied++; }
+      else errs.push(`${id}: ${r.error}`);
+    }
+    if (!applied) { setStatus(`cambia forma: ${errs.join("; ")}`, true); return; }
+    currentSource = next;
     markDirtySource();
     await renderDiagram();
-    if (nodeMap[id]) { nodeMap[id].g.classList.add("selected"); selectedNodeId = id; }
     pushHistory();
-    setStatus(`${id}: forma → ${shape.name}`);
+    setStatus(ids.length === 1 ? `${ids[0]}: forma → ${shape.name}`
+                               : `forma → ${shape.name} (${applied}/${ids.length})${errs.length ? " err: " + errs.join("; ") : ""}`,
+              errs.length > 0);
   }
 
   function buildShapePalette() {
@@ -2188,7 +2324,9 @@
       document.title = currentTitle + " — Aquata";
     }
     clearDirty();
-    selectedNodeId = null;
+    selectedNodeIds.clear();
+    selectedClusterId = null;
+    selectedEdgeKey = null;
     initialViewBox = null;
     viewState = null;
     history = []; historyPtr = -1;
@@ -2776,6 +2914,7 @@
     toggleEdgeStyleBtn.addEventListener("click", applyToggleEdgeStyle);
   }
   if (delSubgraphBtn) delSubgraphBtn.addEventListener("click", startDeleteSubgraphMode);
+  if (addSubgraphBtn) addSubgraphBtn.addEventListener("click", applyAddSubgraph);
   exportBtn.addEventListener("click", exportSource);
   saveBtn.addEventListener("click", save);
   fitBtn.addEventListener("click", fitView);
@@ -2869,25 +3008,37 @@
     if (inInput) return;
     if (e.key === "Escape") {
       if (connectingState) { cancelConnectMode(); return; }
-      if (selectedNodeId) { deselectNode(); setStatus(""); }
+      if (selectedNodeIds.size > 0) { deselectNode(); setStatus(""); }
       if (selectedClusterId) { deselectCluster(); setStatus(""); }
       if (selectedEdgeKey) { deselectEdge(); setStatus(""); }
       return;
     }
     if (e.key === "0" || e.key === "Home") { e.preventDefault(); fitView(); return; }
     if ((e.key === "Delete" || e.key === "Backspace")) {
-      if (selectedNodeId && requireValidSource("rimuovi nodo")) {
+      if (selectedNodeIds.size > 0 && requireValidSource("rimuovi nodo")) {
         e.preventDefault();
-        const id = selectedNodeId;
-        if (confirm(`Eliminare il nodo '${id}' e tutti i suoi riferimenti?`)) {
-          const result = deleteNodeFromSource(currentSource, id);
-          if (result.ok) {
-            currentSource = result.source;
-            markDirtySource();
+        const ids = [...selectedNodeIds];
+        const label = ids.length === 1 ? `il nodo '${ids[0]}'` : `${ids.length} nodi`;
+        if (!confirm(`Eliminare ${label} e tutti i riferimenti?`)) return;
+        let next = currentSource, ok = 0, errs = [];
+        for (const id of ids) {
+          const r = deleteNodeFromSource(next, id);
+          if (r.ok) {
+            next = r.source; ok++;
             if (positions[id] !== undefined) { delete positions[id]; markDirtyLayout(); }
-            deselectNode();
-            renderDiagram().then(() => { pushHistory(); setStatus(`− node ${id}`); });
-          }
+          } else errs.push(`${id}: ${r.error}`);
+        }
+        if (ok > 0) {
+          currentSource = next;
+          markDirtySource();
+          deselectNode();
+          renderDiagram().then(() => {
+            pushHistory();
+            setStatus(ids.length === 1 ? `− node ${ids[0]}` : `− ${ok}/${ids.length} nodi${errs.length ? " err: " + errs.join("; ") : ""}`,
+                      errs.length > 0);
+          });
+        } else if (errs.length) {
+          setStatus(`delete: ${errs.join("; ")}`, true);
         }
       }
       return;
@@ -2897,7 +3048,7 @@
   });
 
   diagramEl.addEventListener("click", (e) => {
-    if (!e.target.closest("g.node") && selectedNodeId) {
+    if (!e.target.closest("g.node") && selectedNodeIds.size > 0) {
       deselectNode();
       setStatus("");
     }

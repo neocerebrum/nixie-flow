@@ -18,9 +18,12 @@ body { margin: 0; overflow: hidden; display: flex; flex-direction: column; }
     padding: 4px 8px; border-radius: 4px;
 }
 .ed-back:hover { background: #1c242e; text-decoration: none; }
-.ed-header h1 {
+.lock-banner h1#diagramTitle {
     font-size: 14px; margin: 0; font-weight: 600; color: #88c0d0;
     max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.lock-banner .lock-sep {
+    width: 1px; height: 18px; background: #3a4551; margin: 0 4px;
 }
 .ed-badge {
     font-size: 11px; color: #ebcb8b; background: rgba(235, 203, 139, 0.15);
@@ -149,6 +152,33 @@ body.source-invalid #resizer { background: #bf616a; }
 
 #canvas { flex: 1; overflow: hidden; background: #1e2530;
           position: relative; min-width: 0; }
+
+/* Vertical pad on canvas: structural editing buttons */
+.canvas-pad {
+    position: absolute; top: 10px; left: 10px; z-index: 5;
+    display: flex; flex-direction: column; gap: 6px;
+    background: rgba(21, 27, 35, 0.85);
+    border: 1px solid #2a3441; border-radius: 4px;
+    padding: 6px; backdrop-filter: blur(2px);
+}
+.canvas-pad button {
+    background: #1c242e; color: #d8dee9; border: 1px solid #3a4551;
+    padding: 5px 10px; font-size: 12px; border-radius: 3px; cursor: pointer;
+    font-family: inherit; text-align: left; min-width: 110px;
+}
+.canvas-pad button:hover { background: #25303c; }
+.canvas-pad button:disabled { opacity: 0.4; cursor: not-allowed; }
+.canvas-pad button.active { background: #5e81ac; color: #eceff4; }
+.canvas-pad button.danger.active { background: #bf616a; color: #eceff4; }
+
+/* Palette edge-style button matches the rest of the palette */
+#palette button.palette-btn {
+    background: #1c242e; color: #d8dee9; border: 1px solid #3a4551;
+    padding: 5px 10px; font-size: 12px; border-radius: 3px; cursor: pointer;
+    font-family: inherit;
+}
+#palette button.palette-btn:hover:not(:disabled) { background: #25303c; border-color: #88c0d0; }
+#palette button.palette-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 body.source-invalid #canvas {
     box-shadow: inset 0 0 0 3px rgba(191, 97, 106, 0.85);
 }
@@ -317,10 +347,7 @@ footer { display: none; }
 .lock-banner button.primary:hover { background: #81a1c1; }
 
 /* Read-only mode dims edit-only buttons */
-body.readonly .ed-toolbar button#addNodeBtn,
-body.readonly .ed-toolbar button#delNodeBtn,
-body.readonly .ed-toolbar button#addEdgeBtn,
-body.readonly .ed-toolbar button#delEdgeBtn,
+body.readonly .canvas-pad,
 body.readonly .ed-toolbar button#undoBtn,
 body.readonly .ed-toolbar button#redoBtn,
 body.readonly .ed-toolbar button#resetBtn,

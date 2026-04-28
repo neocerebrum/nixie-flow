@@ -67,6 +67,7 @@
   const delNodeBtn = document.getElementById("delNodeBtn");
   const addEdgeBtn = document.getElementById("addEdgeBtn");
   const delEdgeBtn = document.getElementById("delEdgeBtn");
+  const delSubgraphBtn = document.getElementById("delSubgraphBtn");
   const exportBtn = document.getElementById("exportBtn");
   const saveBtn = document.getElementById("saveBtn");
   const fitBtn = document.getElementById("fitBtn");
@@ -105,12 +106,14 @@
   const slug = bootstrap.slug;
 
   let nodeMap = {};
+  let clusterMap = {};
   let edges = [];
   let dirtySource = false;
   let dirtyLayout = false;
   let connectingState = null;
   let connectSource = null;
   let selectedNodeId = null;
+  let selectedClusterId = null;
   let initialViewBox = null;
   let viewState = null;
   let skipSourceSync = false;
@@ -437,9 +440,11 @@
 
     indexNodesAndEdges(svgEl);
     applySavedPositions();
+    updateAllClusterBounds();
     rerouteAllEdges();
     recomputeViewBoxFromNodes(svgEl);
     attachDragHandlers(svgEl);
+    attachClusterHandlers(svgEl);
     attachLabelEditors();
     attachEdgeClickHandlers();
     setupPanZoom(svgEl);
@@ -462,7 +467,7 @@
   // ── Index / SVG helpers ──────────────────────────────────────────────────
 
   function indexNodesAndEdges(svgEl) {
-    nodeMap = {}; edges = [];
+    nodeMap = {}; edges = []; clusterMap = {};
     const nodes = svgEl.querySelectorAll("g.node");
     for (const g of nodes) {
       const id = extractNodeId(g);
@@ -480,6 +485,50 @@
         shape: detectSvgShape(g),
         incomingEdges: [],
         outgoingEdges: [],
+      };
+    }
+    // Clusters indexed AFTER nodes so findSubgraphMembers can resolve IDs.
+    const clusters = svgEl.querySelectorAll("g.cluster");
+    for (const g of clusters) {
+      const id = extractNodeId(g);
+      if (!id) continue;
+      let bg = null;
+      for (const child of g.children) {
+        const tag = child.tagName.toLowerCase();
+        if (tag === "rect" || tag === "polygon" || tag === "path") { bg = child; break; }
+      }
+      const label = g.querySelector(":scope > g.cluster-label, :scope > g.label");
+      const members = findSubgraphMembers(currentSource, id);
+      // Remember the offset between the rect and the original member bbox so we
+      // can resize the rect later while preserving Mermaid's original padding.
+      let padding = null;
+      let labelOffset = null;
+      if (bg && bg.tagName.toLowerCase() === "rect") {
+        const ct = getNodeTranslate(g);
+        const rx = parseFloat(bg.getAttribute("x")) || 0;
+        const ry = parseFloat(bg.getAttribute("y")) || 0;
+        const rw = parseFloat(bg.getAttribute("width")) || 0;
+        const rh = parseFloat(bg.getAttribute("height")) || 0;
+        const wx1 = ct.x + rx, wy1 = ct.y + ry;
+        const wx2 = wx1 + rw, wy2 = wy1 + rh;
+        const mb = computeMemberWorldBboxFromIds(members);
+        if (mb) {
+          padding = {
+            left:   mb.minX - wx1,
+            top:    mb.minY - wy1,
+            right:  wx2 - mb.maxX,
+            bottom: wy2 - mb.maxY,
+            rx, ry,
+          };
+        }
+        if (label) {
+          const lt = getNodeTranslate(label);
+          labelOffset = { dx: lt.x - rx - rw / 2, dy: lt.y - ry };
+        }
+      }
+      clusterMap[id] = {
+        g, bg, label, members, padding, labelOffset,
+        incomingEdges: [], outgoingEdges: [],
       };
     }
     const paths = svgEl.querySelectorAll("g.edgePaths path, g.edges path");
@@ -500,16 +549,20 @@
       edges.push(edge);
       if (nodeMap[source]) nodeMap[source].outgoingEdges.push(edge);
       if (nodeMap[target]) nodeMap[target].incomingEdges.push(edge);
+      if (clusterMap[source]) clusterMap[source].outgoingEdges.push(edge);
+      if (clusterMap[target]) clusterMap[target].incomingEdges.push(edge);
       edgeIdx++;
     }
   }
 
   function extractNodeId(g) {
+    const dataId = g.getAttribute("data-id");
+    if (dataId) return dataId;
     const id = g.getAttribute("id") || "";
     const m = id.match(/^flowchart-(.+?)-\d+$/);
     if (m) return m[1];
     if (id && !id.includes("-")) return id;
-    return g.getAttribute("data-id") || null;
+    return null;
   }
 
   function getNodeTranslate(g) {
@@ -517,6 +570,24 @@
     const t = g.transform.baseVal.consolidate();
     if (t) return { x: t.matrix.e, y: t.matrix.f };
     return { x: 0, y: 0 };
+  }
+
+  // Cumulative translate from <svg> root down to `g`. Mermaid wraps subgraph
+  // contents in nested <g class="root" transform="translate(...)"> groups, so
+  // a node/cluster's `transform` only encodes its position WITHIN its
+  // subgraph. Edge paths live at the outer-root level, so their geometry must
+  // be expressed in world coords.
+  function getWorldTranslate(g) {
+    let x = 0, y = 0;
+    let el = g;
+    while (el && el.tagName && el.tagName.toLowerCase() !== "svg") {
+      if (el.transform && el.transform.baseVal) {
+        const t = el.transform.baseVal.consolidate();
+        if (t) { x += t.matrix.e; y += t.matrix.f; }
+      }
+      el = el.parentNode;
+    }
+    return { x, y };
   }
 
   function setNodeTranslate(g, x, y) {
@@ -534,7 +605,7 @@
   function nodeCenter(id) {
     const n = nodeMap[id];
     if (!n) return null;
-    const t = getNodeTranslate(n.g);
+    const t = getWorldTranslate(n.g);
     return { x: t.x + n.centerLocal.x, y: t.y + n.centerLocal.y };
   }
 
@@ -625,12 +696,43 @@
     return { x: c.x + dx * scale, y: c.y + dy * scale };
   }
 
+  function endpointInfo(id) {
+    if (nodeMap[id]) return nodeMap[id];
+    const c = clusterMap[id];
+    if (!c || !c.bg) return null;
+    // Clusters use their bg rect as the clipping shape. Recompute live so we
+    // pick up size/position changes from updateClusterBounds.
+    if (c.bg.tagName.toLowerCase() === "rect") {
+      const rx = parseFloat(c.bg.getAttribute("x")) || 0;
+      const ry = parseFloat(c.bg.getAttribute("y")) || 0;
+      const rw = parseFloat(c.bg.getAttribute("width")) || 0;
+      const rh = parseFloat(c.bg.getAttribute("height")) || 0;
+      return {
+        g: c.g,
+        centerLocal: { x: rx + rw / 2, y: ry + rh / 2 },
+        halfW: rw / 2,
+        halfH: rh / 2,
+        shape: { type: "rect" },
+      };
+    }
+    // Polygon/path bg fallback — getBBox is in g-local coords.
+    let bb;
+    try { bb = c.bg.getBBox(); } catch (_) { return null; }
+    return {
+      g: c.g,
+      centerLocal: { x: bb.x + bb.width / 2, y: bb.y + bb.height / 2 },
+      halfW: bb.width / 2,
+      halfH: bb.height / 2,
+      shape: { type: "rect" },
+    };
+  }
+
   function rerouteEdge(edge) {
-    const sn = nodeMap[edge.source];
-    const tn = nodeMap[edge.target];
+    const sn = endpointInfo(edge.source);
+    const tn = endpointInfo(edge.target);
     if (!sn || !tn) return;
-    const sT = getNodeTranslate(sn.g);
-    const tT = getNodeTranslate(tn.g);
+    const sT = getWorldTranslate(sn.g);
+    const tT = getWorldTranslate(tn.g);
     // Centers in svg coords (translate + local center)
     const scx = sT.x + sn.centerLocal.x, scy = sT.y + sn.centerLocal.y;
     const tcx = tT.x + tn.centerLocal.x, tcy = tT.y + tn.centerLocal.y;
@@ -677,6 +779,59 @@
     viewState = { ...initialViewBox };
   }
 
+  function computeMemberWorldBboxFromIds(idsIterable) {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let any = false;
+    for (const mid of idsIterable) {
+      const n = nodeMap[mid];
+      if (!n) continue;
+      let bb;
+      try { bb = n.g.getBBox(); } catch (_) { continue; }
+      const t = getNodeTranslate(n.g);
+      const x1 = bb.x + t.x, y1 = bb.y + t.y;
+      const x2 = x1 + bb.width, y2 = y1 + bb.height;
+      if (x1 < minX) minX = x1;
+      if (y1 < minY) minY = y1;
+      if (x2 > maxX) maxX = x2;
+      if (y2 > maxY) maxY = y2;
+      any = true;
+    }
+    return any ? { minX, minY, maxX, maxY } : null;
+  }
+
+  function updateClusterBounds(clusterId) {
+    const c = clusterMap[clusterId];
+    if (!c || !c.bg || !c.padding) return;
+    if (c.bg.tagName.toLowerCase() !== "rect") return;
+    if (!c.members || c.members.size === 0) return;
+    const mb = computeMemberWorldBboxFromIds(c.members);
+    if (!mb) return;
+    const pad = c.padding;
+    const newCx = mb.minX - pad.left - pad.rx;
+    const newCy = mb.minY - pad.top - pad.ry;
+    const newW = (mb.maxX - mb.minX) + pad.left + pad.right;
+    const newH = (mb.maxY - mb.minY) + pad.top + pad.bottom;
+    setNodeTranslate(c.g, newCx, newCy);
+    c.bg.setAttribute("width", newW);
+    c.bg.setAttribute("height", newH);
+    if (c.label && c.labelOffset) {
+      setNodeTranslate(c.label, pad.rx + newW / 2 + c.labelOffset.dx, pad.ry + c.labelOffset.dy);
+    }
+    // Cluster geometry changed → edges connecting to/from this cluster need reroute.
+    if (c.incomingEdges) for (const e of c.incomingEdges) rerouteEdge(e);
+    if (c.outgoingEdges) for (const e of c.outgoingEdges) rerouteEdge(e);
+  }
+
+  function updateAllClusterBounds() {
+    // Innermost first: a cluster whose member set is a subset of another's is inner.
+    // Approximate by sorting ascending by member-set size — innermost (smaller
+    // member sets) get updated first so outer clusters see fresh inner positions.
+    const ids = Object.keys(clusterMap).sort(
+      (a, b) => (clusterMap[a].members.size || 0) - (clusterMap[b].members.size || 0)
+    );
+    for (const id of ids) updateClusterBounds(id);
+  }
+
   function rerouteNodeEdges(id) {
     const n = nodeMap[id];
     if (!n) return;
@@ -688,6 +843,81 @@
     for (const [id, n] of Object.entries(nodeMap)) {
       n.g.addEventListener("mousedown", (ev) => startDrag(ev, svgEl, id));
     }
+  }
+
+  function attachClusterHandlers(svgEl) {
+    for (const [id, c] of Object.entries(clusterMap)) {
+      const target = c.bg || c.g;
+      target.style.cursor = "pointer";
+      target.style.pointerEvents = "auto";
+      target.addEventListener("mousedown", (ev) => {
+        if (ev.target.closest("g.node")) return;
+        if (ev.button !== 0) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (connectingState === "delete-subgraph") {
+          handleDeleteSubgraphClick(id);
+          return;
+        }
+        if (connectingState) return;
+        startClusterDrag(ev, svgEl, id);
+      });
+    }
+  }
+
+  function startClusterDrag(ev, svgEl, id) {
+    const c = clusterMap[id];
+    if (!c) return;
+    const members = findSubgraphMembers(currentSource, id);
+    const memberStates = [];
+    for (const mid of members) {
+      const n = nodeMap[mid];
+      if (!n) continue;
+      const t = getNodeTranslate(n.g);
+      memberStates.push({ id: mid, n, originX: t.x, originY: t.y });
+    }
+    const clusterOrigin = getNodeTranslate(c.g);
+    const start = screenToSvg(svgEl, ev.clientX, ev.clientY);
+    let moved = false;
+
+    function onMove(e) {
+      const cur = screenToSvg(svgEl, e.clientX, e.clientY);
+      const dx = cur.x - start.x;
+      const dy = cur.y - start.y;
+      if (!moved && (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5)) moved = true;
+      setNodeTranslate(c.g, clusterOrigin.x + dx, clusterOrigin.y + dy);
+      for (const m of memberStates) {
+        setNodeTranslate(m.n.g, m.originX + dx, m.originY + dy);
+        rerouteNodeEdges(m.id);
+      }
+      // Edges incident to the cluster itself (cluster↔cluster or cluster↔node)
+      // aren't on any member's edge list — reroute them explicitly.
+      if (c.incomingEdges) for (const e of c.incomingEdges) rerouteEdge(e);
+      if (c.outgoingEdges) for (const e of c.outgoingEdges) rerouteEdge(e);
+    }
+    function onUp() {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      if (!moved) {
+        toggleClusterSelection(id);
+        return;
+      }
+      let changed = 0;
+      for (const m of memberStates) {
+        const t = getNodeTranslate(m.n.g);
+        if (t.x !== m.originX || t.y !== m.originY) {
+          positions[m.id] = { x: t.x, y: t.y };
+          changed++;
+        }
+      }
+      if (changed > 0) {
+        markDirtyLayout();
+        pushHistory();
+        setStatus(`subgraph ${id}: spostati ${changed} nodi`, false);
+      }
+    }
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
   }
 
   function screenToSvg(svgEl, clientX, clientY) {
@@ -717,6 +947,7 @@
       const ny = origin.y + (cur.y - start.y);
       setNodeTranslate(n.g, nx, ny);
       rerouteNodeEdges(id);
+      updateAllClusterBounds();
     }
     function onUp() {
       n.g.classList.remove("dragging");
@@ -781,6 +1012,31 @@
     return { ok: true, source: before + newDecl + after };
   }
 
+  function rewriteSubgraphLabelInSource(source, id, newLabel) {
+    if (/[\]\n]/.test(newLabel)) return { ok: false, error: "label subgraph: niente ] o newline" };
+    const idEsc = regexEscape(id);
+    // Match a subgraph header line for this id, with optional bracketed title.
+    // Handles: `subgraph ID`, `subgraph ID [Old]`, with leading whitespace.
+    const re = new RegExp(`^(\\s*subgraph\\s+${idEsc})(\\s*\\[[^\\]\\n]*\\])?(\\s*)$`, "im");
+    const lines = source.split("\n");
+    let matchIdx = -1, matchCount = 0, leading = "", trailing = "";
+    for (let i = 0; i < lines.length; i++) {
+      const m = lines[i].match(re);
+      if (!m) continue;
+      matchCount++;
+      if (matchIdx === -1) { matchIdx = i; leading = m[1]; trailing = m[3] || ""; }
+    }
+    if (matchCount === 0) {
+      return { ok: false, error: `subgraph ${id}: header non trovato (forma 'subgraph "Title"' non supportata)` };
+    }
+    if (matchCount > 1) return { ok: false, error: `subgraph ${id}: header ambiguo (${matchCount} match)` };
+    const newLine = newLabel === ""
+      ? `${leading}${trailing}`
+      : `${leading} [${newLabel}]${trailing}`;
+    lines[matchIdx] = newLine;
+    return { ok: true, source: lines.join("\n") };
+  }
+
   function rewriteEdgeLabelInSource(source, src, tgt, newLabel) {
     if (/[|\n]/.test(newLabel)) return { ok: false, error: "edge label: niente | o newline" };
     const sEsc = regexEscape(src), tEsc = regexEscape(tgt);
@@ -825,15 +1081,24 @@
       const newText = input.value;
       const oldText = getLabelText(el);
       cleanup();
-      if (newText === oldText || newText === "") return;
+      if (newText === oldText) return;
+      if (kind !== "subgraph" && newText === "") return;
       if (!requireValidSource("edit label")) return;
-      const result = kind === "node"
-        ? rewriteNodeLabelInSource(currentSource, meta.nodeId, newText)
-        : rewriteEdgeLabelInSource(currentSource, meta.source, meta.target, newText);
+      let result;
+      let who;
+      if (kind === "node") {
+        result = rewriteNodeLabelInSource(currentSource, meta.nodeId, newText);
+        who = meta.nodeId;
+      } else if (kind === "subgraph") {
+        result = rewriteSubgraphLabelInSource(currentSource, meta.subgraphId, newText);
+        who = `subgraph ${meta.subgraphId}`;
+      } else {
+        result = rewriteEdgeLabelInSource(currentSource, meta.source, meta.target, newText);
+        who = `${meta.source}→${meta.target}`;
+      }
       if (!result.ok) { setStatus(`edit rifiutato: ${result.error}`, true); return; }
       currentSource = result.source;
       markDirtySource();
-      const who = kind === "node" ? meta.nodeId : `${meta.source}→${meta.target}`;
       await renderDiagram();
       pushHistory();
       setStatus(`${who}: "${oldText}" → "${newText}"`);
@@ -855,6 +1120,15 @@
       labelEl.addEventListener("dblclick", (ev) => {
         ev.stopPropagation(); ev.preventDefault();
         startLabelEdit(labelEl, "node", { nodeId: id });
+      });
+    }
+    for (const [id, c] of Object.entries(clusterMap)) {
+      const labelEl = findLabelTextElement(c.g);
+      if (!labelEl) continue;
+      labelEl.style.cursor = "text";
+      labelEl.addEventListener("dblclick", (ev) => {
+        ev.stopPropagation(); ev.preventDefault();
+        startLabelEdit(labelEl, "subgraph", { subgraphId: id });
       });
     }
     for (const edge of edges) {
@@ -966,6 +1240,84 @@
       return { ok: false, error: `nessun riferimento a '${id}' trovato` };
     }
     return { ok: true, source: kept.join("\n"), removedDecl, removedOther };
+  }
+
+  // Walks the source block between `subgraph ID` and its matching `end`, and
+  // returns the set of node IDs (keys of nodeMap) referenced inside — including
+  // those contained in nested subgraphs, since dragging the outer cluster must
+  // physically move every descendant for the auto-derived bbox to follow.
+  function findSubgraphMembers(source, id) {
+    const idEsc = regexEscape(id);
+    const headerRe = new RegExp(`^\\s*subgraph\\s+${idEsc}(\\s|\\[|$)`, "i");
+    const anySubgraphRe = /^\s*subgraph\b/i;
+    const endRe = /^\s*end\s*$/i;
+    const wordRe = /\b[A-Za-z_][A-Za-z0-9_]*\b/g;
+    const lines = source.split("\n");
+    let headerIdx = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (headerRe.test(lines[i])) { headerIdx = i; break; }
+    }
+    if (headerIdx === -1) return new Set();
+    const members = new Set();
+    let depth = 1;
+    for (let i = headerIdx + 1; i < lines.length; i++) {
+      const line = lines[i];
+      if (anySubgraphRe.test(line)) { depth++; continue; }
+      if (endRe.test(line)) { depth--; if (depth === 0) break; continue; }
+      const matches = line.match(wordRe) || [];
+      for (const w of matches) {
+        if (nodeMap[w]) members.add(w);
+      }
+    }
+    return members;
+  }
+
+  function deleteSubgraphFromSource(source, id) {
+    const idEsc = regexEscape(id);
+    const headerRe = new RegExp(`^\\s*subgraph\\s+${idEsc}(\\s|\\[|$)`, "i");
+    const anySubgraphRe = /^\s*subgraph\b/i;
+    const endRe = /^\s*end\s*$/i;
+    const lines = source.split("\n");
+    let headerIdx = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (headerRe.test(lines[i])) {
+        if (headerIdx !== -1) {
+          return { ok: false, error: `subgraph ${id}: header ambiguo` };
+        }
+        headerIdx = i;
+      }
+    }
+    if (headerIdx === -1) return { ok: false, error: `subgraph ${id}: non trovato` };
+    let depth = 1, endIdx = -1;
+    for (let i = headerIdx + 1; i < lines.length; i++) {
+      if (anySubgraphRe.test(lines[i])) depth++;
+      else if (endRe.test(lines[i])) {
+        depth--;
+        if (depth === 0) { endIdx = i; break; }
+      }
+    }
+    if (endIdx === -1) return { ok: false, error: `subgraph ${id}: 'end' non trovato` };
+    // Remove higher index first to keep the lower one valid.
+    lines.splice(endIdx, 1);
+    lines.splice(headerIdx, 1);
+    return { ok: true, source: lines.join("\n") };
+  }
+
+  async function handleDeleteSubgraphClick(id) {
+    cancelConnectMode();
+    if (!confirm(`Eliminare il subgraph '${id}' (i contenuti restano)?`)) return;
+    let result = deleteSubgraphFromSource(currentSource, id);
+    if (!result.ok) { setStatus(`delete subgraph: ${result.error}`, true); return; }
+    let next = result.source;
+    // Also drop any `style ID ...` line tied to this subgraph id.
+    const stripped = setNodeStyleInSource(next, id, null);
+    if (stripped.ok) next = stripped.source;
+    currentSource = next;
+    markDirtySource();
+    if (selectedClusterId === id) deselectCluster();
+    await renderDiagram();
+    pushHistory();
+    setStatus(`− subgraph ${id}`);
   }
 
   function attachEdgeClickHandlers() {
@@ -1090,6 +1442,20 @@
     delEdgeBtn.classList.add("active", "danger"); delEdgeBtn.textContent = "Cancel";
     setStatus("clicca la freccia da eliminare (Esc per annullare)");
   }
+  function startDeleteSubgraphMode() {
+    if (connectingState) { cancelConnectMode(); return; }
+    if (!requireValidSource("− Subgraph")) return;
+    if (Object.keys(clusterMap).length === 0) {
+      setStatus("nessun subgraph nel diagramma", true); return;
+    }
+    connectingState = "delete-subgraph";
+    document.body.classList.add("deleting");
+    if (delSubgraphBtn) {
+      delSubgraphBtn.classList.add("active", "danger");
+      delSubgraphBtn.textContent = "Cancel";
+    }
+    setStatus("clicca il subgraph da eliminare (Esc per annullare)");
+  }
   function cancelConnectMode() {
     if (_ghostCleanup) { _ghostCleanup(); _ghostCleanup = null; }
     connectingState = null;
@@ -1101,6 +1467,10 @@
     addEdgeBtn.classList.remove("active"); addEdgeBtn.textContent = "+ Edge";
     delNodeBtn.classList.remove("active", "danger"); delNodeBtn.textContent = "− Node";
     delEdgeBtn.classList.remove("active", "danger"); delEdgeBtn.textContent = "− Edge";
+    if (delSubgraphBtn) {
+      delSubgraphBtn.classList.remove("active", "danger");
+      delSubgraphBtn.textContent = "− Subgraph";
+    }
     setStatus("");
   }
 
@@ -1193,6 +1563,7 @@
 
   function toggleNodeSelection(id) {
     if (selectedNodeId === id) { deselectNode(); return; }
+    deselectCluster();
     if (selectedNodeId && nodeMap[selectedNodeId]) {
       nodeMap[selectedNodeId].g.classList.remove("selected");
     }
@@ -1205,6 +1576,23 @@
       nodeMap[selectedNodeId].g.classList.remove("selected");
     }
     selectedNodeId = null;
+  }
+
+  function toggleClusterSelection(id) {
+    if (selectedClusterId === id) { deselectCluster(); return; }
+    deselectNode();
+    if (selectedClusterId && clusterMap[selectedClusterId]) {
+      clusterMap[selectedClusterId].g.classList.remove("selected");
+    }
+    selectedClusterId = id;
+    clusterMap[id].g.classList.add("selected");
+    setStatus(`selected subgraph: ${id}`);
+  }
+  function deselectCluster() {
+    if (selectedClusterId && clusterMap[selectedClusterId]) {
+      clusterMap[selectedClusterId].g.classList.remove("selected");
+    }
+    selectedClusterId = null;
   }
 
   function setNodeStyleInSource(source, nodeId, styleStr) {
@@ -1226,21 +1614,29 @@
 
   async function applyPaletteColor(color) {
     if (!requireValidSource("applica colore")) return;
-    if (!selectedNodeId) { setStatus("seleziona prima un nodo (click su un box)", true); return; }
-    const id = selectedNodeId;
+    const isCluster = !selectedNodeId && !!selectedClusterId;
+    const id = selectedNodeId || selectedClusterId;
+    if (!id) { setStatus("seleziona prima un nodo o un subgraph", true); return; }
     const styleStr = color.reset ? null
       : `fill:${color.fill},stroke:${color.stroke},color:${color.color}`;
     const result = setNodeStyleInSource(currentSource, id, styleStr);
     if (!result.changed) {
-      setStatus(`${id}: colore gia' applicato (o reset su nodo senza style)`);
+      setStatus(`${id}: colore gia' applicato (o reset senza style)`);
       return;
     }
     currentSource = result.source;
     markDirtySource();
     await renderDiagram();
-    if (nodeMap[id]) {
-      nodeMap[id].g.classList.add("selected");
-      selectedNodeId = id;
+    if (isCluster) {
+      if (clusterMap[id]) {
+        clusterMap[id].g.classList.add("selected");
+        selectedClusterId = id;
+      }
+    } else {
+      if (nodeMap[id]) {
+        nodeMap[id].g.classList.add("selected");
+        selectedNodeId = id;
+      }
     }
     pushHistory();
     setStatus(`${id}: color ${color.name}`);
@@ -2109,6 +2505,7 @@
   delNodeBtn.addEventListener("click", startDeleteMode);
   addEdgeBtn.addEventListener("click", startConnectMode);
   delEdgeBtn.addEventListener("click", startDeleteEdgeMode);
+  if (delSubgraphBtn) delSubgraphBtn.addEventListener("click", startDeleteSubgraphMode);
   exportBtn.addEventListener("click", exportSource);
   saveBtn.addEventListener("click", save);
   fitBtn.addEventListener("click", fitView);
@@ -2203,6 +2600,7 @@
     if (e.key === "Escape") {
       if (connectingState) { cancelConnectMode(); return; }
       if (selectedNodeId) { deselectNode(); setStatus(""); }
+      if (selectedClusterId) { deselectCluster(); setStatus(""); }
       return;
     }
     if (e.key === "0" || e.key === "Home") { e.preventDefault(); fitView(); return; }
@@ -2230,6 +2628,10 @@
   diagramEl.addEventListener("click", (e) => {
     if (!e.target.closest("g.node") && selectedNodeId) {
       deselectNode();
+      setStatus("");
+    }
+    if (!e.target.closest("g.cluster") && selectedClusterId) {
+      deselectCluster();
       setStatus("");
     }
   });

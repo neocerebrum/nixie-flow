@@ -178,6 +178,15 @@ body.deleting-edge g.edgeLabels > g:hover .edgeLabel { outline: 2px solid #bf616
     stroke-dasharray: 4,3 !important;
 }
 
+g.cluster:hover > *:first-child { filter: brightness(1.15); }
+g.cluster.selected > *:first-child {
+    stroke: #88c0d0 !important; stroke-width: 3px !important;
+    stroke-dasharray: 4,3 !important;
+}
+body.deleting g.cluster:hover > *:first-child {
+    stroke: #bf616a !important; stroke-width: 3px !important;
+}
+
 /* Edge labels readability */
 #diagram g.edgeLabels foreignObject .labelBkg,
 #diagram g.edgeLabels foreignObject span.edgeLabel,

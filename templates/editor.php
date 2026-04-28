@@ -26,6 +26,7 @@
         <button id="delNodeBtn" title="Rimuovi nodo">− Nodo</button>
         <button id="addEdgeBtn" title="Collega due nodi">+ Edge</button>
         <button id="delEdgeBtn" title="Rimuovi edge">− Edge</button>
+        <button id="delSubgraphBtn" title="Rimuovi subgraph (mantiene il contenuto)">− Subgraph</button>
         <button id="undoBtn" title="Undo (Ctrl+Z)">↶</button>
         <button id="redoBtn" title="Redo (Ctrl+Shift+Z)">↷</button>
         <button id="fitBtn" title="Fit view">Fit</button>

@@ -1,0 +1,26 @@
+RewriteEngine On
+
+# Block direct access to internal directories (code, data, scripts, docs).
+# These hold PHP source, the SQLite DB, CLI scripts, and design notes —
+# none of them should be reachable via HTTP.
+RewriteRule ^(app|migrations|scripts|data|docs|templates)(/|$) - [F,L]
+
+# Block direct access to dotfiles (.env, .htaccess, .git, .deploy-config, ...).
+RewriteRule (^|/)\.[^/]+ - [F,L]
+
+# Serve real static files (images, CSS, JS) directly without routing.
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteRule ^ - [L]
+
+# Everything else → front controller.
+RewriteRule ^ index.php [QSA,L]
+
+# Belt-and-braces: even if mod_rewrite is off, deny dotfiles via FilesMatch.
+<FilesMatch "^\.">
+  Require all denied
+</FilesMatch>
+
+# Belt-and-braces: deny SQLite DBs and log files explicitly by extension.
+<FilesMatch "\.(sqlite|sqlite3|db|log)$">
+  Require all denied
+</FilesMatch>

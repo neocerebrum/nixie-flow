@@ -1,0 +1,7 @@
+/data/*
+!/data/.gitkeep
+.env
+.deploy-config
+/vendor/
+*.log
+.DS_Store

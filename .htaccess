@@ -3,7 +3,7 @@ RewriteEngine On
 # Block direct access to internal directories (code, data, scripts, docs).
 # These hold PHP source, the SQLite DB, CLI scripts, and design notes —
 # none of them should be reachable via HTTP.
-RewriteRule ^(app|migrations|scripts|data|docs|templates)(/|$) - [F,L]
+RewriteRule ^(app|scripts|data|docs|templates)(/|$) - [F,L]
 
 # Block direct access to dotfiles (.env, .htaccess, .git, .deploy-config, ...).
 RewriteRule (^|/)\.[^/]+ - [F,L]

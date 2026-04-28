@@ -47,6 +47,7 @@ final class Db
         $pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
 
         self::$pdo = $pdo;
+        Schema::ensure($pdo);
         return $pdo;
     }
 

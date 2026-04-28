@@ -50,10 +50,10 @@ chmod +x deploy.sh lint.sh
 ./lint.sh && ./deploy.sh --all
 ```
 
-Then on the server via SSH, **always use the Plesk per-version PHP binary** (the system `php` on AlmaLinux is too old):
+The DB schema is created automatically on the first request (see `app/Schema.php`).
+After deploy, seed the admin user — on the server via SSH, **always use the Plesk per-version PHP binary** (the system `php` on AlmaLinux is too old):
 
 ```bash
-/opt/plesk/php/8.4/bin/php migrations/apply.php
 /opt/plesk/php/8.4/bin/php scripts/seed_admin.php
 ```
 
@@ -77,12 +77,6 @@ If you ever lose the admin password and no other admin can log in, use the CLI e
 ./lint.sh && ./deploy.sh --all
 ```
 
-## Plesk web-only bootstrap (if no SSH/script execution)
-
-If you cannot run CLI scripts on the server (FTP-only Plesk plan), you can apply migrations and seed the admin via temporary HTTP endpoints. **This is a Phase 1 task** — the scaffold provides only the basic health check at `/`.
-
-For now, get SSH or "Run PHP Script" enabled in your Plesk plan, or open a ticket with the host.
-
 ## Project layout
 
 Layout is **flat** because Plesk's FTP user is jailed inside `httpdocs/` (or the subdomain root). Internal directories are protected via `.htaccess`.
@@ -90,10 +84,9 @@ Layout is **flat** because Plesk's FTP user is jailed inside `httpdocs/` (or the
 ```
 Aquata/                ← project root (on local; mirrored to httpdocs/ on remote)
 ├── index.php          ← front controller
-├── .htaccess          ← rewrite + deny app/, migrations/, scripts/, data/, docs/, dotfiles
+├── .htaccess          ← rewrite + deny app/, scripts/, data/, docs/, dotfiles
 ├── static/            ← CSS, JS, images (publicly served)
-├── app/               ← PHP source (denied via .htaccess)
-├── migrations/        ← SQL + apply.php runner (denied via .htaccess)
+├── app/               ← PHP source (denied via .htaccess); app/Schema.php auto-creates the DB
 ├── scripts/           ← CLI utilities, seed_admin etc. (denied via .htaccess)
 ├── data/              ← SQLite file (denied via .htaccess; never deployed — server-only)
 ├── docs/              ← design notes (not deployed)

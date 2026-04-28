@@ -611,25 +611,41 @@
 
   // Detect the primitive shape used by Mermaid for this node, so edges can clip
   // to the actual outline (diamond, circle, hexagon...) instead of the bbox.
+  // Mermaid sometimes places its own translate() on the shape element itself
+  // (e.g. diamond polygons get transform="translate(-w/2, w/2)" so the raw
+  // points sit in their own local frame). We need to lift the shape into
+  // g-local coords for ray clipping math.
+  function getElementLocalTranslate(el) {
+    if (!el || !el.transform || !el.transform.baseVal) return { x: 0, y: 0 };
+    const t = el.transform.baseVal.consolidate();
+    if (!t) return { x: 0, y: 0 };
+    return { x: t.matrix.e, y: t.matrix.f };
+  }
+
   function detectSvgShape(g) {
     for (const child of g.children) {
       const tag = child.tagName.toLowerCase();
       if (tag === "polygon") {
-        return { type: "polygon", points: parsePolygonPoints(child.getAttribute("points") || "") };
+        const tr = getElementLocalTranslate(child);
+        const raw = parsePolygonPoints(child.getAttribute("points") || "");
+        const points = raw.map(p => ({ x: p.x + tr.x, y: p.y + tr.y }));
+        return { type: "polygon", points };
       }
       if (tag === "circle") {
+        const tr = getElementLocalTranslate(child);
         return {
           type: "circle",
-          cx: parseFloat(child.getAttribute("cx")) || 0,
-          cy: parseFloat(child.getAttribute("cy")) || 0,
+          cx: (parseFloat(child.getAttribute("cx")) || 0) + tr.x,
+          cy: (parseFloat(child.getAttribute("cy")) || 0) + tr.y,
           r: parseFloat(child.getAttribute("r")) || 0,
         };
       }
       if (tag === "ellipse") {
+        const tr = getElementLocalTranslate(child);
         return {
           type: "ellipse",
-          cx: parseFloat(child.getAttribute("cx")) || 0,
-          cy: parseFloat(child.getAttribute("cy")) || 0,
+          cx: (parseFloat(child.getAttribute("cx")) || 0) + tr.x,
+          cy: (parseFloat(child.getAttribute("cy")) || 0) + tr.y,
           rx: parseFloat(child.getAttribute("rx")) || 0,
           ry: parseFloat(child.getAttribute("ry")) || 0,
         };

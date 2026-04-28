@@ -184,12 +184,12 @@ final class McpController
             ],
             [
                 'name' => 'save_diagram',
-                'description' => 'Create a new revision (checkpoint) for a diagram. expected_version is the current head revision_id; mismatch returns a conflict error. Auto-acquires the edit lock.',
+                'description' => 'Create a new revision (checkpoint) for a diagram. expected_version is the current head revision_id; mismatch returns a conflict error. Auto-acquires the edit lock. The source MUST be a Mermaid flowchart (flowchart/graph TD|LR|TB|BT|RL); other Mermaid diagram types (sequence, class, ER, state, gantt, etc.) are not supported by the editor. Do NOT include style directives, classDef, or per-node fill/stroke/color: visual styling is managed by the user via the editor palette and stored separately.',
                 'inputSchema' => [
                     'type' => 'object',
                     'properties' => [
                         'slug'             => ['type' => 'string'],
-                        'source'           => ['type' => 'string'],
+                        'source'           => ['type' => 'string', 'description' => 'Mermaid flowchart source. Plain nodes/edges/subgraphs only — no style/classDef/colors.'],
                         'expected_version' => ['type' => 'integer'],
                         'layout'           => ['type' => 'object'],
                         'message'          => ['type' => 'string'],
@@ -199,13 +199,13 @@ final class McpController
             ],
             [
                 'name' => 'create_diagram',
-                'description' => 'Create a new diagram with an initial revision. If slug is omitted it is generated from title.',
+                'description' => 'Create a new diagram with an initial revision. If slug is omitted it is generated from title. The source MUST be a Mermaid flowchart (flowchart/graph TD|LR|TB|BT|RL); other Mermaid diagram types (sequence, class, ER, state, gantt, etc.) are not supported by the editor. Do NOT include style directives, classDef, or per-node fill/stroke/color: visual styling is managed by the user via the editor palette and stored separately.',
                 'inputSchema' => [
                     'type' => 'object',
                     'properties' => [
                         'title'  => ['type' => 'string'],
                         'slug'   => ['type' => 'string'],
-                        'source' => ['type' => 'string'],
+                        'source' => ['type' => 'string', 'description' => 'Mermaid flowchart source. Plain nodes/edges/subgraphs only — no style/classDef/colors.'],
                         'layout' => ['type' => 'object'],
                     ],
                     'required' => ['title', 'source'],

@@ -56,9 +56,10 @@ if ($password !== $confirm) {
 $hash = password_hash($password, PASSWORD_BCRYPT);
 
 $stmt = $pdo->prepare(
-    'INSERT INTO users (email, password_hash, display_name, role) VALUES (?, ?, ?, ?)'
+    "INSERT INTO users (email, password_hash, display_name, role, email_verified_at)
+     VALUES (?, ?, ?, 'admin', CURRENT_TIMESTAMP)"
 );
-$stmt->execute([$email, $hash, $displayName, 'admin']);
+$stmt->execute([$email, $hash, $displayName]);
 
 $id = (int) $pdo->lastInsertId();
-echo "Admin user created (id=$id, email=$email)\n";
+echo "Admin user created (id=$id, email=$email, verified=yes)\n";

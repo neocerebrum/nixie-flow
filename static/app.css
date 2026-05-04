@@ -88,6 +88,20 @@ main {
 }
 .auth-card h1 { text-align: center; margin-bottom: 0.3rem; }
 .auth-card .muted { text-align: center; margin-bottom: 1.5rem; }
+.auth-card .hp-field {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+.auth-card .checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.95em;
+}
+.auth-card .checkbox input { width: auto; }
 
 /* Pages and cards */
 .page { max-width: 920px; }

@@ -69,7 +69,9 @@ final class UserController
         }
 
         $hash = password_hash($password, PASSWORD_BCRYPT);
-        User::create($email, $hash, $displayName, $role);
+        $newId = User::create($email, $hash, $displayName, $role);
+        // Admin-provisioned accounts skip the email-verification round-trip.
+        User::markEmailVerified($newId);
 
         $this->flash('success', 'Utente creato.');
         Response::redirect('/admin/users');

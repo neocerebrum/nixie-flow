@@ -10,7 +10,9 @@ final class Auth
 {
     private const SESSION_KEY = '_user_id';
     private const FAILURE_WINDOW_SEC = 900;   // 15 minutes
-    private const FAILURE_LIMIT = 5;
+    private const IP_FAILURE_LIMIT = 10;
+    private const EMAIL_FAILURE_LIMIT = 10;
+    private const KNOWN_GOOD_IP_WINDOW_SEC = 2592000; // 30 days
 
     /** Returns the current logged-in user row, or null. Re-checks disabled status on every call. */
     public static function currentUser(): ?array
@@ -115,14 +117,24 @@ final class Auth
     }
 
     /**
-     * Attempt login. Returns one of: 'ok' | 'invalid' | 'disabled' | 'rate_limited'.
+     * Attempt login. Returns one of:
+     *   'ok' | 'invalid' | 'disabled' | 'unverified' | 'rate_limited'.
      */
     public static function login(string $email, string $password): string
     {
         $email = trim($email);
         $ip = RateLimit::clientIp();
 
-        if (RateLimit::recentFailures($ip, $email, self::FAILURE_WINDOW_SEC) >= self::FAILURE_LIMIT) {
+        $ipLimit    = Config::int('LOGIN_IP_FAILURE_LIMIT', self::IP_FAILURE_LIMIT);
+        $emailLimit = Config::int('LOGIN_EMAIL_FAILURE_LIMIT', self::EMAIL_FAILURE_LIMIT);
+        $window     = Config::int('LOGIN_FAILURE_WINDOW_SEC', self::FAILURE_WINDOW_SEC);
+
+        if (RateLimit::recentFailuresByIp($ip, $window) >= $ipLimit) {
+            return 'rate_limited';
+        }
+        if (RateLimit::recentFailuresByEmail($email, $window) >= $emailLimit
+            && !RateLimit::isKnownGoodIp($email, $ip, self::KNOWN_GOOD_IP_WINDOW_SEC)
+        ) {
             return 'rate_limited';
         }
 
@@ -135,6 +147,14 @@ final class Auth
         if (User::isDisabled($user)) {
             RateLimit::recordLoginAttempt($ip, $email, false);
             return 'disabled';
+        }
+
+        // Self-service signups are pending until email is verified. Admin-
+        // provisioned accounts skip the email round-trip (email_verified_at
+        // can be set at creation by Admin\UserController, see #signup-flow).
+        if (Config::bool('REQUIRE_EMAIL_VERIFY', true) && !User::isEmailVerified($user)) {
+            // Don't burn the brute-force counter for unverified-but-correct creds.
+            return 'unverified';
         }
 
         RateLimit::recordLoginAttempt($ip, $email, true);

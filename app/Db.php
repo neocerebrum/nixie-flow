@@ -37,7 +37,20 @@ final class Db
             $user = Config::get('DB_USER') ?? throw new RuntimeException('DB_USER required for mysql');
             $pass = Config::get('DB_PASS', '');
             $dsn = "mysql:host=$host;port=$port;dbname=$name;charset=utf8mb4";
-            $pdo = new PDO($dsn, $user, $pass);
+            $opts = [];
+            // PDO::MYSQL_ATTR_INIT_COMMAND only exists when pdo_mysql is loaded.
+            // Some shared hosts run CLI php without it; guard the constant.
+            if (defined('PDO::MYSQL_ATTR_INIT_COMMAND')) {
+                $opts[constant('PDO::MYSQL_ATTR_INIT_COMMAND')] =
+                    "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci, "
+                    . "sql_mode='STRICT_ALL_TABLES,NO_ENGINE_SUBSTITUTION,ERROR_FOR_DIVISION_BY_ZERO,NO_ZERO_DATE,NO_ZERO_IN_DATE'";
+            }
+            $pdo = new PDO($dsn, $user, $pass, $opts);
+            if ($opts === []) {
+                // Fallback: run the same SET after connect.
+                $pdo->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
+                $pdo->exec("SET SESSION sql_mode='STRICT_ALL_TABLES,NO_ENGINE_SUBSTITUTION,ERROR_FOR_DIVISION_BY_ZERO,NO_ZERO_DATE,NO_ZERO_IN_DATE'");
+            }
         } else {
             throw new RuntimeException("Unknown DB_DRIVER: $driver");
         }

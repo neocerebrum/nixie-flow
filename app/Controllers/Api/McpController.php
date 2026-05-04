@@ -4,11 +4,16 @@ declare(strict_types=1);
 namespace App\Controllers\Api;
 
 use App\Auth;
+use App\Config;
+use App\Exceptions\QuotaExceeded;
 use App\Exceptions\RevisionConflict;
 use App\Models\ApiToken;
 use App\Models\Diagram;
 use App\Models\Lock;
 use App\Models\Revision;
+use App\Models\User;
+use App\Quota;
+use App\RateLimit;
 use App\Slug;
 
 /**
@@ -41,11 +46,8 @@ final class McpController
 
     public function handle(array $args): never
     {
-        // CORS / preflight tolerated; MCP itself uses POST + JSON.
         header('Content-Type: application/json; charset=utf-8');
-        header('Access-Control-Allow-Origin: *');
-        header('Access-Control-Allow-Methods: POST, OPTIONS');
-        header('Access-Control-Allow-Headers: Content-Type, Authorization');
+        $this->applyCors();
         if (($_SERVER['REQUEST_METHOD'] ?? 'POST') === 'OPTIONS') {
             http_response_code(204);
             exit;
@@ -58,6 +60,8 @@ final class McpController
             exit;
         }
 
+        $tokenHash = $this->bearerTokenHash();
+
         $raw = file_get_contents('php://input') ?: '';
         $msg = json_decode($raw, true);
         if (!is_array($msg)) {
@@ -68,6 +72,12 @@ final class McpController
 
         // Batch support per JSON-RPC 2.0.
         if ($this->isBatch($msg)) {
+            $isWrite = false;
+            foreach ($msg as $req) {
+                if ($this->isWriteCall((array) $req)) { $isWrite = true; break; }
+            }
+            RateLimit::throttle('mcp', $user, $tokenHash, $isWrite);
+
             $out = [];
             foreach ($msg as $req) {
                 $resp = $this->dispatchSingle($req, $user);
@@ -77,6 +87,7 @@ final class McpController
             exit;
         }
 
+        RateLimit::throttle('mcp', $user, $tokenHash, $this->isWriteCall($msg));
         $resp = $this->dispatchSingle($msg, $user);
         if ($resp === null) {
             // Notification: no body.
@@ -130,8 +141,10 @@ final class McpController
                 'isError' => true,
             ]);
         } catch (\Throwable $e) {
+            error_log('[Aquata MCP] ' . $e::class . ': ' . $e->getMessage()
+                . ' @ ' . $e->getFile() . ':' . $e->getLine());
             if ($isNotification) return null;
-            return $this->err($id, -32603, 'Internal error: ' . $e->getMessage());
+            return $this->err($id, -32603, 'Internal error');
         }
     }
 
@@ -157,6 +170,45 @@ final class McpController
     private function isBatch(array $m): bool
     {
         return $m !== [] && array_keys($m) === range(0, count($m) - 1);
+    }
+
+    private function bearerTokenHash(): ?string
+    {
+        $h = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? null;
+        if (!is_string($h) || stripos($h, 'Bearer ') !== 0) return null;
+        $token = trim(substr($h, 7));
+        return $token === '' ? null : hash('sha256', $token);
+    }
+
+    private function isWriteCall(array $req): bool
+    {
+        if (($req['method'] ?? '') !== 'tools/call') return false;
+        $name = $req['params']['name'] ?? '';
+        return in_array($name, ['save_diagram', 'create_diagram', 'delete_diagram', 'set_layout'], true);
+    }
+
+    /**
+     * MCP uses Bearer auth (no cookies), so wildcard CORS is acceptable.
+     * Allowlist via MCP_ALLOWED_ORIGINS=* | comma-separated. Default: *.
+     */
+    private function applyCors(): void
+    {
+        $allowed = Config::get('MCP_ALLOWED_ORIGINS', '*') ?? '*';
+        $origin  = $_SERVER['HTTP_ORIGIN'] ?? '';
+
+        if ($allowed === '*') {
+            header('Access-Control-Allow-Origin: *');
+            header('Vary: Origin');
+        } else {
+            $list = array_filter(array_map('trim', explode(',', $allowed)));
+            if ($origin !== '' && in_array($origin, $list, true)) {
+                header('Access-Control-Allow-Origin: ' . $origin);
+                header('Vary: Origin');
+            }
+        }
+        header('Access-Control-Allow-Methods: POST, OPTIONS');
+        header('Access-Control-Allow-Headers: Content-Type, Authorization');
+        header('Access-Control-Max-Age: 600');
     }
 
     // ── Tool definitions (advertised via tools/list) ────────────────────────
@@ -328,6 +380,14 @@ final class McpController
 
         $layoutJson = $this->encodeLayout($layout);
         try {
+            $owner = User::byId((int) $diagram['owner_id']) ?? $user;
+            $payloadBytes = strlen($source) + strlen($layoutJson ?? '');
+            Quota::checkCanAddRevision((int) $diagram['id'], $owner, $user, $payloadBytes);
+        } catch (QuotaExceeded $q) {
+            throw new McpToolException($q->getMessage());
+        }
+
+        try {
             $rev = Revision::createAndAdvanceHead(
                 (int) $diagram['id'],
                 $expected,
@@ -355,6 +415,14 @@ final class McpController
         $source = $this->requireString($args, 'source');
         $layout = isset($args['layout']) ? $args['layout'] : null;
 
+        $layoutJson = $this->encodeLayout($layout);
+        try {
+            Quota::checkCanCreateDiagram($user);
+            Quota::checkBytesForOwner($user, $user, strlen($source) + strlen($layoutJson ?? ''));
+        } catch (QuotaExceeded $q) {
+            throw new McpToolException($q->getMessage());
+        }
+
         $custom = $args['slug'] ?? null;
         if (is_string($custom) && $custom !== '') {
             if (!Slug::validate($custom)) {
@@ -370,7 +438,7 @@ final class McpController
         }
 
         [$diagram, $rev] = Diagram::createWithFirstRevision(
-            $slug, $title, (int) $user['id'], $source, $this->encodeLayout($layout)
+            $slug, $title, (int) $user['id'], $source, $layoutJson
         );
 
         return $this->structuredResult([
@@ -425,6 +493,22 @@ final class McpController
         }
 
         $layoutJson = $this->encodeLayout($args['layout']);
+
+        $head = $diagram['head_revision_id'] !== null
+            ? Revision::byId((int) $diagram['head_revision_id'])
+            : null;
+        $oldBytes = $head
+            ? strlen((string) $head['source']) + strlen((string) ($head['layout'] ?? ''))
+            : 0;
+        $newBytes = ($head ? strlen((string) $head['source']) : 0) + strlen($layoutJson ?? '');
+
+        try {
+            $owner = User::byId((int) $diagram['owner_id']) ?? $user;
+            Quota::checkCanReplaceDraft($owner, $user, $oldBytes, $newBytes);
+        } catch (QuotaExceeded $q) {
+            throw new McpToolException($q->getMessage());
+        }
+
         try {
             Revision::updateDraft((int) $diagram['id'], $expected, null, $layoutJson);
         } catch (RevisionConflict $c) {

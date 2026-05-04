@@ -11,6 +11,19 @@ $router->get('/login',    [App\Controllers\AuthController::class,    'loginForm'
 $router->post('/login',   [App\Controllers\AuthController::class,    'login']);
 $router->post('/logout',  [App\Controllers\AuthController::class,    'logout']);
 
+// Self-service signup
+$router->get('/signup',                 [App\Controllers\SignupController::class, 'showForm']);
+$router->post('/signup',                [App\Controllers\SignupController::class, 'submit']);
+$router->get('/signup/check-email',     [App\Controllers\SignupController::class, 'checkEmail']);
+$router->get('/signup/verify',          [App\Controllers\SignupController::class, 'verify']);
+$router->post('/signup/resend',         [App\Controllers\SignupController::class, 'resend']);
+
+// Password reset (web)
+$router->get('/password-reset',          [App\Controllers\PasswordResetController::class, 'requestForm']);
+$router->post('/password-reset',         [App\Controllers\PasswordResetController::class, 'requestSubmit']);
+$router->get('/password-reset/confirm',  [App\Controllers\PasswordResetController::class, 'confirmForm']);
+$router->post('/password-reset/confirm', [App\Controllers\PasswordResetController::class, 'confirmSubmit']);
+
 // Authenticated user
 $router->get('/dashboard',     [App\Controllers\DashboardController::class, 'index']);
 $router->get('/editor/{slug}', [App\Controllers\EditorController::class,    'show']);

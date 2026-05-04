@@ -30,11 +30,20 @@ final class Config
                 continue;
             }
             $key = trim(substr($line, 0, $eq));
-            $value = trim(substr($line, $eq + 1));
+            $value = ltrim(substr($line, $eq + 1));
+            // Quoted values: keep the contents verbatim (allows # inside).
             if (strlen($value) >= 2
-                && (($value[0] === '"' && $value[-1] === '"') || ($value[0] === "'" && $value[-1] === "'"))
+                && (($value[0] === '"' && ($end = strpos($value, '"', 1)) !== false)
+                    || ($value[0] === "'" && ($end = strpos($value, "'", 1)) !== false))
             ) {
-                $value = substr($value, 1, -1);
+                $quote = $value[0];
+                $value = substr($value, 1, $end - 1);
+            } else {
+                // Unquoted: strip inline " #..." comments (must be preceded by whitespace).
+                if (preg_match('/^([^#]*?)\s+#.*$/', $value, $m)) {
+                    $value = $m[1];
+                }
+                $value = rtrim($value);
             }
             self::$values[$key] = $value;
             $_ENV[$key] = $value;

@@ -5,11 +5,15 @@ namespace App\Controllers\Api;
 
 use App\Auth;
 use App\Csrf;
+use App\Exceptions\QuotaExceeded;
 use App\Exceptions\RevisionConflict;
 use App\Json;
 use App\Models\Diagram;
 use App\Models\Lock;
 use App\Models\Revision;
+use App\Models\User;
+use App\Quota;
+use App\RateLimit;
 use App\Response;
 use App\Slug;
 
@@ -19,9 +23,17 @@ final class DiagramController
     private const TITLE_MAX  = 200;
     private const MESSAGE_MAX = 500;
 
-    public function index(array $args): never
+    /** Auth + per-user/per-IP rate-limit. $write=true charges the write counter. */
+    private function apiUser(bool $write): array
     {
         $user = Auth::requireLoginApi();
+        RateLimit::throttle('api', $user, null, $write);
+        return $user;
+    }
+
+    public function index(array $args): never
+    {
+        $user = $this->apiUser(false);
         $all = isset($_GET['all']) && $_GET['all'] === '1';
 
         if ($all && ($user['role'] ?? '') === 'admin') {
@@ -40,7 +52,7 @@ final class DiagramController
 
     public function show(array $args): never
     {
-        $user = Auth::requireLoginApi();
+        $user = $this->apiUser(false);
         $diagram = $this->loadOr404($args['slug'], $user);
         $head = null;
         if ($diagram['head_revision_id'] !== null) {
@@ -51,7 +63,7 @@ final class DiagramController
 
     public function history(array $args): never
     {
-        $user = Auth::requireLoginApi();
+        $user = $this->apiUser(false);
         $diagram = $this->loadOr404($args['slug'], $user);
         $revs = Revision::listByDiagram((int) $diagram['id']);
         Response::json([
@@ -68,7 +80,7 @@ final class DiagramController
 
     public function create(array $args): never
     {
-        $user = Auth::requireLoginApi();
+        $user = $this->apiUser(true);
         Csrf::requireValidApi();
         $body = Json::readBody();
 
@@ -76,6 +88,14 @@ final class DiagramController
         $source = Json::requireString($body, 'source', self::SOURCE_MAX, true);
         $layout = Json::readLayout($body);
         $customSlug = $body['slug'] ?? null;
+
+        try {
+            Quota::checkCanCreateDiagram($user);
+            $payloadBytes = strlen($source) + strlen($layout ?? '');
+            Quota::checkBytesForOwner($user, $user, $payloadBytes);
+        } catch (QuotaExceeded $q) {
+            $this->respondQuota($q);
+        }
 
         $autoGen = ($customSlug === null || $customSlug === '');
         if ($autoGen) {
@@ -104,7 +124,7 @@ final class DiagramController
 
     public function save(array $args): never
     {
-        $user = Auth::requireLoginApi();
+        $user = $this->apiUser(true);
         Csrf::requireValidApi();
         $diagram = $this->loadWritableOr404($args['slug'], $user);
         $body = Json::readBody();
@@ -130,6 +150,14 @@ final class DiagramController
         }
 
         try {
+            $owner = User::byId((int) $diagram['owner_id']) ?? $user;
+            $payloadBytes = strlen($source) + strlen($layout ?? '');
+            Quota::checkCanAddRevision((int) $diagram['id'], $owner, $user, $payloadBytes);
+        } catch (QuotaExceeded $q) {
+            $this->respondQuota($q);
+        }
+
+        try {
             $newRev = Revision::createAndAdvanceHead(
                 (int) $diagram['id'],
                 $expected,
@@ -151,7 +179,7 @@ final class DiagramController
 
     public function saveDraft(array $args): never
     {
-        $user = Auth::requireLoginApi();
+        $user = $this->apiUser(true);
         Csrf::requireValidApi();
         $diagram = $this->loadWritableOr404($args['slug'], $user);
         $this->ensureLock($diagram, $user);
@@ -168,8 +196,22 @@ final class DiagramController
             Response::error('Provide at least one of: source, layout', 400);
         }
 
+        $head = $diagram['head_revision_id'] !== null
+            ? Revision::byId((int) $diagram['head_revision_id'])
+            : null;
+        $oldBytes = ($head ? strlen((string) $head['source']) + strlen((string) ($head['layout'] ?? '')) : 0);
+
         $source = $hasSource ? Json::requireString($body, 'source', self::SOURCE_MAX, true) : null;
         $layout = $hasLayout ? Json::readLayout($body) : null;
+
+        $newSourceBytes = $hasSource ? strlen((string) $source) : ($head ? strlen((string) $head['source']) : 0);
+        $newLayoutBytes = $hasLayout ? strlen((string) ($layout ?? '')) : ($head ? strlen((string) ($head['layout'] ?? '')) : 0);
+        try {
+            $owner = User::byId((int) $diagram['owner_id']) ?? $user;
+            Quota::checkCanReplaceDraft($owner, $user, $oldBytes, $newSourceBytes + $newLayoutBytes);
+        } catch (QuotaExceeded $q) {
+            $this->respondQuota($q);
+        }
 
         try {
             $rev = Revision::updateDraft(
@@ -191,7 +233,7 @@ final class DiagramController
 
     public function patch(array $args): never
     {
-        $user = Auth::requireLoginApi();
+        $user = $this->apiUser(true);
         Csrf::requireValidApi();
         $diagram = $this->loadWritableOr404($args['slug'], $user);
         $body = Json::readBody();
@@ -224,7 +266,7 @@ final class DiagramController
 
     public function undo(array $args): never
     {
-        $user = Auth::requireLoginApi();
+        $user = $this->apiUser(true);
         Csrf::requireValidApi();
         $diagram = $this->loadWritableOr404($args['slug'], $user);
         $this->ensureLock($diagram, $user);
@@ -248,7 +290,7 @@ final class DiagramController
 
     public function redo(array $args): never
     {
-        $user = Auth::requireLoginApi();
+        $user = $this->apiUser(true);
         Csrf::requireValidApi();
         $diagram = $this->loadWritableOr404($args['slug'], $user);
         $this->ensureLock($diagram, $user);
@@ -268,7 +310,7 @@ final class DiagramController
 
     public function checkout(array $args): never
     {
-        $user = Auth::requireLoginApi();
+        $user = $this->apiUser(true);
         Csrf::requireValidApi();
         $diagram = $this->loadWritableOr404($args['slug'], $user);
         $this->ensureLock($diagram, $user);
@@ -290,7 +332,7 @@ final class DiagramController
 
     public function delete(array $args): never
     {
-        $user = Auth::requireLoginApi();
+        $user = $this->apiUser(true);
         Csrf::requireValidApi();
         $diagram = $this->loadWritableOr404($args['slug'], $user);
         // Only owner or admin can delete; shared-edit users cannot.
@@ -305,7 +347,7 @@ final class DiagramController
 
     public function restore(array $args): never
     {
-        $user = Auth::requireLoginApi();
+        $user = $this->apiUser(true);
         Csrf::requireValidApi();
 
         // Restoring a soft-deleted diagram requires bypassing the deleted check;
@@ -354,6 +396,17 @@ final class DiagramController
             Response::error('You do not have edit permission on this diagram', 403);
         }
         return $diagram;
+    }
+
+    private function respondQuota(QuotaExceeded $q): never
+    {
+        Response::json([
+            'error'   => 'quota_exceeded',
+            'kind'    => $q->kind,
+            'limit'   => $q->limit,
+            'current' => $q->current,
+            'message' => $q->getMessage(),
+        ], 413);
     }
 
     /** Atomically claim or refresh the lock for $user. 423 if held by someone else. */

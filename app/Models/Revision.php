@@ -47,15 +47,18 @@ final class Revision
     ): array {
         $pdo = db();
         // SQLite needs IMMEDIATE to acquire write lock atomically.
+        // MySQL uses SELECT ... FOR UPDATE on the diagrams row to serialize.
         $isSqlite = (db()->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite');
         if ($isSqlite) {
             $pdo->exec('BEGIN IMMEDIATE');
+            $forUpdate = '';
         } else {
             $pdo->beginTransaction();
+            $forUpdate = ' FOR UPDATE';
         }
 
         try {
-            $stmt = $pdo->prepare('SELECT head_revision_id FROM diagrams WHERE id = ?');
+            $stmt = $pdo->prepare('SELECT head_revision_id FROM diagrams WHERE id = ?' . $forUpdate);
             $stmt->execute([$diagramId]);
             $currentHead = $stmt->fetchColumn();
             if ($currentHead === false) {
@@ -113,12 +116,14 @@ final class Revision
         $isSqlite = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite';
         if ($isSqlite) {
             $pdo->exec('BEGIN IMMEDIATE');
+            $forUpdate = '';
         } else {
             $pdo->beginTransaction();
+            $forUpdate = ' FOR UPDATE';
         }
 
         try {
-            $stmt = $pdo->prepare('SELECT head_revision_id FROM diagrams WHERE id = ?');
+            $stmt = $pdo->prepare('SELECT head_revision_id FROM diagrams WHERE id = ?' . $forUpdate);
             $stmt->execute([$diagramId]);
             $currentHead = $stmt->fetchColumn();
             if ($currentHead === false) {

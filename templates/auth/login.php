@@ -21,4 +21,10 @@
         </label>
         <button type="submit" class="btn btn-primary">Accedi</button>
     </form>
+    <p class="muted" style="margin-top:1rem">
+        <a href="/password-reset">Password dimenticata?</a>
+        <?php if (\App\Config::bool('SIGNUP_ENABLED', true)): ?>
+            &nbsp;·&nbsp; <a href="/signup">Crea un account</a>
+        <?php endif; ?>
+    </p>
 </div>

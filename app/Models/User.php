@@ -100,4 +100,28 @@ final class User
     {
         return !empty($user['disabled_at']);
     }
+
+    public static function isEmailVerified(array $user): bool
+    {
+        return !empty($user['email_verified_at']);
+    }
+
+    public static function markEmailVerified(int $id): void
+    {
+        $stmt = db()->prepare(
+            'UPDATE users SET email_verified_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+             WHERE id = ? AND email_verified_at IS NULL'
+        );
+        $stmt->execute([$id]);
+    }
+
+    public static function createSelfService(string $email, string $passwordHash, string $displayName): int
+    {
+        $stmt = db()->prepare(
+            "INSERT INTO users (email, password_hash, display_name, role, email_verified_at)
+             VALUES (?, ?, ?, 'user', NULL)"
+        );
+        $stmt->execute([strtolower($email), $passwordHash, $displayName]);
+        return (int) db()->lastInsertId();
+    }
 }

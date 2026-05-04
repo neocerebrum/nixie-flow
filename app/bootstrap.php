@@ -43,15 +43,17 @@ set_exception_handler(function (\Throwable $e) use ($debug): void {
 if (PHP_SAPI !== 'cli') {
     $sessionName = App\Config::get('SESSION_NAME', 'aquata_sid');
     $sessionLifetime = App\Config::int('SESSION_LIFETIME', 86400);
+    $secureCookie = App\Http::isHttps();
     session_name($sessionName);
     session_set_cookie_params([
         'lifetime' => $sessionLifetime,
         'path'     => '/',
         'httponly' => true,
         'samesite' => 'Lax',
-        'secure'   => (($_SERVER['HTTPS'] ?? '') === 'on'),
+        'secure'   => $secureCookie,
     ]);
     session_start();
+    App\Response::applySecurityHeaders();
 }
 
 function db(): PDO

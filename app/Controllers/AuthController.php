@@ -51,6 +51,9 @@ final class AuthController
             case 'disabled':
                 self::flash('error', 'Account disabilitato. Contatta un amministratore.');
                 Response::redirect('/login');
+            case 'unverified':
+                self::flash('error', 'Email non verificata. Controlla la tua casella o richiedi un nuovo link.');
+                Response::redirect('/signup/check-email');
             case 'invalid':
             default:
                 self::flash('error', 'Email o password non corretti.');

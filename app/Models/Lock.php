@@ -56,13 +56,15 @@ final class Lock
         $isSqlite = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite';
         if ($isSqlite) {
             $pdo->exec('BEGIN IMMEDIATE');
+            $forUpdate = '';
         } else {
             $pdo->beginTransaction();
+            $forUpdate = ' FOR UPDATE';
         }
 
         try {
             $stmt = $pdo->prepare(
-                'SELECT id, edit_lock_user, edit_lock_at FROM diagrams WHERE id = ?'
+                'SELECT id, edit_lock_user, edit_lock_at FROM diagrams WHERE id = ?' . $forUpdate
             );
             $stmt->execute([$diagramId]);
             $row = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -104,13 +106,15 @@ final class Lock
         $isSqlite = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite';
         if ($isSqlite) {
             $pdo->exec('BEGIN IMMEDIATE');
+            $forUpdate = '';
         } else {
             $pdo->beginTransaction();
+            $forUpdate = ' FOR UPDATE';
         }
 
         try {
             $stmt = $pdo->prepare(
-                'SELECT id, edit_lock_user, edit_lock_at FROM diagrams WHERE id = ?'
+                'SELECT id, edit_lock_user, edit_lock_at FROM diagrams WHERE id = ?' . $forUpdate
             );
             $stmt->execute([$diagramId]);
             $row = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -148,13 +152,15 @@ final class Lock
         $isSqlite = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite';
         if ($isSqlite) {
             $pdo->exec('BEGIN IMMEDIATE');
+            $forUpdate = '';
         } else {
             $pdo->beginTransaction();
+            $forUpdate = ' FOR UPDATE';
         }
 
         try {
             $stmt = $pdo->prepare(
-                'SELECT edit_lock_user FROM diagrams WHERE id = ?'
+                'SELECT edit_lock_user FROM diagrams WHERE id = ?' . $forUpdate
             );
             $stmt->execute([$diagramId]);
             $holder = $stmt->fetchColumn();

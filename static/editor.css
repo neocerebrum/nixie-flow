@@ -198,28 +198,28 @@ body.connecting .node.connect-source > *:first-child {
 body.deleting .node { cursor: not-allowed; }
 body.deleting .node:hover > *:first-child { stroke: #bf616a; stroke-width: 3px; }
 body.deleting-edge g.edgePaths path { cursor: not-allowed; }
-body.deleting-edge g.edgePaths path:hover { stroke: #bf616a !important; stroke-width: 5px !important; }
+body.deleting-edge g.edgePaths path:hover { stroke: #c0392b !important; stroke-width: 5px !important; }
 body.deleting-edge g.edgeLabels > g { cursor: not-allowed; }
 body.deleting-edge g.edgeLabels > g:hover rect,
 body.deleting-edge g.edgeLabels > g:hover .edgeLabel { outline: 2px solid #bf616a; }
 
 .node.selected > *:first-child {
-    stroke: #88c0d0 !important; stroke-width: 3px !important;
-    stroke-dasharray: 4,3 !important;
+    stroke: #c0392b !important; stroke-width: 3px !important;
+    stroke-dasharray: none !important;
 }
 
 g.cluster:hover > *:first-child { filter: brightness(1.15); }
 g.cluster.selected > *:first-child {
-    stroke: #88c0d0 !important; stroke-width: 3px !important;
-    stroke-dasharray: 4,3 !important;
+    stroke: #c0392b !important; stroke-width: 3px !important;
+    stroke-dasharray: none !important;
 }
 body.deleting g.cluster:hover > *:first-child {
-    stroke: #bf616a !important; stroke-width: 3px !important;
+    stroke: #c0392b !important; stroke-width: 3px !important;
 }
 
-/* Edge selection: thicker cyan stroke; overrides Mermaid's per-edge stroke */
+/* Edge selection: red stroke, slightly thicker; overrides Mermaid's per-edge stroke */
 #diagram path.flowchart-link.selected {
-    stroke: #88c0d0 !important;
+    stroke: #c0392b !important;
     stroke-width: 3.5px !important;
 }
 

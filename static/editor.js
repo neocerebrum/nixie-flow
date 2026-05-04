@@ -64,11 +64,9 @@
   const reloadBtn = document.getElementById("reloadBtn");
   const resetBtn = document.getElementById("resetBtn");
   const addNodeBtn = document.getElementById("addNodeBtn");
-  const delNodeBtn = document.getElementById("delNodeBtn");
   const addEdgeBtn = document.getElementById("addEdgeBtn");
-  const delEdgeBtn = document.getElementById("delEdgeBtn");
   const addSubgraphBtn = document.getElementById("addSubgraphBtn");
-  const delSubgraphBtn = document.getElementById("delSubgraphBtn");
+  const deleteBtn = document.getElementById("deleteBtn");
   const toggleEdgeStyleBtn = document.getElementById("toggleEdgeStyleBtn");
   const exportBtn = document.getElementById("exportBtn");
   const saveBtn = document.getElementById("saveBtn");
@@ -460,15 +458,12 @@
       if (clusterMap[selectedClusterId]) clusterMap[selectedClusterId].g.classList.add("selected");
       else selectedClusterId = null;
     }
-    updateAddSubgraphBtnState();
     if (selectedEdgeKey) {
       const e = findEdgeByKey(selectedEdgeKey);
       if (e) e.path.classList.add("selected");
-      else {
-        selectedEdgeKey = null;
-        if (toggleEdgeStyleBtn) toggleEdgeStyleBtn.disabled = true;
-      }
+      else selectedEdgeKey = null;
     }
+    updateToolbarState();
     if (!skipSourceSync) setSourceValue(currentSource);
     setSourceValidity(true);
   }
@@ -643,10 +638,10 @@
   }
 
   function nodeCenter(id) {
-    const n = nodeMap[id];
-    if (!n) return null;
-    const t = getWorldTranslate(n.g);
-    return { x: t.x + n.centerLocal.x, y: t.y + n.centerLocal.y };
+    const info = endpointInfo(id);
+    if (!info) return null;
+    const t = getWorldTranslate(info.g);
+    return { x: t.x + info.centerLocal.x, y: t.y + info.centerLocal.y };
   }
 
   // Detect the primitive shape used by Mermaid for this node, so edges can clip
@@ -965,10 +960,7 @@
         if (ev.button !== 0) return;
         ev.preventDefault();
         ev.stopPropagation();
-        if (connectingState === "delete-subgraph") {
-          handleDeleteSubgraphClick(id);
-          return;
-        }
+        if (connectingState === "edge-target") { handleConnectClick(id); return; }
         if (connectingState) return;
         startClusterDrag(ev, svgEl, id);
       });
@@ -1425,8 +1417,10 @@
   }
 
   function addEdgeToSource(source, src, tgt, label) {
-    if (!nodeMap[src]) return { ok: false, error: `source '${src}' non esiste` };
-    if (!nodeMap[tgt]) return { ok: false, error: `target '${tgt}' non esiste` };
+    const srcExists = !!(nodeMap[src] || clusterMap[src]);
+    const tgtExists = !!(nodeMap[tgt] || clusterMap[tgt]);
+    if (!srcExists) return { ok: false, error: `source '${src}' non esiste` };
+    if (!tgtExists) return { ok: false, error: `target '${tgt}' non esiste` };
     if (/[|\n]/.test(label)) return { ok: false, error: "edge label: niente | o newline" };
     const arrow = label ? `-->|${label}|` : `-->`;
     const line = `    ${src} ${arrow} ${tgt}`;
@@ -1622,7 +1616,6 @@
   }
 
   async function handleDeleteSubgraphClick(id) {
-    cancelConnectMode();
     if (!confirm(`Eliminare il subgraph '${id}' (i contenuti restano)?`)) return;
     let result = deleteSubgraphFromSource(currentSource, id);
     if (!result.ok) { setStatus(`delete subgraph: ${result.error}`, true); return; }
@@ -1666,11 +1659,6 @@
       for (const t of targets) {
         if (t === edge.label) t.style.pointerEvents = "auto";
         t.addEventListener("click", (ev) => {
-          if (connectingState === "delete-edge") {
-            ev.stopPropagation(); ev.preventDefault();
-            handleDeleteEdgeClick(edge);
-            return;
-          }
           if (connectingState) return;
           ev.stopPropagation(); ev.preventDefault();
           toggleEdgeSelection(edge);
@@ -1685,7 +1673,6 @@
   }
 
   async function handleDeleteEdgeClick(edge) {
-    cancelConnectMode();
     const label = `${edge.source} → ${edge.target}` +
       (edge.ordinal > 0 ? ` (#${edge.ordinal + 1})` : "");
     if (!confirm(`Eliminare la freccia ${label}?`)) return;
@@ -1693,54 +1680,71 @@
     if (!result.ok) { setStatus(`delete edge: ${result.error}`, true); return; }
     currentSource = result.source;
     markDirtySource();
+    deselectEdge();
     await renderDiagram();
     pushHistory();
     const warn = result.chainLine ? " (era in una chain: rimossa l'intera riga)" : "";
     setStatus(`− edge ${label}${warn}`);
   }
 
+  // Batch-deletes the currently selected nodes (with confirm). Shared by the
+  // Delete button and the Delete/Backspace keys.
+  async function deleteSelectedNodes() {
+    if (selectedNodeIds.size === 0) return;
+    if (!requireValidSource("rimuovi nodo")) return;
+    const ids = [...selectedNodeIds];
+    const label = ids.length === 1 ? `il nodo '${ids[0]}'` : `${ids.length} nodi`;
+    if (!confirm(`Eliminare ${label} e tutti i riferimenti?`)) return;
+    let next = currentSource, ok = 0, errs = [];
+    for (const id of ids) {
+      const r = deleteNodeFromSource(next, id);
+      if (r.ok) {
+        next = r.source; ok++;
+        if (positions[id] !== undefined) { delete positions[id]; markDirtyLayout(); }
+      } else errs.push(`${id}: ${r.error}`);
+    }
+    if (ok > 0) {
+      currentSource = next;
+      markDirtySource();
+      deselectNode();
+      await renderDiagram();
+      pushHistory();
+      setStatus(ids.length === 1 ? `− node ${ids[0]}` : `− ${ok}/${ids.length} nodi${errs.length ? " err: " + errs.join("; ") : ""}`,
+                errs.length > 0);
+    } else if (errs.length) {
+      setStatus(`delete: ${errs.join("; ")}`, true);
+    }
+  }
+
+  // Unified delete: dispatches to the right handler based on selection kind.
+  async function applyDelete() {
+    if (connectingState) return;
+    const kind = selectionKind();
+    if (kind === "node") return deleteSelectedNodes();
+    if (kind === "edge") {
+      const edge = findEdgeByKey(selectedEdgeKey);
+      if (edge) return handleDeleteEdgeClick(edge);
+      return;
+    }
+    if (kind === "subgraph") return handleDeleteSubgraphClick(selectedClusterId);
+  }
+
   async function handleConnectClick(id) {
-    if (connectingState === "delete") {
-      cancelConnectMode();
-      if (!confirm(`Eliminare il nodo '${id}' e tutti i suoi riferimenti?`)) return;
-      const result = deleteNodeFromSource(currentSource, id);
-      if (!result.ok) { setStatus(`delete: ${result.error}`, true); return; }
-      currentSource = result.source;
-      markDirtySource();
-      if (positions[id] !== undefined) { delete positions[id]; markDirtyLayout(); }
-      await renderDiagram();
-      pushHistory();
-      const parts = [];
-      if (result.removedDecl) parts.push("decl");
-      if (result.removedOther) parts.push(`${result.removedOther} refs`);
-      setStatus(`− node ${id} (rimossi: ${parts.join(" + ")})`);
-      return;
-    }
-    if (connectingState === "source") {
-      connectSource = id;
-      nodeMap[id].g.classList.add("connect-source");
-      connectingState = "target";
-      const svgEl = diagramEl.querySelector("svg");
-      _ghostCleanup = startGhostEdge(svgEl, id);
-      setStatus(`source: ${id}. Ora clicca il target.`);
-      return;
-    }
-    if (connectingState === "target") {
-      if (_ghostCleanup) { _ghostCleanup(); _ghostCleanup = null; }
-      const src = connectSource, tgt = id;
-      cancelConnectMode();
-      if (src === tgt) { setStatus(`self-loop ${src}→${tgt} non supportato`, true); return; }
-      const labelRaw = prompt(`Label della freccia ${src} → ${tgt} (vuoto = senza label):`, "");
-      if (labelRaw === null) { setStatus("creazione edge annullata"); return; }
-      const label = labelRaw.trim();
-      const result = addEdgeToSource(currentSource, src, tgt, label);
-      if (!result.ok) { setStatus(`add edge: ${result.error}`, true); return; }
-      currentSource = result.source;
-      markDirtySource();
-      await renderDiagram();
-      pushHistory();
-      setStatus(`+ edge ${src} → ${tgt}${label ? ` |${label}|` : ""}`);
-    }
+    if (connectingState !== "edge-target") return;
+    if (_ghostCleanup) { _ghostCleanup(); _ghostCleanup = null; }
+    const src = connectSource, tgt = id;
+    cancelConnectMode();
+    if (src === tgt) { setStatus(`self-loop ${src}→${tgt} non supportato`, true); return; }
+    const labelRaw = prompt(`Label della freccia ${src} → ${tgt} (vuoto = senza label):`, "");
+    if (labelRaw === null) { setStatus("creazione edge annullata"); return; }
+    const label = labelRaw.trim();
+    const result = addEdgeToSource(currentSource, src, tgt, label);
+    if (!result.ok) { setStatus(`add edge: ${result.error}`, true); return; }
+    currentSource = result.source;
+    markDirtySource();
+    await renderDiagram();
+    pushHistory();
+    setStatus(`+ edge ${src} → ${tgt}${label ? ` |${label}|` : ""}`);
   }
 
   function startGhostEdge(svgEl, srcId) {
@@ -1769,59 +1773,40 @@
     };
   }
 
+  // +Edge is selection-driven: a single source node must already be selected
+  // when the user clicks the button. Clicking again while in target-pick mode
+  // cancels.
   function startConnectMode() {
-    if (connectingState) { cancelConnectMode(); return; }
+    if (connectingState === "edge-target") { cancelConnectMode(); return; }
     if (!requireValidSource("+ Edge")) return;
-    connectingState = "source"; connectSource = null;
+    let src = null;
+    if (selectedNodeIds.size === 1) src = [...selectedNodeIds][0];
+    else if (selectedClusterId) src = selectedClusterId;
+    else {
+      setStatus("seleziona prima 1 nodo o 1 subgraph come sorgente", true);
+      return;
+    }
+    connectingState = "edge-target";
+    connectSource = src;
     document.body.classList.add("connecting");
+    if (nodeMap[src]) nodeMap[src].g.classList.add("connect-source");
+    else if (clusterMap[src]) clusterMap[src].g.classList.add("connect-source");
     addEdgeBtn.classList.add("active"); addEdgeBtn.textContent = "Cancel";
-    setStatus("clicca il nodo sorgente (Esc per annullare)");
-  }
-  function startDeleteMode() {
-    if (connectingState) { cancelConnectMode(); return; }
-    if (!requireValidSource("− Node")) return;
-    connectingState = "delete";
-    document.body.classList.add("deleting");
-    delNodeBtn.classList.add("active", "danger"); delNodeBtn.textContent = "Cancel";
-    setStatus("clicca il nodo da eliminare (Esc per annullare)");
-  }
-  function startDeleteEdgeMode() {
-    if (connectingState) { cancelConnectMode(); return; }
-    if (!requireValidSource("− Edge")) return;
-    connectingState = "delete-edge";
-    document.body.classList.add("deleting-edge");
-    delEdgeBtn.classList.add("active", "danger"); delEdgeBtn.textContent = "Cancel";
-    setStatus("clicca la freccia da eliminare (Esc per annullare)");
-  }
-  function startDeleteSubgraphMode() {
-    if (connectingState) { cancelConnectMode(); return; }
-    if (!requireValidSource("− Subgraph")) return;
-    if (Object.keys(clusterMap).length === 0) {
-      setStatus("nessun subgraph nel diagramma", true); return;
-    }
-    connectingState = "delete-subgraph";
-    document.body.classList.add("deleting");
-    if (delSubgraphBtn) {
-      delSubgraphBtn.classList.add("active", "danger");
-      delSubgraphBtn.textContent = "Cancel";
-    }
-    setStatus("clicca il subgraph da eliminare (Esc per annullare)");
+    const svgEl = diagramEl.querySelector("svg");
+    _ghostCleanup = startGhostEdge(svgEl, src);
+    setStatus(`source: ${src}. Ora clicca il target (Esc per annullare).`);
   }
   function cancelConnectMode() {
     if (_ghostCleanup) { _ghostCleanup(); _ghostCleanup = null; }
     connectingState = null;
-    if (connectSource && nodeMap[connectSource]) {
-      nodeMap[connectSource].g.classList.remove("connect-source");
+    if (connectSource) {
+      if (nodeMap[connectSource]) nodeMap[connectSource].g.classList.remove("connect-source");
+      else if (clusterMap[connectSource]) clusterMap[connectSource].g.classList.remove("connect-source");
     }
     connectSource = null;
-    document.body.classList.remove("connecting", "deleting", "deleting-edge");
+    document.body.classList.remove("connecting");
     addEdgeBtn.classList.remove("active"); addEdgeBtn.textContent = "+ Edge";
-    delNodeBtn.classList.remove("active", "danger"); delNodeBtn.textContent = "− Node";
-    delEdgeBtn.classList.remove("active", "danger"); delEdgeBtn.textContent = "− Edge";
-    if (delSubgraphBtn) {
-      delSubgraphBtn.classList.remove("active", "danger");
-      delSubgraphBtn.textContent = "− Subgraph";
-    }
+    updateToolbarState();
     setStatus("");
   }
 
@@ -1924,7 +1909,7 @@
         selectedNodeIds.add(id);
         if (nodeMap[id]) nodeMap[id].g.classList.add("selected");
       }
-      updateAddSubgraphBtnState();
+      updateToolbarState();
       const n = selectedNodeIds.size;
       setStatus(n === 0 ? "" : (n === 1 ? `selected: ${[...selectedNodeIds][0]}` : `selected: ${n} nodi`));
       return;
@@ -1939,7 +1924,7 @@
     selectedNodeIds.clear();
     selectedNodeIds.add(id);
     if (nodeMap[id]) nodeMap[id].g.classList.add("selected");
-    updateAddSubgraphBtnState();
+    updateToolbarState();
     setStatus(`selected: ${id}`);
   }
   function deselectNode() {
@@ -1947,11 +1932,38 @@
       if (nodeMap[sid]) nodeMap[sid].g.classList.remove("selected");
     }
     selectedNodeIds.clear();
-    updateAddSubgraphBtnState();
+    updateToolbarState();
   }
-  function updateAddSubgraphBtnState() {
-    if (!addSubgraphBtn) return;
-    addSubgraphBtn.disabled = selectedNodeIds.size < 2;
+
+  // Selection bus: derive the current selection kind from state.
+  // Returns one of: 'node' (1+ nodes), 'edge' (1 edge), 'subgraph' (1 subgraph), null.
+  function selectionKind() {
+    if (selectedNodeIds.size > 0) return "node";
+    if (selectedEdgeKey) return "edge";
+    if (selectedClusterId) return "subgraph";
+    return null;
+  }
+
+  // Single source of truth for toolbar enable/disable. Called after every
+  // selection change. Skips the "+Edge target step" because in that mode the
+  // button is repurposed as Cancel and stays clickable.
+  function updateToolbarState() {
+    if (connectingState === "edge-target") return; // managed by startConnectMode
+    const kind = selectionKind();
+    const nNodes = selectedNodeIds.size;
+    if (addEdgeBtn)      addEdgeBtn.disabled      = !((kind === "node" && nNodes === 1) || kind === "subgraph");
+    if (addSubgraphBtn)  addSubgraphBtn.disabled  = !(kind === "node" && nNodes >= 2);
+    if (deleteBtn)       deleteBtn.disabled       = (kind === null);
+    if (toggleEdgeStyleBtn) toggleEdgeStyleBtn.disabled = (kind !== "edge");
+    // Palette: Colore agisce su nodi e subgraph; Forma solo su nodi.
+    const colorEnabled = (kind === "node") || (kind === "subgraph");
+    const shapeEnabled = (kind === "node");
+    if (colorPaletteEl) {
+      for (const b of colorPaletteEl.querySelectorAll("button")) b.disabled = !colorEnabled;
+    }
+    if (shapePaletteEl) {
+      for (const b of shapePaletteEl.querySelectorAll("button")) b.disabled = !shapeEnabled;
+    }
   }
 
   function toggleClusterSelection(id) {
@@ -1963,6 +1975,7 @@
     }
     selectedClusterId = id;
     clusterMap[id].g.classList.add("selected");
+    updateToolbarState();
     setStatus(`selected subgraph: ${id}`);
   }
   function deselectCluster() {
@@ -1970,6 +1983,7 @@
       clusterMap[selectedClusterId].g.classList.remove("selected");
     }
     selectedClusterId = null;
+    updateToolbarState();
   }
 
   function edgeKey(edge) { return `${edge.source}|${edge.target}|${edge.ordinal}`; }
@@ -1990,7 +2004,7 @@
     edge.path.classList.add("selected");
     const lbl = `${edge.source} → ${edge.target}` + (edge.ordinal > 0 ? ` (#${edge.ordinal + 1})` : "");
     setStatus(`selected edge: ${lbl}`);
-    if (toggleEdgeStyleBtn) toggleEdgeStyleBtn.disabled = false;
+    updateToolbarState();
   }
   function deselectEdge() {
     if (selectedEdgeKey) {
@@ -1998,7 +2012,7 @@
       if (prev) prev.path.classList.remove("selected");
     }
     selectedEdgeKey = null;
-    if (toggleEdgeStyleBtn) toggleEdgeStyleBtn.disabled = true;
+    updateToolbarState();
   }
 
   function setNodeStyleInSource(source, nodeId, styleStr) {
@@ -2907,14 +2921,12 @@
   });
   resetBtn.addEventListener("click", resetLayout);
   addNodeBtn.addEventListener("click", openAddNodeModal);
-  delNodeBtn.addEventListener("click", startDeleteMode);
   addEdgeBtn.addEventListener("click", startConnectMode);
-  delEdgeBtn.addEventListener("click", startDeleteEdgeMode);
   if (toggleEdgeStyleBtn) {
     toggleEdgeStyleBtn.addEventListener("click", applyToggleEdgeStyle);
   }
-  if (delSubgraphBtn) delSubgraphBtn.addEventListener("click", startDeleteSubgraphMode);
   if (addSubgraphBtn) addSubgraphBtn.addEventListener("click", applyAddSubgraph);
+  if (deleteBtn) deleteBtn.addEventListener("click", applyDelete);
   exportBtn.addEventListener("click", exportSource);
   saveBtn.addEventListener("click", save);
   fitBtn.addEventListener("click", fitView);
@@ -3015,32 +3027,7 @@
     }
     if (e.key === "0" || e.key === "Home") { e.preventDefault(); fitView(); return; }
     if ((e.key === "Delete" || e.key === "Backspace")) {
-      if (selectedNodeIds.size > 0 && requireValidSource("rimuovi nodo")) {
-        e.preventDefault();
-        const ids = [...selectedNodeIds];
-        const label = ids.length === 1 ? `il nodo '${ids[0]}'` : `${ids.length} nodi`;
-        if (!confirm(`Eliminare ${label} e tutti i riferimenti?`)) return;
-        let next = currentSource, ok = 0, errs = [];
-        for (const id of ids) {
-          const r = deleteNodeFromSource(next, id);
-          if (r.ok) {
-            next = r.source; ok++;
-            if (positions[id] !== undefined) { delete positions[id]; markDirtyLayout(); }
-          } else errs.push(`${id}: ${r.error}`);
-        }
-        if (ok > 0) {
-          currentSource = next;
-          markDirtySource();
-          deselectNode();
-          renderDiagram().then(() => {
-            pushHistory();
-            setStatus(ids.length === 1 ? `− node ${ids[0]}` : `− ${ok}/${ids.length} nodi${errs.length ? " err: " + errs.join("; ") : ""}`,
-                      errs.length > 0);
-          });
-        } else if (errs.length) {
-          setStatus(`delete: ${errs.join("; ")}`, true);
-        }
-      }
+      if (selectionKind() !== null) { e.preventDefault(); applyDelete(); }
       return;
     }
     if (e.key === "+" || (e.key === "=" && e.shiftKey === false)) { e.preventDefault(); zoomStep(1.2); return; }
@@ -3070,6 +3057,7 @@
   initSourceEditor();
   updateUndoRedoBtns();
   updateDirtyBadge();
+  updateToolbarState();
 
   (async () => {
     try {

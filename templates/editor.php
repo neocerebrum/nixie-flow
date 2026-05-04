@@ -69,11 +69,9 @@
     <div id="canvas">
         <div id="canvasPad" class="canvas-pad">
             <button id="addNodeBtn" title="Aggiungi nodo">+ Nodo</button>
-            <button id="delNodeBtn" title="Rimuovi nodo">− Nodo</button>
-            <button id="addEdgeBtn" title="Collega due nodi">+ Edge</button>
-            <button id="delEdgeBtn" title="Rimuovi edge">− Edge</button>
-            <button id="addSubgraphBtn" title="Crea subgraph dai nodi selezionati (Shift+click per multiselezione)" disabled>+ Subgraph</button>
-            <button id="delSubgraphBtn" title="Rimuovi subgraph (mantiene il contenuto)">− Subgraph</button>
+            <button id="addEdgeBtn" title="Collega: seleziona prima un nodo sorgente, poi clicca qui e infine il target" disabled>+ Edge</button>
+            <button id="addSubgraphBtn" title="Crea subgraph dai nodi selezionati (≥2, Shift+click per multiselezione)" disabled>+ Subgraph</button>
+            <button id="deleteBtn" class="danger" title="Elimina la selezione (nodo, edge o subgraph)" disabled>Elimina</button>
         </div>
         <div id="diagram"></div>
     </div>

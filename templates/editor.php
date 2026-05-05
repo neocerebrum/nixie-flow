@@ -5,7 +5,7 @@
 <html lang="it">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
     <title><?= e($diagram['title']) ?> — Aquata</title>
     <meta name="csrf-token" content="<?= e(\App\Csrf::token()) ?>">
     <meta name="aquata-slug" content="<?= e($diagram['slug']) ?>">

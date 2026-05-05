@@ -969,7 +969,7 @@
 
   function attachDragHandlers(svgEl) {
     for (const [id, n] of Object.entries(nodeMap)) {
-      n.g.addEventListener("mousedown", (ev) => startDrag(ev, svgEl, id));
+      n.g.addEventListener("pointerdown", (ev) => startDrag(ev, svgEl, id));
     }
   }
 
@@ -978,9 +978,12 @@
       const target = c.bg || c.g;
       target.style.cursor = "pointer";
       target.style.pointerEvents = "auto";
-      target.addEventListener("mousedown", (ev) => {
+      target.addEventListener("pointerdown", (ev) => {
         if (ev.target.closest("g.node")) return;
-        if (ev.button !== 0) return;
+        // Mouse: ignore non-primary buttons. Touch/pen: button is 0 only on
+        // the primary contact, which is what we want.
+        if (ev.pointerType === "mouse" && ev.button !== 0) return;
+        if (!ev.isPrimary) return;
         if (isReadOnly) return; // spectator: no selection / drag
         ev.preventDefault();
         ev.stopPropagation();
@@ -994,6 +997,7 @@
   function startClusterDrag(ev, svgEl, id) {
     const c = clusterMap[id];
     if (!c) return;
+    const pointerId = ev.pointerId;
     const members = findSubgraphMembers(currentSource, id);
     const memberStates = [];
     for (const mid of members) {
@@ -1007,6 +1011,7 @@
     let moved = false;
 
     function onMove(e) {
+      if (e.pointerId !== pointerId) return;
       const cur = screenToSvg(svgEl, e.clientX, e.clientY);
       const dx = cur.x - start.x;
       const dy = cur.y - start.y;
@@ -1021,9 +1026,11 @@
       if (c.incomingEdges) for (const e of c.incomingEdges) rerouteEdge(e);
       if (c.outgoingEdges) for (const e of c.outgoingEdges) rerouteEdge(e);
     }
-    function onUp() {
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
+    function onUp(e) {
+      if (e && e.pointerId !== pointerId) return;
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      document.removeEventListener("pointercancel", onUp);
       if (!moved) {
         toggleClusterSelection(id);
         return;
@@ -1042,8 +1049,9 @@
         setStatus(`subgraph ${id}: spostati ${changed} nodi`, false);
       }
     }
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+    document.addEventListener("pointercancel", onUp);
   }
 
   function screenToSvg(svgEl, clientX, clientY) {
@@ -1062,15 +1070,21 @@
       return;
     }
     if (isReadOnly) return; // spectator: no selection / drag
+    if (ev.pointerType === "mouse" && ev.button !== 0) return;
+    if (!ev.isPrimary) return;
     ev.preventDefault();
+    const pointerId = ev.pointerId;
     const additive = ev.shiftKey || ev.ctrlKey || ev.metaKey;
     if (additive) {
-      // Shift/Ctrl/Cmd+click: don't drag, just toggle selection on mouseup.
-      function onUpAdditive() {
-        document.removeEventListener("mouseup", onUpAdditive);
+      // Shift/Ctrl/Cmd+click: don't drag, just toggle selection on pointerup.
+      function onUpAdditive(e) {
+        if (e && e.pointerId !== pointerId) return;
+        document.removeEventListener("pointerup", onUpAdditive);
+        document.removeEventListener("pointercancel", onUpAdditive);
         toggleNodeSelection(id, true);
       }
-      document.addEventListener("mouseup", onUpAdditive);
+      document.addEventListener("pointerup", onUpAdditive);
+      document.addEventListener("pointercancel", onUpAdditive);
       return;
     }
     const n = nodeMap[id];
@@ -1079,6 +1093,7 @@
     const origin = getNodeTranslate(n.g);
 
     function onMove(e) {
+      if (e.pointerId !== pointerId) return;
       const cur = screenToSvg(svgEl, e.clientX, e.clientY);
       const nx = origin.x + (cur.x - start.x);
       const ny = origin.y + (cur.y - start.y);
@@ -1086,7 +1101,8 @@
       rerouteNodeEdges(id);
       updateAllClusterBounds();
     }
-    function onUp() {
+    function onUp(e) {
+      if (e && e.pointerId !== pointerId) return;
       n.g.classList.remove("dragging");
       const t = getNodeTranslate(n.g);
       if (t.x !== origin.x || t.y !== origin.y) {
@@ -1097,11 +1113,13 @@
       } else {
         toggleNodeSelection(id, false);
       }
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      document.removeEventListener("pointercancel", onUp);
     }
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+    document.addEventListener("pointercancel", onUp);
   }
 
   // ── Label editing ────────────────────────────────────────────────────────
@@ -1958,9 +1976,9 @@
       const pt = screenToSvg(svgEl, e.clientX, e.clientY);
       line.setAttribute("x2", pt.x); line.setAttribute("y2", pt.y);
     }
-    document.addEventListener("mousemove", onMove);
+    document.addEventListener("pointermove", onMove);
     return function cleanup() {
-      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("pointermove", onMove);
       if (line.parentNode) line.parentNode.removeChild(line);
     };
   }
@@ -2040,32 +2058,130 @@
     }
     if (viewState === null) viewState = { ...initialViewBox };
     applyViewState(svgEl);
-    svgEl.addEventListener("mousedown", (e) => {
+
+    // Unified pan + pinch-zoom using Pointer Events. Tracking up to 2
+    // simultaneous pointers covers mouse pan, single-finger pan, and
+    // two-finger pinch-zoom on touch devices. CSS sets `touch-action: none`
+    // on #diagram so the browser's own gestures (page scroll, page pinch)
+    // don't compete with these handlers.
+    const activePointers = new Map(); // pointerId -> {clientX, clientY}
+    let mode = null;     // 'pan' | 'pinch' | null
+    let panStart = null; // {rect, x, y, vx, vy}
+    let pinchStart = null; // {dist, rect, anchorVX, anchorVY, vw, vh}
+    let docOn = false;
+
+    function ensureDoc() {
+      if (docOn) return;
+      document.addEventListener("pointermove", onPointerMove);
+      document.addEventListener("pointerup", onPointerUp);
+      document.addEventListener("pointercancel", onPointerUp);
+      docOn = true;
+    }
+    function clearDoc() {
+      if (!docOn) return;
+      document.removeEventListener("pointermove", onPointerMove);
+      document.removeEventListener("pointerup", onPointerUp);
+      document.removeEventListener("pointercancel", onPointerUp);
+      docOn = false;
+    }
+
+    function startPinch() {
+      const pts = [...activePointers.values()];
+      const dx = pts[0].clientX - pts[1].clientX;
+      const dy = pts[0].clientY - pts[1].clientY;
+      const dist = Math.hypot(dx, dy);
+      const cx = (pts[0].clientX + pts[1].clientX) / 2;
+      const cy = (pts[0].clientY + pts[1].clientY) / 2;
+      const rect = svgEl.getBoundingClientRect();
+      const mx = cx - rect.left, my = cy - rect.top;
+      pinchStart = {
+        dist: dist > 1 ? dist : 1, rect,
+        vw: viewState.width, vh: viewState.height,
+        // Anchor: the view-space coord under the midpoint when pinch began;
+        // we keep this point pinned under the fingers' midpoint as they move.
+        anchorVX: viewState.x + mx * viewState.width / rect.width,
+        anchorVY: viewState.y + my * viewState.height / rect.height,
+      };
+    }
+    function startPanFromPointer(p) {
+      mode = "pan";
+      const rect = svgEl.getBoundingClientRect();
+      panStart = { rect, x: p.clientX, y: p.clientY, vx: viewState.x, vy: viewState.y };
+      svgEl.classList.add("panning");
+    }
+
+    function onPointerDown(e) {
+      // Background-only: drags on nodes/edges/clusters/labels are handled
+      // by their own pointerdown listeners.
       if (e.target.closest("g.node")) return;
+      if (e.target.closest("g.cluster")) return;
       if (e.target.closest("g.edgePaths path")) return;
       if (e.target.closest("g.edgeLabels > g")) return;
       if (connectingState) return;
-      if (e.button !== 0) return;
+      if (e.pointerType === "mouse" && e.button !== 0) return;
       e.preventDefault();
-      svgEl.classList.add("panning");
-      const rect = svgEl.getBoundingClientRect();
-      const startX = e.clientX, startY = e.clientY;
-      const startVX = viewState.x, startVY = viewState.y;
-      function onMove(ev) {
-        const dxView = (ev.clientX - startX) * viewState.width / rect.width;
-        const dyView = (ev.clientY - startY) * viewState.height / rect.height;
-        viewState.x = startVX - dxView;
-        viewState.y = startVY - dyView;
+      activePointers.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
+      ensureDoc();
+      if (activePointers.size === 1) {
+        startPanFromPointer(e);
+      } else if (activePointers.size === 2) {
+        svgEl.classList.remove("panning");
+        mode = "pinch";
+        startPinch();
+      }
+    }
+
+    function onPointerMove(e) {
+      if (!activePointers.has(e.pointerId)) return;
+      activePointers.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
+      if (mode === "pan" && activePointers.size === 1) {
+        const rect = panStart.rect;
+        const dxView = (e.clientX - panStart.x) * viewState.width / rect.width;
+        const dyView = (e.clientY - panStart.y) * viewState.height / rect.height;
+        viewState.x = panStart.vx - dxView;
+        viewState.y = panStart.vy - dyView;
+        applyViewState(svgEl);
+        return;
+      }
+      if (mode === "pinch" && activePointers.size === 2) {
+        const pts = [...activePointers.values()];
+        const dx = pts[0].clientX - pts[1].clientX;
+        const dy = pts[0].clientY - pts[1].clientY;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 1) return;
+        const z = dist / pinchStart.dist;
+        const newW = pinchStart.vw / z;
+        const newH = pinchStart.vh / z;
+        const minW = initialViewBox.width / 10;
+        const maxW = initialViewBox.width * 10;
+        if (newW < minW || newW > maxW) return;
+        viewState.width = newW;
+        viewState.height = newH;
+        const cx = (pts[0].clientX + pts[1].clientX) / 2;
+        const cy = (pts[0].clientY + pts[1].clientY) / 2;
+        const rect = pinchStart.rect;
+        const mx = cx - rect.left, my = cy - rect.top;
+        viewState.x = pinchStart.anchorVX - mx * viewState.width / rect.width;
+        viewState.y = pinchStart.anchorVY - my * viewState.height / rect.height;
         applyViewState(svgEl);
       }
-      function onUp() {
+    }
+
+    function onPointerUp(e) {
+      if (!activePointers.has(e.pointerId)) return;
+      activePointers.delete(e.pointerId);
+      if (activePointers.size === 1 && mode === "pinch") {
+        // 2 → 1 finger: gracefully switch back to pan from the survivor.
+        const survivor = [...activePointers.values()][0];
+        startPanFromPointer(survivor);
+      } else if (activePointers.size === 0) {
+        mode = null;
         svgEl.classList.remove("panning");
-        document.removeEventListener("mousemove", onMove);
-        document.removeEventListener("mouseup", onUp);
+        clearDoc();
       }
-      document.addEventListener("mousemove", onMove);
-      document.addEventListener("mouseup", onUp);
-    });
+    }
+
+    svgEl.addEventListener("pointerdown", onPointerDown);
     svgEl.addEventListener("wheel", (e) => {
       e.preventDefault();
       const rect = svgEl.getBoundingClientRect();
@@ -3210,42 +3326,35 @@
   document.getElementById("conflictReloadBtn").addEventListener("click", conflictReload);
   document.getElementById("conflictCancelBtn").addEventListener("click", closeConflictModal);
 
-  resizer.addEventListener("mousedown", (e) => {
-    e.preventDefault();
-    resizer.classList.add("dragging");
-    const startX = e.clientX;
-    const startWidth = sourcePanel.getBoundingClientRect().width;
-    function onMove(ev) {
-      const w = Math.max(120, Math.min(window.innerWidth - 200, startWidth + (ev.clientX - startX)));
-      sourcePanel.style.width = w + "px";
-    }
-    function onUp() {
-      resizer.classList.remove("dragging");
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
-    }
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
-  });
-
-  resizerRight.addEventListener("mousedown", (e) => {
-    e.preventDefault();
-    resizerRight.classList.add("dragging");
-    const startX = e.clientX;
-    const startWidth = notesPanel.getBoundingClientRect().width;
-    function onMove(ev) {
-      // Drag right shrinks the panel; drag left grows it.
-      const w = Math.max(120, Math.min(window.innerWidth - 200, startWidth - (ev.clientX - startX)));
-      notesPanel.style.width = w + "px";
-    }
-    function onUp() {
-      resizerRight.classList.remove("dragging");
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
-    }
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
-  });
+  function attachResizer(handle, panel, side) {
+    handle.addEventListener("pointerdown", (e) => {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      e.preventDefault();
+      const pointerId = e.pointerId;
+      handle.classList.add("dragging");
+      const startX = e.clientX;
+      const startWidth = panel.getBoundingClientRect().width;
+      function onMove(ev) {
+        if (ev.pointerId !== pointerId) return;
+        const delta = ev.clientX - startX;
+        const w = Math.max(120, Math.min(window.innerWidth - 200,
+          side === "left" ? startWidth + delta : startWidth - delta));
+        panel.style.width = w + "px";
+      }
+      function onUp(ev) {
+        if (ev && ev.pointerId !== pointerId) return;
+        handle.classList.remove("dragging");
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        document.removeEventListener("pointercancel", onUp);
+      }
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+      document.addEventListener("pointercancel", onUp);
+    });
+  }
+  attachResizer(resizer, sourcePanel, "left");
+  attachResizer(resizerRight, notesPanel, "right");
 
   toggleNotesPanelBtn.addEventListener("click", () => {
     const collapsed = notesPanel.classList.toggle("collapsed");
@@ -3375,7 +3484,7 @@
     // or hitting save all imply intent to edit here. Each event re-claims
     // active_tab_id so multi-tab handover happens within one heartbeat.
     window.addEventListener("focus", () => claimActiveTab(false));
-    diagramEl.addEventListener("mousedown", () => claimActiveTab(false));
+    diagramEl.addEventListener("pointerdown", () => claimActiveTab(false));
     sourceEditor.addEventListener("focus", () => claimActiveTab(false));
     sourceEditor.addEventListener("input", () => claimActiveTab(false));
 

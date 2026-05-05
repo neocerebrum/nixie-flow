@@ -198,7 +198,13 @@ body.source-invalid #resizer { background: #bf616a; }
 body.readonly #notesTextarea { opacity: 0.55; pointer-events: none; }
 
 #canvas { flex: 1; overflow: hidden; background: #1e2530;
-          position: relative; min-width: 0; }
+          position: relative; min-width: 0;
+          /* Block browser-handled gestures (pinch-zoom, double-tap zoom, scroll)
+           * inside the canvas so our own pointer-event handlers own the touch
+           * stream — pan + pinch-zoom on the diagram, drag on the nodes. */
+          touch-action: none;
+          -webkit-user-select: none; user-select: none; }
+#diagram, #diagram svg { touch-action: none; }
 
 /* Vertical pad on canvas: structural editing buttons */
 .canvas-pad {

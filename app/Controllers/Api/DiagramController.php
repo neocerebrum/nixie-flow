@@ -68,6 +68,14 @@ final class DiagramController
         Response::json([
             'head_revision_id' => $current && $current['source_revision_id'] !== null
                 ? (int) $current['source_revision_id'] : null,
+            // Live working copy — surfaced explicitly so the editor UI can
+            // render it as a distinct top entry in the history list.
+            'current' => $current === null ? null : [
+                'source_revision_id' => $current['source_revision_id'] !== null
+                    ? (int) $current['source_revision_id'] : null,
+                'author_id'  => (int) $current['author_id'],
+                'updated_at' => $diagram['updated_at'],
+            ],
             'revisions' => array_map(static fn($r) => [
                 'id'         => (int) $r['id'],
                 'parent_id'  => $r['parent_id'] !== null ? (int) $r['parent_id'] : null,

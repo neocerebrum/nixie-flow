@@ -975,6 +975,7 @@
       target.addEventListener("mousedown", (ev) => {
         if (ev.target.closest("g.node")) return;
         if (ev.button !== 0) return;
+        if (isReadOnly) return; // spectator: no selection / drag
         ev.preventDefault();
         ev.stopPropagation();
         if (connectingState === "edge-target") { handleConnectClick(id); return; }
@@ -1054,6 +1055,7 @@
       handleConnectClick(id);
       return;
     }
+    if (isReadOnly) return; // spectator: no selection / drag
     ev.preventDefault();
     const additive = ev.shiftKey || ev.ctrlKey || ev.metaKey;
     if (additive) {
@@ -1386,6 +1388,7 @@
       if (!labelEl) continue;
       labelEl.style.cursor = "text";
       labelEl.addEventListener("dblclick", (ev) => {
+        if (isReadOnly) return; // spectator: no label edit
         ev.stopPropagation(); ev.preventDefault();
         startLabelEdit(labelEl, "node", { nodeId: id });
       });
@@ -1395,6 +1398,7 @@
       if (!labelEl) continue;
       labelEl.style.cursor = "text";
       labelEl.addEventListener("dblclick", (ev) => {
+        if (isReadOnly) return; // spectator: no label edit
         ev.stopPropagation(); ev.preventDefault();
         startLabelEdit(labelEl, "subgraph", { subgraphId: id });
       });
@@ -1677,11 +1681,13 @@
         if (t === edge.label) t.style.pointerEvents = "auto";
         t.addEventListener("click", (ev) => {
           if (connectingState) return;
+          if (isReadOnly) return; // spectator: no selection
           ev.stopPropagation(); ev.preventDefault();
           toggleEdgeSelection(edge);
         });
         t.addEventListener("dblclick", (ev) => {
           if (connectingState) return;
+          if (isReadOnly) return; // spectator: no label edit
           ev.stopPropagation(); ev.preventDefault();
           startEdgeLabelEdit(edge);
         });
@@ -2357,8 +2363,9 @@
     selectedNodeIds.clear();
     selectedClusterId = null;
     selectedEdgeKey = null;
-    initialViewBox = null;
-    viewState = null;
+    // Keep viewState/initialViewBox — preserves the viewer's current pan/zoom
+    // across remote-update reloads (poll, checkout, reload). renderDiagram
+    // recomputes initialViewBox from the new geometry but keeps viewState if set.
     history = []; historyPtr = -1;
     return renderDiagram().then(() => pushHistory());
   }
@@ -2423,28 +2430,49 @@
   function renderHistoryList(data) {
     const list = document.getElementById("historyList");
     list.innerHTML = "";
+
+    // Top row: the live working copy (#working). Always shown so the user
+    // can see that edits land here, not on the saved snapshots.
+    if (data.current) {
+      const cur = data.current;
+      const basedOn = cur.source_revision_id ? `basato su #${cur.source_revision_id}` : "(mai salvato)";
+      const row = document.createElement("div");
+      row.className = "history-row is-head";
+      row.innerHTML = `
+        <span class="history-id">#working</span>
+        <span class="history-meta">
+          ${basedOn}
+          ${cur.updated_at ? `• ultimo edit ${escapeHtml(cur.updated_at)}` : ""}
+          • working copy live (autosalvata)
+        </span>
+        <button disabled>in modifica</button>
+      `;
+      list.appendChild(row);
+    }
+
     const revs = (data.revisions || []).slice().reverse();
     if (revs.length === 0) {
-      list.innerHTML = "<p class='muted-small'>Nessuna snapshot — premi Salva per crearne una.</p>";
+      const note = document.createElement("p");
+      note.className = "muted-small";
+      note.textContent = "Nessuna snapshot — premi Salva per crearne una.";
+      list.appendChild(note);
       return;
     }
     for (const r of revs) {
-      const isCurrentSource = r.id === data.head_revision_id;
+      const isBranchPoint = r.id === data.head_revision_id;
       const row = document.createElement("div");
-      row.className = "history-row" + (isCurrentSource ? " is-head" : "");
+      row.className = "history-row" + (isBranchPoint ? " is-branch" : "");
       row.innerHTML = `
         <span class="history-id">#${r.id}</span>
         <span class="history-meta">
           ${r.parent_id ? `← #${r.parent_id}` : "(root)"}
           • ${r.created_at}
           ${r.message ? `• ${escapeHtml(r.message)}` : ""}
+          ${isBranchPoint ? "• branch point di #working" : ""}
         </span>
-        <button data-rev-id="${r.id}" ${isCurrentSource ? "disabled" : ""}>
-          ${isCurrentSource ? "qui" : "Carica"}
-        </button>
+        <button data-rev-id="${r.id}">Carica</button>
       `;
-      const btn = row.querySelector("button");
-      if (!isCurrentSource) btn.addEventListener("click", () => checkout(r.id));
+      row.querySelector("button").addEventListener("click", () => checkout(r.id));
       list.appendChild(row);
     }
   }
@@ -2630,10 +2658,19 @@
       || lockHeldByOther()
       || (permission === "view")
       || (lockHeldByMe() && !iAmActiveTab());
+    const wasReadOnly = isReadOnly;
     isReadOnly = blocked;
     document.body.classList.toggle("readonly", blocked);
     if (sourceCM) sourceCM.setOption("readOnly", blocked ? "nocursor" : false);
     else if (sourceEditor) sourceEditor.readOnly = blocked;
+    // Entering spectator mode: drop any existing selection so the highlight
+    // doesn't linger ambiguously while the user can no longer act on it.
+    if (blocked && !wasReadOnly) {
+      deselectNode();
+      deselectCluster();
+      deselectEdge();
+      updateToolbarState();
+    }
   }
 
   function lockHolderLabel() {

@@ -27,24 +27,24 @@ final class EditorController
             $this->render404();
         }
 
-        $head = $diagram['head_revision_id']
-            ? Revision::byId((int) $diagram['head_revision_id'])
-            : null;
+        $current = Revision::current((int) $diagram['id']);
+        $sourceRevId = $current !== null && $current['source_revision_id'] !== null
+            ? (int) $current['source_revision_id'] : null;
 
         $bootstrap = [
             'slug'        => $diagram['slug'],
             'title'       => $diagram['title'],
             'owner_id'    => (int) $diagram['owner_id'],
-            'revision_id' => $head !== null ? (int) $head['id'] : null,
-            'parent_id'   => $head !== null && $head['parent_id'] !== null ? (int) $head['parent_id'] : null,
-            'source'      => $head !== null ? $head['source'] : '',
-            'layout'      => $head !== null && $head['layout'] !== null ? json_decode($head['layout'], true) : null,
-            'author_id'   => $head !== null ? (int) $head['author_id'] : null,
+            'revision_id' => $sourceRevId,
+            'parent_id'   => null,
+            'source'      => $current !== null ? $current['source'] : '',
+            'layout'      => $current !== null && $current['layout'] !== null ? json_decode($current['layout'], true) : null,
+            'author_id'   => $current !== null ? (int) $current['author_id'] : null,
             'created_at'  => $diagram['created_at'],
             'updated_at'  => $diagram['updated_at'],
             'deleted_at'  => $diagram['deleted_at'] ?? null,
-            'can_undo'    => $head !== null && $head['parent_id'] !== null,
-            'can_redo'    => $head !== null && Revision::hasChildren((int) $diagram['id'], (int) $head['id']),
+            'can_undo'    => false,
+            'can_redo'    => false,
             'permission'  => Diagram::permissionFor($diagram, $user),
             'me'          => [
                 'id'           => (int) $user['id'],

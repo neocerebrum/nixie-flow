@@ -10,6 +10,7 @@ use App\Exceptions\RevisionConflict;
 use App\Json;
 use App\Models\Diagram;
 use App\Models\Lock;
+use App\Models\Presence;
 use App\Models\Revision;
 use App\Models\User;
 use App\Quota;
@@ -54,27 +55,26 @@ final class DiagramController
     {
         $user = $this->apiUser(false);
         $diagram = $this->loadOr404($args['slug'], $user);
-        $head = null;
-        if ($diagram['head_revision_id'] !== null) {
-            $head = Revision::byId((int) $diagram['head_revision_id']);
-        }
-        Response::json($this->toFullDto($diagram, $head, $user));
+        $current = Revision::current((int) $diagram['id']);
+        Response::json($this->toFullDto($diagram, $current, $user));
     }
 
     public function history(array $args): never
     {
         $user = $this->apiUser(false);
         $diagram = $this->loadOr404($args['slug'], $user);
-        $revs = Revision::listByDiagram((int) $diagram['id']);
+        $current = Revision::current((int) $diagram['id']);
+        $snaps = Revision::listSnapshots((int) $diagram['id']);
         Response::json([
-            'head_revision_id' => $diagram['head_revision_id'] !== null ? (int) $diagram['head_revision_id'] : null,
+            'head_revision_id' => $current && $current['source_revision_id'] !== null
+                ? (int) $current['source_revision_id'] : null,
             'revisions' => array_map(static fn($r) => [
                 'id'         => (int) $r['id'],
                 'parent_id'  => $r['parent_id'] !== null ? (int) $r['parent_id'] : null,
                 'author_id'  => (int) $r['author_id'],
                 'message'    => $r['message'],
                 'created_at' => $r['created_at'],
-            ], $revs),
+            ], $snaps),
         ]);
     }
 
@@ -111,7 +111,7 @@ final class DiagramController
             $slug = $customSlug;
         }
 
-        [$diagram, $revision] = Diagram::createWithFirstRevision(
+        [$diagram, $current] = Diagram::createWithFirstRevision(
             $slug,
             $title,
             (int) $user['id'],
@@ -119,7 +119,7 @@ final class DiagramController
             $layout
         );
 
-        Response::json($this->toFullDto($diagram, $revision, $user), 201);
+        Response::json($this->toFullDto($diagram, $current, $user), 201);
     }
 
     public function save(array $args): never
@@ -134,20 +134,13 @@ final class DiagramController
         $message = Json::requireString($body, 'message', self::MESSAGE_MAX, false);
         $expected = Json::readInt($body, 'expected_revision_id');
 
-        // expected_revision_id is required when diagram has a head, optional only on
-        // freshly-created diagrams with null head — extremely rare since createWithFirstRevision
-        // always sets a head. We require it here.
+        // expected_revision_id is the snapshot id #current is forked from
+        // (or null on a never-saved diagram). Required field.
         if (!array_key_exists('expected_revision_id', $body)) {
             Response::error('Missing required field: expected_revision_id', 400);
         }
 
-        $lockState = Lock::tryAcquire((int) $diagram['id'], (int) $user['id']);
-        if (!$lockState['is_active'] || $lockState['user_id'] !== (int) $user['id']) {
-            Response::json([
-                'error' => 'locked',
-                'lock'  => $lockState,
-            ], 423);
-        }
+        $this->requireScepter($diagram, $user);
 
         try {
             $owner = User::byId((int) $diagram['owner_id']) ?? $user;
@@ -158,7 +151,7 @@ final class DiagramController
         }
 
         try {
-            $newRev = Revision::createAndAdvanceHead(
+            Revision::snapshotCurrent(
                 (int) $diagram['id'],
                 $expected,
                 $source,
@@ -174,7 +167,8 @@ final class DiagramController
         }
 
         $fresh = Diagram::byId((int) $diagram['id']);
-        Response::json($this->toFullDto($fresh, $newRev, $user));
+        $current = Revision::current((int) $diagram['id']);
+        Response::json($this->toFullDto($fresh, $current, $user));
     }
 
     public function saveDraft(array $args): never
@@ -182,7 +176,7 @@ final class DiagramController
         $user = $this->apiUser(true);
         Csrf::requireValidApi();
         $diagram = $this->loadWritableOr404($args['slug'], $user);
-        $this->ensureLock($diagram, $user);
+        $this->requireScepter($diagram, $user);
         $body = Json::readBody();
 
         $expected = Json::readInt($body, 'expected_revision_id');
@@ -196,16 +190,16 @@ final class DiagramController
             Response::error('Provide at least one of: source, layout', 400);
         }
 
-        $head = $diagram['head_revision_id'] !== null
-            ? Revision::byId((int) $diagram['head_revision_id'])
-            : null;
-        $oldBytes = ($head ? strlen((string) $head['source']) + strlen((string) ($head['layout'] ?? '')) : 0);
+        $current = Revision::current((int) $diagram['id']);
+        $oldBytes = $current
+            ? strlen((string) $current['source']) + strlen((string) ($current['layout'] ?? ''))
+            : 0;
 
         $source = $hasSource ? Json::requireString($body, 'source', self::SOURCE_MAX, true) : null;
         $layout = $hasLayout ? Json::readLayout($body) : null;
 
-        $newSourceBytes = $hasSource ? strlen((string) $source) : ($head ? strlen((string) $head['source']) : 0);
-        $newLayoutBytes = $hasLayout ? strlen((string) ($layout ?? '')) : ($head ? strlen((string) ($head['layout'] ?? '')) : 0);
+        $newSourceBytes = $hasSource ? strlen((string) $source) : ($current ? strlen((string) $current['source']) : 0);
+        $newLayoutBytes = $hasLayout ? strlen((string) ($layout ?? '')) : ($current ? strlen((string) ($current['layout'] ?? '')) : 0);
         try {
             $owner = User::byId((int) $diagram['owner_id']) ?? $user;
             Quota::checkCanReplaceDraft($owner, $user, $oldBytes, $newSourceBytes + $newLayoutBytes);
@@ -214,9 +208,9 @@ final class DiagramController
         }
 
         try {
-            $rev = Revision::updateDraft(
+            Revision::updateCurrent(
                 (int) $diagram['id'],
-                (int) $expected,
+                $expected,
                 $source,
                 $layout
             );
@@ -228,7 +222,8 @@ final class DiagramController
         }
 
         $fresh = Diagram::byId((int) $diagram['id']);
-        Response::json($this->toFullDto($fresh, $rev, $user));
+        $freshCurrent = Revision::current((int) $diagram['id']);
+        Response::json($this->toFullDto($fresh, $freshCurrent, $user));
     }
 
     public function patch(array $args): never
@@ -264,56 +259,12 @@ final class DiagramController
         Response::json($this->toFullDto($fresh, $head, $user));
     }
 
-    public function undo(array $args): never
-    {
-        $user = $this->apiUser(true);
-        Csrf::requireValidApi();
-        $diagram = $this->loadWritableOr404($args['slug'], $user);
-        $this->ensureLock($diagram, $user);
-
-        if ($diagram['head_revision_id'] === null) {
-            Response::error('Diagram has no head', 400);
-        }
-        $head = Revision::byId((int) $diagram['head_revision_id']);
-        if ($head === null) {
-            Response::error('Head revision missing', 500);
-        }
-        if ($head['parent_id'] === null) {
-            Response::error('Already at root revision', 400);
-        }
-
-        Diagram::setHead((int) $diagram['id'], (int) $head['parent_id']);
-        $fresh = Diagram::byId((int) $diagram['id']);
-        $newHead = Revision::byId((int) $head['parent_id']);
-        Response::json($this->toFullDto($fresh, $newHead, $user));
-    }
-
-    public function redo(array $args): never
-    {
-        $user = $this->apiUser(true);
-        Csrf::requireValidApi();
-        $diagram = $this->loadWritableOr404($args['slug'], $user);
-        $this->ensureLock($diagram, $user);
-
-        if ($diagram['head_revision_id'] === null) {
-            Response::error('Diagram has no head', 400);
-        }
-        $child = Revision::mostRecentChild((int) $diagram['id'], (int) $diagram['head_revision_id']);
-        if ($child === null) {
-            Response::error('Nothing to redo', 400);
-        }
-
-        Diagram::setHead((int) $diagram['id'], (int) $child['id']);
-        $fresh = Diagram::byId((int) $diagram['id']);
-        Response::json($this->toFullDto($fresh, $child, $user));
-    }
-
     public function checkout(array $args): never
     {
         $user = $this->apiUser(true);
         Csrf::requireValidApi();
         $diagram = $this->loadWritableOr404($args['slug'], $user);
-        $this->ensureLock($diagram, $user);
+        $this->requireScepter($diagram, $user);
         $body = Json::readBody();
         $revisionId = Json::readInt($body, 'revision_id');
         if ($revisionId === null) {
@@ -321,13 +272,21 @@ final class DiagramController
         }
 
         $rev = Revision::byId($revisionId);
-        if ($rev === null || (int) $rev['diagram_id'] !== (int) $diagram['id']) {
-            Response::error('Revision does not belong to this diagram', 400);
+        if ($rev === null
+            || (int) $rev['diagram_id'] !== (int) $diagram['id']
+            || (int) ($rev['is_current'] ?? 0) === 1
+        ) {
+            Response::error('Snapshot does not belong to this diagram', 400);
         }
 
-        Diagram::setHead((int) $diagram['id'], $revisionId);
+        try {
+            Revision::checkoutSnapshot((int) $diagram['id'], $revisionId);
+        } catch (\RuntimeException $e) {
+            Response::error($e->getMessage(), 400);
+        }
         $fresh = Diagram::byId((int) $diagram['id']);
-        Response::json($this->toFullDto($fresh, $rev, $user));
+        $current = Revision::current((int) $diagram['id']);
+        Response::json($this->toFullDto($fresh, $current, $user));
     }
 
     public function delete(array $args): never
@@ -409,14 +368,29 @@ final class DiagramController
         ], 413);
     }
 
-    /** Atomically claim or refresh the lock for $user. 423 if held by someone else. */
-    private function ensureLock(array $diagram, array $user): void
+    /**
+     * Require that this caller currently holds the scepter and is calling
+     * from the active tab they last claimed. Replies 423 if someone else
+     * holds the scepter, or 409 inactive_tab if they hold it but a different
+     * tab is the active one. Reads the tab id from the X-Tab-Id header.
+     */
+    private function requireScepter(array $diagram, array $user): void
     {
-        $state = Lock::tryAcquire((int) $diagram['id'], (int) $user['id']);
-        if (!$state['is_active'] || $state['user_id'] !== (int) $user['id']) {
+        $tabId = $_SERVER['HTTP_X_TAB_ID'] ?? '';
+        if (!is_string($tabId) || $tabId === '' || !preg_match('/^[A-Za-z0-9_-]+$/', $tabId)) {
+            Response::error('Missing or invalid X-Tab-Id header', 400);
+        }
+        if (!Presence::heldByActiveTab((int) $diagram['id'], (int) $user['id'], $tabId)) {
+            $fresh = Diagram::byId((int) $diagram['id']) ?? [];
+            if (Lock::heldBy($fresh, (int) $user['id'])) {
+                Response::json([
+                    'error' => 'inactive_tab',
+                    'lock'  => Lock::state($fresh),
+                ], 409);
+            }
             Response::json([
                 'error' => 'locked',
-                'lock'  => $state,
+                'lock'  => Lock::state($fresh),
             ], 423);
         }
     }
@@ -440,34 +414,43 @@ final class DiagramController
         ];
     }
 
-    private function toFullDto(?array $d, ?array $head, ?array $user = null): array
+    /**
+     * Build the full editor DTO from a diagram + its #current row.
+     * `revision_id` exposes the snapshot id #current is forked from (or null
+     * if the diagram has never been Saved). The client uses that as
+     * `expected_revision_id` for autosave + Save optimistic locking.
+     */
+    private function toFullDto(?array $d, ?array $current, ?array $user = null): array
     {
         if ($d === null) {
             Response::error('Diagram missing', 500);
         }
-        $hasChildren = $head !== null
-            && Revision::hasChildren((int) $d['id'], (int) $head['id']);
 
         $perm = null;
         if ($user !== null) {
             $perm = Diagram::permissionFor($d, $user);
         }
 
+        $sourceRevId = $current !== null && $current['source_revision_id'] !== null
+            ? (int) $current['source_revision_id']
+            : null;
+
         return [
             'slug'        => $d['slug'],
             'title'       => $d['title'],
             'owner_id'    => (int) $d['owner_id'],
-            'revision_id' => $head !== null ? (int) $head['id'] : null,
-            'parent_id'   => $head !== null && $head['parent_id'] !== null ? (int) $head['parent_id'] : null,
-            'source'      => $head !== null ? $head['source'] : null,
-            'layout'      => $head !== null && $head['layout'] !== null ? json_decode($head['layout'], true) : null,
-            'author_id'   => $head !== null ? (int) $head['author_id'] : null,
-            'message'     => $head !== null ? $head['message'] : null,
+            'revision_id' => $sourceRevId,
+            'parent_id'   => null,
+            'source'      => $current !== null ? $current['source'] : null,
+            'layout'      => $current !== null && $current['layout'] !== null
+                                ? json_decode($current['layout'], true) : null,
+            'author_id'   => $current !== null ? (int) $current['author_id'] : null,
+            'message'     => null,
             'created_at'  => $d['created_at'],
             'updated_at'  => $d['updated_at'],
             'deleted_at'  => $d['deleted_at'] ?? null,
-            'can_undo'    => $head !== null && $head['parent_id'] !== null,
-            'can_redo'    => $hasChildren,
+            'can_undo'    => false,
+            'can_redo'    => false,
             'permission'  => $perm,
             'lock'        => Lock::state($d),
         ];

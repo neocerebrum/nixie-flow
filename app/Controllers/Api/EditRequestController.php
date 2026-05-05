@@ -9,18 +9,23 @@ use App\Json;
 use App\Models\Diagram;
 use App\Models\EditRequest;
 use App\Models\Lock;
+use App\Models\Presence;
 use App\Response;
 
 final class EditRequestController
 {
     private const NOTE_MAX = 500;
 
-    /** Viewer asks the current editor for the turn. */
+    /** Spectator asks the current holder for the scepter. */
     public function create(array $args): never
     {
         $user = Auth::requireLoginApi();
         Csrf::requireValidApi();
         $diagram = $this->loadAccessibleOr404($args['slug'], $user);
+
+        if (!Diagram::canWrite($diagram, $user)) {
+            Response::error('You do not have edit permission on this diagram', 403);
+        }
 
         $body = Json::readBody();
         $note = Json::requireString($body, 'note', self::NOTE_MAX, false);
@@ -29,7 +34,7 @@ final class EditRequestController
 
         $lockState = Lock::state($diagram);
         if (!$lockState['is_active'] || $lockState['user_id'] === (int) $user['id']) {
-            Response::error('Lock is free or already yours; just acquire it', 400);
+            Response::error('Scepter is free or already yours; nothing to request', 400);
         }
 
         $existing = EditRequest::activeForUser((int) $diagram['id'], (int) $user['id']);
@@ -48,7 +53,7 @@ final class EditRequestController
         ], 201);
     }
 
-    /** Editor sees the pending requests on the diagram. */
+    /** Holder sees the pending requests on the diagram. */
     public function listForDiagram(array $args): never
     {
         $user = Auth::requireLoginApi();
@@ -61,7 +66,11 @@ final class EditRequestController
         ]);
     }
 
-    /** Editor accepts → release lock, mark granted (requester has 30s to take). */
+    /**
+     * Holder accepts → atomic scepter transfer to the requester.
+     * Falls back to {@see Presence::ensureHolder} if the requester is no longer
+     * a present writer (so the scepter doesn't end up vacant).
+     */
     public function accept(array $args): never
     {
         $user = Auth::requireLoginApi();
@@ -78,17 +87,22 @@ final class EditRequestController
 
         if (!Lock::heldBy($diagram, (int) $user['id'])
             && ($user['role'] ?? '') !== 'admin') {
-            Response::error('Only the current editor can accept this request', 403);
+            Response::error('Only the current holder can accept this request', 403);
         }
 
-        Lock::release((int) $diagram['id'], (int) $user['id'], true);
+        // Atomic transfer: change scepter holder, mark request granted+resolved.
+        Lock::transfer((int) $diagram['id'], (int) $req['requester_id']);
         EditRequest::setStatus((int) $req['id'], 'granted');
+
+        // If the requester has since dropped from presence, run promotion to
+        // pick the next valid holder (or clear the scepter if no one is left).
+        Presence::ensureHolder((int) $diagram['id']);
 
         $fresh = EditRequest::byId((int) $req['id']);
         Response::json(['request' => $this->toDto($fresh)]);
     }
 
-    /** Editor declines → mark rejected. */
+    /** Holder declines → mark rejected. */
     public function decline(array $args): never
     {
         $user = Auth::requireLoginApi();
@@ -105,7 +119,7 @@ final class EditRequestController
 
         if (!Lock::heldBy($diagram, (int) $user['id'])
             && ($user['role'] ?? '') !== 'admin') {
-            Response::error('Only the current editor can decline this request', 403);
+            Response::error('Only the current holder can decline this request', 403);
         }
 
         EditRequest::setStatus((int) $req['id'], 'rejected');
@@ -171,7 +185,6 @@ final class EditRequestController
             'note'            => $r['note'] ?? null,
             'created_at'      => $r['created_at'],
             'resolved_at'     => $r['resolved_at'],
-            'grant_open'      => EditRequest::isGrantWindowOpen($r),
         ];
     }
 }

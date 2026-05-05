@@ -8,7 +8,7 @@ use RuntimeException;
 
 final class Schema
 {
-    private const BASELINE_VERSION = 6;
+    private const BASELINE_VERSION = 8;
 
     private const BASELINE_SQL = <<<'SQL'
 CREATE TABLE users (
@@ -42,20 +42,24 @@ CREATE INDEX idx_diagrams_deleted   ON diagrams(deleted_at);
 CREATE INDEX idx_diagrams_lock_user ON diagrams(edit_lock_user);
 
 CREATE TABLE diagram_revisions (
-  id          INTEGER PRIMARY KEY,
-  diagram_id  INTEGER NOT NULL,
-  parent_id   INTEGER,
-  source      TEXT NOT NULL,
-  layout      TEXT,
-  author_id   INTEGER NOT NULL,
-  message     TEXT,
-  created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (diagram_id) REFERENCES diagrams(id),
-  FOREIGN KEY (parent_id)  REFERENCES diagram_revisions(id),
-  FOREIGN KEY (author_id)  REFERENCES users(id)
+  id                 INTEGER PRIMARY KEY,
+  diagram_id         INTEGER NOT NULL,
+  parent_id          INTEGER,
+  source             TEXT NOT NULL,
+  layout             TEXT,
+  author_id          INTEGER NOT NULL,
+  message            TEXT,
+  created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  is_current         INTEGER NOT NULL DEFAULT 0,
+  source_revision_id INTEGER,
+  FOREIGN KEY (diagram_id)         REFERENCES diagrams(id),
+  FOREIGN KEY (parent_id)          REFERENCES diagram_revisions(id),
+  FOREIGN KEY (author_id)          REFERENCES users(id),
+  FOREIGN KEY (source_revision_id) REFERENCES diagram_revisions(id)
 );
 CREATE INDEX idx_rev_diagram ON diagram_revisions(diagram_id);
 CREATE INDEX idx_rev_parent  ON diagram_revisions(parent_id);
+CREATE INDEX idx_rev_current ON diagram_revisions(diagram_id, is_current);
 
 CREATE TABLE branches (
   id              INTEGER PRIMARY KEY,
@@ -131,32 +135,28 @@ CREATE TABLE email_tokens (
 );
 CREATE INDEX idx_email_tokens_user ON email_tokens(user_id, kind);
 CREATE INDEX idx_email_tokens_expires ON email_tokens(expires_at);
+
+CREATE TABLE diagram_viewers (
+  diagram_id    INTEGER NOT NULL,
+  user_id       INTEGER NOT NULL,
+  joined_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  last_seen_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  active_tab_id VARCHAR(64),
+  PRIMARY KEY (diagram_id, user_id),
+  FOREIGN KEY (diagram_id) REFERENCES diagrams(id),
+  FOREIGN KEY (user_id)    REFERENCES users(id)
+);
+CREATE INDEX idx_viewers_diagram_seen ON diagram_viewers(diagram_id, last_seen_at);
 SQL;
 
     // BRIDGE: one-shot upgrade from previous baseline to current. Set both
     // constants when a schema change ships, then delete after every running
     // instance is on BASELINE_VERSION.
-    private const BRIDGE_FROM = 4;
+    private const BRIDGE_FROM = 7;
     private const BRIDGE_SQL  = <<<'SQL'
-CREATE TABLE rate_buckets (
-  scope_key    VARCHAR(128) NOT NULL,
-  window_start INTEGER NOT NULL,
-  hits         INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY (scope_key, window_start)
-);
-CREATE INDEX idx_rate_buckets_window ON rate_buckets(window_start);
-ALTER TABLE users ADD COLUMN email_verified_at TIMESTAMP NULL;
-CREATE TABLE email_tokens (
-  token_hash CHAR(64) PRIMARY KEY,
-  user_id    INTEGER NOT NULL,
-  kind       VARCHAR(20) NOT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  expires_at TIMESTAMP NOT NULL,
-  used_at    TIMESTAMP NULL,
-  FOREIGN KEY (user_id) REFERENCES users(id)
-);
-CREATE INDEX idx_email_tokens_user ON email_tokens(user_id, kind);
-CREATE INDEX idx_email_tokens_expires ON email_tokens(expires_at);
+ALTER TABLE diagram_revisions ADD COLUMN is_current INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE diagram_revisions ADD COLUMN source_revision_id INTEGER;
+CREATE INDEX idx_rev_current ON diagram_revisions(diagram_id, is_current);
 SQL;
 
     private static bool $checked = false;
@@ -201,6 +201,7 @@ SQL;
 
         if (self::BRIDGE_SQL !== null && $current === self::BRIDGE_FROM) {
             self::execMulti($pdo, self::adapt(self::BRIDGE_SQL, $isMysql));
+            self::migrateForkCurrentRows($pdo);
             self::recordVersion($pdo, self::BASELINE_VERSION);
             return;
         }
@@ -271,6 +272,40 @@ SQL;
     {
         $stmt = $pdo->prepare('INSERT INTO schema_version (version) VALUES (?)');
         $stmt->execute([$version]);
+    }
+
+    /**
+     * 7→8 data migration: every existing diagram has its `head_revision_id`
+     * pointing at a snapshot row that the editor was mutating in place. The
+     * new model splits that into immutable snapshots + a single mutable
+     * `is_current` row per diagram. We clone the existing head into a fresh
+     * `is_current=1` row (with `source_revision_id` pointing at the old head)
+     * and repoint `diagrams.head_revision_id` at the new row.
+     */
+    private static function migrateForkCurrentRows(PDO $pdo): void
+    {
+        $rows = $pdo->query(
+            'SELECT id, head_revision_id FROM diagrams WHERE head_revision_id IS NOT NULL'
+        )->fetchAll(PDO::FETCH_ASSOC);
+
+        $sel = $pdo->prepare('SELECT source, layout, author_id FROM diagram_revisions WHERE id = ?');
+        $ins = $pdo->prepare(
+            'INSERT INTO diagram_revisions
+               (diagram_id, parent_id, source, layout, author_id, message, is_current, source_revision_id)
+             VALUES (?, NULL, ?, ?, ?, NULL, 1, ?)'
+        );
+        $upd = $pdo->prepare('UPDATE diagrams SET head_revision_id = ? WHERE id = ?');
+
+        foreach ($rows as $d) {
+            $diagramId = (int) $d['id'];
+            $headId    = (int) $d['head_revision_id'];
+            $sel->execute([$headId]);
+            $head = $sel->fetch(PDO::FETCH_ASSOC);
+            if ($head === false) continue;
+            $ins->execute([$diagramId, $head['source'], $head['layout'], (int) $head['author_id'], $headId]);
+            $newId = (int) $pdo->lastInsertId();
+            $upd->execute([$newId, $diagramId]);
+        }
     }
 
     private static function usersTableExists(PDO $pdo): bool

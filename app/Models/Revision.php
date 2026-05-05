@@ -5,6 +5,18 @@ namespace App\Models;
 
 use PDO;
 
+/**
+ * Revisions storage model.
+ *
+ * Each diagram has exactly one row with `is_current = 1` — the live working
+ * copy that the editor mutates continuously via autosave. All other rows
+ * (`is_current = 0`) are immutable user-created snapshots.
+ *
+ * `source_revision_id` on the #current row identifies which snapshot the
+ * working copy was forked from (null when never saved). On a snapshot row
+ * it is unused. Snapshots are chained through `parent_id`, which points at
+ * the previous snapshot in the same branch.
+ */
 final class Revision
 {
     public static function byId(int $id): ?array
@@ -15,15 +27,29 @@ final class Revision
         return $row !== false ? $row : null;
     }
 
+    /** Fetch the #current row for this diagram (mutable working copy). */
+    public static function current(int $diagramId): ?array
+    {
+        $stmt = db()->prepare(
+            'SELECT * FROM diagram_revisions
+             WHERE diagram_id = ? AND is_current = 1
+             LIMIT 1'
+        );
+        $stmt->execute([$diagramId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row !== false ? $row : null;
+    }
+
     /**
+     * List immutable snapshots (excludes #current) ordered by id ASC.
      * @return array<int, array<string, mixed>>
      */
-    public static function listByDiagram(int $diagramId): array
+    public static function listSnapshots(int $diagramId): array
     {
         $stmt = db()->prepare(
             'SELECT id, diagram_id, parent_id, author_id, message, created_at
              FROM diagram_revisions
-             WHERE diagram_id = ?
+             WHERE diagram_id = ? AND is_current = 0
              ORDER BY id ASC'
         );
         $stmt->execute([$diagramId]);
@@ -31,24 +57,26 @@ final class Revision
     }
 
     /**
-     * Create a new revision and atomically update head_revision_id.
-     * Uses optimistic locking: aborts with 409-style RuntimeException
-     * carrying current head id if expected does not match.
+     * Save: take #current and create a new immutable snapshot from it.
+     * Optimistic lock: aborts if #current's source_revision_id no longer
+     * matches `$expectedSourceRevisionId`. The snapshot's parent_id is set to
+     * that same id, so the snapshot tree mirrors the user's branch decisions.
+     * #current's source/layout are also updated to the supplied values
+     * (matching what autosave would have flushed) and its source_revision_id
+     * advances to the new snapshot id.
      *
-     * @throws \App\Exceptions\RevisionConflict on optimistic lock failure
+     * @throws \App\Exceptions\RevisionConflict
      */
-    public static function createAndAdvanceHead(
+    public static function snapshotCurrent(
         int $diagramId,
-        ?int $expectedRevisionId,
+        ?int $expectedSourceRevisionId,
         string $source,
         ?string $layoutJson,
         int $authorId,
         ?string $message
     ): array {
         $pdo = db();
-        // SQLite needs IMMEDIATE to acquire write lock atomically.
-        // MySQL uses SELECT ... FOR UPDATE on the diagrams row to serialize.
-        $isSqlite = (db()->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite');
+        $isSqlite = ($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite');
         if ($isSqlite) {
             $pdo->exec('BEGIN IMMEDIATE');
             $forUpdate = '';
@@ -58,30 +86,50 @@ final class Revision
         }
 
         try {
-            $stmt = $pdo->prepare('SELECT head_revision_id FROM diagrams WHERE id = ?' . $forUpdate);
+            $stmt = $pdo->prepare(
+                'SELECT id, source_revision_id FROM diagram_revisions
+                 WHERE diagram_id = ? AND is_current = 1' . $forUpdate
+            );
             $stmt->execute([$diagramId]);
-            $currentHead = $stmt->fetchColumn();
-            if ($currentHead === false) {
-                throw new \RuntimeException('Diagram not found');
+            $current = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($current === false) {
+                throw new \RuntimeException('Diagram has no #current row');
             }
-            $currentHead = $currentHead === null ? null : (int) $currentHead;
+            $currentId = (int) $current['id'];
+            $actualSrc = $current['source_revision_id'] === null
+                ? null : (int) $current['source_revision_id'];
 
-            if ($currentHead !== $expectedRevisionId) {
+            if ($actualSrc !== $expectedSourceRevisionId) {
                 $pdo->rollBack();
-                throw new \App\Exceptions\RevisionConflict($currentHead);
+                throw new \App\Exceptions\RevisionConflict($actualSrc);
             }
 
             $stmt = $pdo->prepare(
-                'INSERT INTO diagram_revisions (diagram_id, parent_id, source, layout, author_id, message)
-                 VALUES (?, ?, ?, ?, ?, ?)'
+                'INSERT INTO diagram_revisions
+                   (diagram_id, parent_id, source, layout, author_id, message, is_current, source_revision_id)
+                 VALUES (?, ?, ?, ?, ?, ?, 0, NULL)'
             );
-            $stmt->execute([$diagramId, $expectedRevisionId, $source, $layoutJson, $authorId, $message]);
-            $newId = (int) $pdo->lastInsertId();
+            $stmt->execute([
+                $diagramId,
+                $expectedSourceRevisionId,
+                $source,
+                $layoutJson,
+                $authorId,
+                $message,
+            ]);
+            $newSnapshotId = (int) $pdo->lastInsertId();
 
             $stmt = $pdo->prepare(
-                'UPDATE diagrams SET head_revision_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+                'UPDATE diagram_revisions
+                 SET source = ?, layout = ?, source_revision_id = ?
+                 WHERE id = ?'
             );
-            $stmt->execute([$newId, $diagramId]);
+            $stmt->execute([$source, $layoutJson, $newSnapshotId, $currentId]);
+
+            $stmt = $pdo->prepare(
+                'UPDATE diagrams SET updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+            );
+            $stmt->execute([$diagramId]);
 
             $pdo->commit();
         } catch (\Throwable $e) {
@@ -91,29 +139,29 @@ final class Revision
             throw $e;
         }
 
-        $row = self::byId($newId);
+        $row = self::byId($newSnapshotId);
         if ($row === null) {
-            throw new \RuntimeException('Failed to reload created revision');
+            throw new \RuntimeException('Failed to reload created snapshot');
         }
         return $row;
     }
 
     /**
-     * In-place autosave on the head revision: mutates source/layout of the row
-     * pointed by diagrams.head_revision_id, bumps diagrams.updated_at, but does
-     * NOT create a new revision. Used by the live-draft autosave flow — explicit
-     * Save still goes through createAndAdvanceHead.
+     * Autosave: in-place update of source/layout on the #current row.
+     * Optimistic lock checks #current's source_revision_id against the
+     * client's expected value (i.e., the snapshot the client believes
+     * #current is forked from).
      *
-     * @throws \App\Exceptions\RevisionConflict if expected head doesn't match.
+     * @throws \App\Exceptions\RevisionConflict
      */
-    public static function updateDraft(
+    public static function updateCurrent(
         int $diagramId,
-        int $expectedHeadId,
+        ?int $expectedSourceRevisionId,
         ?string $source,
         ?string $layoutJson
     ): array {
         $pdo = db();
-        $isSqlite = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite';
+        $isSqlite = ($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite');
         if ($isSqlite) {
             $pdo->exec('BEGIN IMMEDIATE');
             $forUpdate = '';
@@ -123,20 +171,24 @@ final class Revision
         }
 
         try {
-            $stmt = $pdo->prepare('SELECT head_revision_id FROM diagrams WHERE id = ?' . $forUpdate);
+            $stmt = $pdo->prepare(
+                'SELECT id, source_revision_id FROM diagram_revisions
+                 WHERE diagram_id = ? AND is_current = 1' . $forUpdate
+            );
             $stmt->execute([$diagramId]);
-            $currentHead = $stmt->fetchColumn();
-            if ($currentHead === false) {
-                throw new \RuntimeException('Diagram not found');
+            $current = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($current === false) {
+                throw new \RuntimeException('Diagram has no #current row');
             }
-            $currentHead = (int) $currentHead;
+            $currentId = (int) $current['id'];
+            $actualSrc = $current['source_revision_id'] === null
+                ? null : (int) $current['source_revision_id'];
 
-            if ($currentHead !== $expectedHeadId) {
+            if ($actualSrc !== $expectedSourceRevisionId) {
                 $pdo->rollBack();
-                throw new \App\Exceptions\RevisionConflict($currentHead);
+                throw new \App\Exceptions\RevisionConflict($actualSrc);
             }
 
-            // Build dynamic UPDATE only with provided fields.
             $sets = [];
             $params = [];
             if ($source !== null) {
@@ -149,9 +201,9 @@ final class Revision
             }
             if ($sets === []) {
                 $pdo->rollBack();
-                throw new \RuntimeException('Nothing to update in draft');
+                throw new \RuntimeException('Nothing to update on #current');
             }
-            $params[] = $currentHead;
+            $params[] = $currentId;
             $stmt = $pdo->prepare(
                 'UPDATE diagram_revisions SET ' . implode(', ', $sets) . ' WHERE id = ?'
             );
@@ -170,31 +222,77 @@ final class Revision
             throw $e;
         }
 
-        $row = self::byId($expectedHeadId);
+        $row = self::byId($currentId);
         if ($row === null) {
-            throw new \RuntimeException('Failed to reload draft revision');
+            throw new \RuntimeException('Failed to reload #current row');
         }
         return $row;
     }
 
-    public static function mostRecentChild(int $diagramId, int $parentId): ?array
+    /**
+     * Checkout: copy a snapshot's content into #current and stamp the
+     * snapshot's id as the new source_revision_id (so further saves chain
+     * from this branch point).
+     */
+    public static function checkoutSnapshot(int $diagramId, int $snapshotId): array
     {
-        $stmt = db()->prepare(
-            'SELECT * FROM diagram_revisions
-             WHERE diagram_id = ? AND parent_id = ?
-             ORDER BY created_at DESC, id DESC LIMIT 1'
-        );
-        $stmt->execute([$diagramId, $parentId]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        return $row !== false ? $row : null;
-    }
+        $pdo = db();
+        $isSqlite = ($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite');
+        if ($isSqlite) {
+            $pdo->exec('BEGIN IMMEDIATE');
+            $forUpdate = '';
+        } else {
+            $pdo->beginTransaction();
+            $forUpdate = ' FOR UPDATE';
+        }
 
-    public static function hasChildren(int $diagramId, int $parentId): bool
-    {
-        $stmt = db()->prepare(
-            'SELECT 1 FROM diagram_revisions WHERE diagram_id = ? AND parent_id = ? LIMIT 1'
-        );
-        $stmt->execute([$diagramId, $parentId]);
-        return $stmt->fetchColumn() !== false;
+        try {
+            $stmt = $pdo->prepare(
+                'SELECT * FROM diagram_revisions
+                 WHERE id = ? AND diagram_id = ? AND is_current = 0'
+            );
+            $stmt->execute([$snapshotId, $diagramId]);
+            $snap = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($snap === false) {
+                $pdo->rollBack();
+                throw new \RuntimeException('Snapshot does not belong to this diagram');
+            }
+
+            $stmt = $pdo->prepare(
+                'SELECT id FROM diagram_revisions
+                 WHERE diagram_id = ? AND is_current = 1' . $forUpdate
+            );
+            $stmt->execute([$diagramId]);
+            $currentId = $stmt->fetchColumn();
+            if ($currentId === false) {
+                throw new \RuntimeException('Diagram has no #current row');
+            }
+            $currentId = (int) $currentId;
+
+            $stmt = $pdo->prepare(
+                'UPDATE diagram_revisions
+                 SET source = ?, layout = ?, source_revision_id = ?
+                 WHERE id = ?'
+            );
+            $stmt->execute([$snap['source'], $snap['layout'], $snapshotId, $currentId]);
+
+            $stmt = $pdo->prepare(
+                'UPDATE diagrams SET updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+            );
+            $stmt->execute([$diagramId]);
+
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
+
+        $row = self::byId($currentId);
+        if ($row === null) {
+            throw new \RuntimeException('Failed to reload #current after checkout');
+        }
+        return $row;
     }
 }

@@ -219,7 +219,7 @@ final class McpController
         return [
             [
                 'name' => 'list_diagrams',
-                'description' => 'List all diagrams visible to the authenticated user (owned + shared). Returns slug, title, owner_id, head_revision_id, updated_at, permission.',
+                'description' => 'List all diagrams visible to the authenticated user (owned + shared). Returns slug, title, owner_id, head_revision_id (the snapshot id the live working copy is based on, null if never saved), updated_at, permission.',
                 'inputSchema' => [
                     'type' => 'object',
                     'properties' => new \stdClass(),
@@ -236,7 +236,7 @@ final class McpController
             ],
             [
                 'name' => 'save_diagram',
-                'description' => 'Create a new revision (checkpoint) for a diagram. expected_version is the current head revision_id; mismatch returns a conflict error. Auto-acquires the edit lock. The source MUST be a Mermaid flowchart (flowchart/graph TD|LR|TB|BT|RL); other Mermaid diagram types (sequence, class, ER, state, gantt, etc.) are not supported by the editor. Do NOT include style directives, classDef, or per-node fill/stroke/color: visual styling is managed by the user via the editor palette and stored separately.',
+                'description' => 'Create a new immutable snapshot from the live working copy. expected_version is the snapshot id the working copy is currently based on (null/0 on a never-saved diagram); mismatch returns a conflict error. Auto-acquires the edit lock. The source MUST be a Mermaid flowchart (flowchart/graph TD|LR|TB|BT|RL); other Mermaid diagram types (sequence, class, ER, state, gantt, etc.) are not supported by the editor. Do NOT include style directives, classDef, or per-node fill/stroke/color: visual styling is managed by the user via the editor palette and stored separately.',
                 'inputSchema' => [
                     'type' => 'object',
                     'properties' => [
@@ -283,7 +283,7 @@ final class McpController
             ],
             [
                 'name' => 'set_layout',
-                'description' => 'Update the layout sidecar in-place on the head revision (no new revision created). Useful for incremental drag-style updates. expected_version must match current head.',
+                'description' => 'Update the layout sidecar in-place on the live working copy (no snapshot created). Useful for incremental drag-style updates. expected_version is the snapshot id the working copy is currently based on.',
                 'inputSchema' => [
                     'type' => 'object',
                     'properties' => [
@@ -325,13 +325,30 @@ final class McpController
     private function toolListDiagrams(array $user): array
     {
         $rows = Diagram::listAccessibleForUser((int) $user['id']);
+        if ($rows === []) {
+            return $this->structuredResult(['diagrams' => []]);
+        }
+        // Fetch each diagram's #current source_revision_id (the snapshot
+        // identifier callers should pass as expected_version on save).
+        $ids = array_map(static fn ($r) => (int) $r['id'], $rows);
+        $place = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = db()->prepare(
+            "SELECT diagram_id, source_revision_id FROM diagram_revisions
+             WHERE is_current = 1 AND diagram_id IN ($place)"
+        );
+        $stmt->execute($ids);
+        $srcMap = [];
+        foreach ($stmt->fetchAll(\PDO::FETCH_ASSOC) as $r) {
+            $srcMap[(int) $r['diagram_id']] = $r['source_revision_id'] !== null
+                ? (int) $r['source_revision_id'] : null;
+        }
         $out = [];
         foreach ($rows as $d) {
             $out[] = [
                 'slug'             => $d['slug'],
                 'title'            => $d['title'],
                 'owner_id'         => (int) $d['owner_id'],
-                'head_revision_id' => $d['head_revision_id'] !== null ? (int) $d['head_revision_id'] : null,
+                'head_revision_id' => $srcMap[(int) $d['id']] ?? null,
                 'updated_at'       => $d['updated_at'],
                 'permission'       => (int) $d['owner_id'] === (int) $user['id']
                                         ? 'owner'
@@ -344,17 +361,17 @@ final class McpController
     private function toolGetDiagram(array $args, array $user): array
     {
         $diagram = $this->loadAccessible($args, $user);
-        $head = $diagram['head_revision_id']
-            ? Revision::byId((int) $diagram['head_revision_id'])
-            : null;
+        $current = Revision::current((int) $diagram['id']);
+        $sourceRevId = $current && $current['source_revision_id'] !== null
+            ? (int) $current['source_revision_id'] : null;
         return $this->structuredResult([
             'slug'        => $diagram['slug'],
             'title'       => $diagram['title'],
             'owner_id'    => (int) $diagram['owner_id'],
-            'revision_id' => $head ? (int) $head['id'] : null,
-            'parent_id'   => $head && $head['parent_id'] !== null ? (int) $head['parent_id'] : null,
-            'source'      => $head ? $head['source'] : null,
-            'layout'      => $head && $head['layout'] !== null ? json_decode($head['layout'], true) : null,
+            'revision_id' => $sourceRevId,
+            'parent_id'   => null,
+            'source'      => $current ? $current['source'] : null,
+            'layout'      => $current && $current['layout'] !== null ? json_decode($current['layout'], true) : null,
             'updated_at'  => $diagram['updated_at'],
             'lock'        => Lock::state($diagram),
         ]);
@@ -373,8 +390,7 @@ final class McpController
             throw new McpToolException("Not found or no edit permission: $slug");
         }
 
-        $lockState = Lock::tryAcquire((int) $diagram['id'], (int) $user['id']);
-        if (!$lockState['is_active'] || $lockState['user_id'] !== (int) $user['id']) {
+        if (!Lock::tryClaimIfFree((int) $diagram['id'], (int) $user['id'])) {
             throw new McpToolException('locked: another user is currently editing this diagram');
         }
 
@@ -388,7 +404,7 @@ final class McpController
         }
 
         try {
-            $rev = Revision::createAndAdvanceHead(
+            $rev = Revision::snapshotCurrent(
                 (int) $diagram['id'],
                 $expected,
                 $source,
@@ -397,7 +413,7 @@ final class McpController
                 $message
             );
         } catch (RevisionConflict $c) {
-            throw new McpToolException("conflict: head is now revision {$c->currentRevisionId}, expected $expected");
+            throw new McpToolException("conflict: current is now based on revision {$c->currentRevisionId}, expected $expected");
         }
 
         $fresh = Diagram::byId((int) $diagram['id']);
@@ -463,13 +479,14 @@ final class McpController
     private function toolGetLayout(array $args, array $user): array
     {
         $diagram = $this->loadAccessible($args, $user);
-        $head = $diagram['head_revision_id']
-            ? Revision::byId((int) $diagram['head_revision_id'])
-            : null;
-        $layout = $head && $head['layout'] !== null ? json_decode($head['layout'], true) : null;
+        $current = Revision::current((int) $diagram['id']);
+        $layout = $current && $current['layout'] !== null
+            ? json_decode($current['layout'], true) : null;
+        $sourceRevId = $current && $current['source_revision_id'] !== null
+            ? (int) $current['source_revision_id'] : null;
         return $this->structuredResult([
             'slug'        => $diagram['slug'],
-            'revision_id' => $head ? (int) $head['id'] : null,
+            'revision_id' => $sourceRevId,
             'layout'      => $layout,
         ]);
     }
@@ -487,20 +504,17 @@ final class McpController
             throw new McpToolException("Not found or no edit permission: $slug");
         }
 
-        $lockState = Lock::tryAcquire((int) $diagram['id'], (int) $user['id']);
-        if (!$lockState['is_active'] || $lockState['user_id'] !== (int) $user['id']) {
+        if (!Lock::tryClaimIfFree((int) $diagram['id'], (int) $user['id'])) {
             throw new McpToolException('locked: another user is currently editing this diagram');
         }
 
         $layoutJson = $this->encodeLayout($args['layout']);
 
-        $head = $diagram['head_revision_id'] !== null
-            ? Revision::byId((int) $diagram['head_revision_id'])
-            : null;
-        $oldBytes = $head
-            ? strlen((string) $head['source']) + strlen((string) ($head['layout'] ?? ''))
+        $current = Revision::current((int) $diagram['id']);
+        $oldBytes = $current
+            ? strlen((string) $current['source']) + strlen((string) ($current['layout'] ?? ''))
             : 0;
-        $newBytes = ($head ? strlen((string) $head['source']) : 0) + strlen($layoutJson ?? '');
+        $newBytes = ($current ? strlen((string) $current['source']) : 0) + strlen($layoutJson ?? '');
 
         try {
             $owner = User::byId((int) $diagram['owner_id']) ?? $user;
@@ -510,9 +524,9 @@ final class McpController
         }
 
         try {
-            Revision::updateDraft((int) $diagram['id'], $expected, null, $layoutJson);
+            Revision::updateCurrent((int) $diagram['id'], $expected, null, $layoutJson);
         } catch (RevisionConflict $c) {
-            throw new McpToolException("conflict: head is now revision {$c->currentRevisionId}, expected $expected");
+            throw new McpToolException("conflict: current is now based on revision {$c->currentRevisionId}, expected $expected");
         }
 
         $fresh = Diagram::byId((int) $diagram['id']);

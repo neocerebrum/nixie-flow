@@ -124,7 +124,7 @@
     <div class="modal-backdrop"></div>
     <div class="modal-box modal-wide">
         <h2>Cronologia revisioni</h2>
-        <p class="muted-small">La head corrente è evidenziata. Cliccando "Vai a" salti a quella revisione (crea un nuovo punto in cronologia se poi modifichi).</p>
+        <p class="muted-small">Le snapshot sono immutabili: le modifiche dell'editor vivono nel working copy (#current), che viene auto-salvato. La snapshot da cui #current è stata derivata è evidenziata. Cliccando "Carica" copi quella snapshot in #current e continui a editare da lì.</p>
         <div id="historyList" class="history-list"></div>
         <div class="modal-buttons">
             <button id="historyCloseBtn">Chiudi</button>
@@ -157,7 +157,7 @@
     <div class="modal-backdrop"></div>
     <div class="modal-box modal-wide">
         <h2>Condividi diagramma</h2>
-        <p class="muted-small">L'utente deve avere già un account. Permesso "view" = sola lettura, "edit" = può modificare e prendere il turno di editing.</p>
+        <p class="muted-small">L'utente deve avere già un account. Permesso "view" = sola lettura, "edit" = può modificare e ottenere lo scettro.</p>
         <form id="shareAddForm" class="share-add">
             <input id="shareEmailInput" type="email" placeholder="email@dominio.it" required autocomplete="off">
             <select id="sharePermInput">
@@ -174,7 +174,7 @@
     </div>
 </div>
 
-<!-- Modal: edit-request (in-bound, when I hold the lock and someone wants it) -->
+<!-- Banner: edit-request (in-bound, when I hold the scepter and someone wants it) -->
 <div id="incomingRequestBanner" class="hidden"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>

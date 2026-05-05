@@ -93,6 +93,22 @@
 
   const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
 
+  // Per-tab id, persisted in sessionStorage so the same tab keeps its id across
+  // soft reloads (Cmd+R) but each new tab gets a fresh one. Used by the server
+  // to track which of the user's tabs is currently the "active" one — only
+  // that tab is allowed to issue writes.
+  const TAB_ID = (() => {
+    const KEY = "aquata_tab_id";
+    let v = null;
+    try { v = sessionStorage.getItem(KEY); } catch (_) {}
+    if (!v) {
+      v = (crypto && crypto.randomUUID) ? crypto.randomUUID().replace(/-/g, "")
+                                        : Math.random().toString(36).slice(2) + Date.now().toString(36);
+      try { sessionStorage.setItem(KEY, v); } catch (_) {}
+    }
+    return v;
+  })();
+
   // bootstrap data injected by EditorController
   const bootstrap = JSON.parse(document.getElementById("bootstrap-data").textContent);
 
@@ -162,6 +178,7 @@
       method,
       headers: {
         "X-CSRF-Token": csrfToken,
+        "X-Tab-Id": TAB_ID,
       },
     };
     if (!isReadOnly) {
@@ -2203,7 +2220,6 @@
     if (!canWrite || !lockHeldByMe()) return;
     if (!dirtySource && !dirtyLayout) return;
     if (!lastParseValid) return;
-    if (currentRevisionId == null) return;
     if (draftFlushInFlight) { draftFlushPending = true; return; }
 
     if (typingTimer) { clearTimeout(typingTimer); typingTimer = null; }
@@ -2221,15 +2237,14 @@
           expected_revision_id: expected,
         });
       if (status === 200 && json) {
-        if (json.lock) updateLockFromDto(json.lock);
         lastDraftFlushAt = Date.now();
         if (json.updated_at) lastUpdatedAt = json.updated_at;
         updateAutosaveBadge();
-      } else if (status === 423 && json) {
-        if (json.lock) updateLockFromDto(json.lock);
-      } else if (status === 409 && json) {
-        // Lock got bypassed somehow and head moved — surface as conflict.
-        openConflictModal(json.current_revision_id);
+      } else if (status === 423 || status === 409) {
+        // 423 locked: we no longer hold the scepter. 409 conflict: head moved.
+        // Either way, refresh presence so the UI reflects reality.
+        presencePing(false);
+        if (status === 409 && json) openConflictModal(json.current_revision_id);
       }
       // 4xx other → silently ignore; next event will retry.
     } catch (_) { /* network error: next event will retry */ }
@@ -2248,7 +2263,6 @@
     if (!canWrite || !lockHeldByMe()) return;
     if (!dirtySource && !dirtyLayout) return;
     if (!lastParseValid) return;
-    if (currentRevisionId == null) return;
     try {
       fetch(`/api/diagrams/${encodeURIComponent(slug)}/draft`, {
         method: "PATCH", keepalive: true,
@@ -2285,16 +2299,18 @@
       });
       if (status === 200 && json) {
         currentRevisionId = json.revision_id;
-        if (json.lock) updateLockFromDto(json.lock);
         if (json.updated_at) lastUpdatedAt = json.updated_at;
         lastDraftFlushAt = null;
         clearDirty();
         setStatus(`salvato (rev ${currentRevisionId})`);
+      } else if (status === 409 && json && json.error === "inactive_tab") {
+        presencePing(true);
+        showToast("Modifica spostata in un'altra tua scheda. Riprova.", "warn");
       } else if (status === 409 && json) {
         openConflictModal(json.current_revision_id);
-      } else if (status === 423 && json) {
-        if (json.lock) updateLockFromDto(json.lock);
-        showToast("Hai perso il turno di editing — qualcun altro sta modificando.", "warn");
+      } else if (status === 423) {
+        presencePing(false);
+        showToast("Non hai più lo scettro — qualcun altro sta modificando.", "warn");
       } else {
         setStatus(`save failed: HTTP ${status}` + (json && json.error ? ` — ${json.error}` : ""), true);
       }
@@ -2354,7 +2370,6 @@
     try {
       const { status, json } = await api("GET", `/api/diagrams/${encodeURIComponent(slug)}`);
       if (status !== 200 || !json) return;
-      if (json.lock) updateLockFromDto(json.lock);
       if (!json.revision_id) return;
 
       const revChanged    = json.revision_id !== currentRevisionId;
@@ -2410,13 +2425,13 @@
     list.innerHTML = "";
     const revs = (data.revisions || []).slice().reverse();
     if (revs.length === 0) {
-      list.innerHTML = "<p class='muted-small'>Nessuna revisione</p>";
+      list.innerHTML = "<p class='muted-small'>Nessuna snapshot — premi Salva per crearne una.</p>";
       return;
     }
     for (const r of revs) {
-      const isHead = r.id === data.head_revision_id;
+      const isCurrentSource = r.id === data.head_revision_id;
       const row = document.createElement("div");
-      row.className = "history-row" + (isHead ? " is-head" : "");
+      row.className = "history-row" + (isCurrentSource ? " is-head" : "");
       row.innerHTML = `
         <span class="history-id">#${r.id}</span>
         <span class="history-meta">
@@ -2424,12 +2439,12 @@
           • ${r.created_at}
           ${r.message ? `• ${escapeHtml(r.message)}` : ""}
         </span>
-        <button data-rev-id="${r.id}" ${isHead ? "disabled" : ""}>
-          ${isHead ? "head" : "Vai a"}
+        <button data-rev-id="${r.id}" ${isCurrentSource ? "disabled" : ""}>
+          ${isCurrentSource ? "qui" : "Carica"}
         </button>
       `;
       const btn = row.querySelector("button");
-      if (!isHead) btn.addEventListener("click", () => checkout(r.id));
+      if (!isCurrentSource) btn.addEventListener("click", () => checkout(r.id));
       list.appendChild(row);
     }
   }
@@ -2441,7 +2456,7 @@
 
   async function checkout(revisionId) {
     if (dirtySource || dirtyLayout) {
-      if (!confirm("Hai modifiche non salvate. Saltando perderai le modifiche locali. Continuare?")) return;
+      if (!confirm("Le modifiche dopo l'ultima snapshot non sono state salvate come snapshot. Caricando #" + revisionId + " il working copy verrà sostituito. Continuare?")) return;
     }
     try {
       const { status, json } = await api("POST", `/api/diagrams/${encodeURIComponent(slug)}/checkout`, {
@@ -2565,37 +2580,56 @@
     el._hideTimer = setTimeout(() => el.classList.remove("show"), 3500);
   }
 
-  // ── Phase 3: lock + edit-request + share ─────────────────────────────────
+  // ── Phase 3: presence + scepter + edit-request + share ────────────────────
 
-  const HEARTBEAT_MS = 30000;     // server TTL is 90s; we refresh every 30s
+  const HEARTBEAT_MS = 15000;     // server TTL 60s; refresh every 15s
   const REQUEST_POLL_MS = 4000;   // poll incoming/outgoing edit-requests every 4s
 
+  // Last presence DTO returned by the server.
+  let presenceState = { viewers: [], holder_id: null, my_active_tab_id: null, lock: lockState };
+  let claimNextHeartbeat = false;
+
   function lockHeldByMe() {
-    return lockState && lockState.is_active && lockState.user_id === me.id;
+    return presenceState.holder_id === me.id;
   }
   function lockHeldByOther() {
-    return lockState && lockState.is_active && lockState.user_id !== me.id;
+    return presenceState.holder_id !== null && presenceState.holder_id !== me.id;
+  }
+  function iAmActiveTab() {
+    return presenceState.my_active_tab_id === TAB_ID;
   }
 
-  function updateLockFromDto(newLock) {
-    const wasMine  = lockHeldByMe();
-    const wasOther = lockHeldByOther();
-    lockState = newLock;
-    const nowMine  = lockHeldByMe();
-    const nowOther = lockHeldByOther();
-    if (wasMine && !nowMine) {
-      showToast("Hai perso il turno di editing.", "warn");
+  function updatePresenceState(s) {
+    if (!s) return;
+    const wasHolder = lockHeldByMe();
+    const wasActive = iAmActiveTab();
+    presenceState = {
+      viewers: s.viewers || [],
+      holder_id: s.holder_id !== undefined ? s.holder_id : null,
+      my_active_tab_id: s.my_active_tab_id !== undefined ? s.my_active_tab_id : null,
+      lock: s.lock || presenceState.lock,
+    };
+    lockState = presenceState.lock;
+    const nowHolder = lockHeldByMe();
+    const nowActive = iAmActiveTab();
+    if (wasHolder && !nowHolder) {
+      showToast("Hai perso lo scettro di modifica.", "warn");
+    } else if (!wasHolder && nowHolder) {
+      showToast("Hai lo scettro: puoi modificare.");
+      myEditRequest = null;
     }
-    if (wasOther && !nowOther && !lockState.is_active && permission !== "view") {
-      showToast("Il turno di editing è ora libero — riprovo ad acquisirlo.");
-      tryAcquireLock();
+    if (nowHolder && wasActive && !nowActive) {
+      showToast("Modifica trasferita a un'altra tua scheda.", "warn");
     }
     renderLockBanner();
     applyReadOnlyMode();
   }
 
   function applyReadOnlyMode() {
-    const blocked = !canWrite || lockHeldByOther() || (permission === "view");
+    const blocked = !canWrite
+      || lockHeldByOther()
+      || (permission === "view")
+      || (lockHeldByMe() && !iAmActiveTab());
     isReadOnly = blocked;
     document.body.classList.toggle("readonly", blocked);
     if (sourceCM) sourceCM.setOption("readOnly", blocked ? "nocursor" : false);
@@ -2603,9 +2637,11 @@
   }
 
   function lockHolderLabel() {
-    if (!lockState || !lockState.user_id) return "";
-    if (lockState.user_id === me.id) return "tu";
-    return "utente #" + lockState.user_id;
+    const hid = presenceState.holder_id;
+    if (!hid) return "";
+    if (hid === me.id) return "tu";
+    const v = (presenceState.viewers || []).find(x => x.user_id === hid);
+    return v ? (v.display_name || v.email || ("utente #" + hid)) : ("utente #" + hid);
   }
 
   function renderLockBanner() {
@@ -2620,13 +2656,18 @@
     }
 
     if (lockHeldByMe()) {
-      lockBannerEl.classList.add("lock-mine");
-      lockMessageEl.textContent = "Stai modificando (turno tuo).";
-      const releaseBtn = document.createElement("button");
-      releaseBtn.textContent = "Rilascia turno";
-      releaseBtn.title = "Lascia il turno libero per altri";
-      releaseBtn.addEventListener("click", releaseLock);
-      lockActionsEl.appendChild(releaseBtn);
+      if (iAmActiveTab()) {
+        lockBannerEl.classList.add("lock-mine");
+        lockMessageEl.textContent = "Hai lo scettro: puoi modificare.";
+      } else {
+        lockBannerEl.classList.add("lock-readonly");
+        lockMessageEl.textContent = "Aperto in un'altra tua scheda. Clicca qui per modificare in questa.";
+        const switchBtn = document.createElement("button");
+        switchBtn.className = "primary";
+        switchBtn.textContent = "Modifica qui";
+        switchBtn.addEventListener("click", () => claimActiveTab(true));
+        lockActionsEl.appendChild(switchBtn);
+      }
       return;
     }
 
@@ -2634,87 +2675,86 @@
       lockBannerEl.classList.add("lock-other");
       lockMessageEl.textContent = "Sta modificando: " + lockHolderLabel() + " — sola lettura.";
       if (myEditRequest && myEditRequest.status === "pending") {
-        const cancelBtn = document.createElement("button");
-        cancelBtn.textContent = "Annulla richiesta";
-        cancelBtn.addEventListener("click", cancelMyRequest);
         const span = document.createElement("span");
         span.textContent = "Richiesta inviata, in attesa…";
         span.style.marginRight = "10px";
+        const cancelBtn = document.createElement("button");
+        cancelBtn.textContent = "Annulla richiesta";
+        cancelBtn.addEventListener("click", cancelMyRequest);
         lockActionsEl.appendChild(span);
         lockActionsEl.appendChild(cancelBtn);
-      } else if (myEditRequest && myEditRequest.status === "granted" && myEditRequest.grant_open) {
-        const takeBtn = document.createElement("button");
-        takeBtn.className = "primary";
-        takeBtn.textContent = "Prendi il turno";
-        takeBtn.addEventListener("click", tryAcquireLock);
-        lockActionsEl.appendChild(takeBtn);
       } else {
         const reqBtn = document.createElement("button");
         reqBtn.className = "primary";
-        reqBtn.textContent = "Richiedi turno";
+        reqBtn.textContent = "Chiedi lo scettro";
         reqBtn.addEventListener("click", requestEdit);
         lockActionsEl.appendChild(reqBtn);
       }
       return;
     }
 
-    // Lock free (and I'm not editor yet)
+    // No holder (transient: server will promote on next heartbeat).
     lockBannerEl.classList.add("lock-free");
-    lockMessageEl.textContent = "Turno libero.";
-    const takeBtn = document.createElement("button");
-    takeBtn.className = "primary";
-    takeBtn.textContent = "Prendi turno";
-    takeBtn.addEventListener("click", tryAcquireLock);
-    lockActionsEl.appendChild(takeBtn);
+    lockMessageEl.textContent = "Scettro non ancora assegnato…";
   }
 
-  async function tryAcquireLock() {
-    if (!canWrite) return false;
+  // Send a heartbeat now, optionally claiming this tab as the active one.
+  async function presencePing(claim) {
     try {
-      const { status, json } = await api("POST", `/api/diagrams/${encodeURIComponent(slug)}/lock`, {});
-      if (json && json.lock) updateLockFromDto(json.lock);
-      if (status === 200) {
-        myEditRequest = null;
-        startHeartbeat();
-        renderLockBanner();
-        return true;
-      }
-      return false;
-    } catch (_) { return false; }
-  }
-
-  async function releaseLock() {
-    // Flush any pending autosave before giving up the turn so the next editor
-    // (or my next session) inherits the freshest state.
-    if ((dirtySource || dirtyLayout) && lastParseValid) {
-      await flushDraft({ immediate: true });
-    }
-    stopHeartbeat();
-    try {
-      await api("DELETE", `/api/diagrams/${encodeURIComponent(slug)}/lock`, {});
+      const { status, json } = await api(
+        "POST",
+        `/api/diagrams/${encodeURIComponent(slug)}/presence/heartbeat`,
+        { tab_id: TAB_ID, claim_active: !!claim }
+      );
+      if (status === 200 && json) updatePresenceState(json);
     } catch (_) { /* ignore */ }
-    lockState = { user_id: null, since: null, is_active: false, expires_at: null };
-    clearDirty();
-    renderLockBanner();
-    applyReadOnlyMode();
+  }
+
+  // Debounced "I want to be the active tab" call. Triggered on focus,
+  // typing, canvas mousedown, save attempt, etc.
+  let lastClaimAt = 0;
+  function claimActiveTab(force) {
+    const now = Date.now();
+    if (!force && now - lastClaimAt < 1500) {
+      claimNextHeartbeat = true;
+      return;
+    }
+    lastClaimAt = now;
+    presencePing(true);
   }
 
   function startHeartbeat() {
     stopHeartbeat();
-    heartbeatTimer = setInterval(async () => {
+    heartbeatTimer = setInterval(() => {
       if (document.hidden) return;
-      try {
-        const { status, json } = await api("POST", `/api/diagrams/${encodeURIComponent(slug)}/lock/heartbeat`, {});
-        if (json && json.lock) updateLockFromDto(json.lock);
-        if (status === 410) {
-          stopHeartbeat();
-          showToast("Lock scaduto o preso da altri.", "warn");
-        }
-      } catch (_) { /* ignore */ }
+      const claim = claimNextHeartbeat;
+      claimNextHeartbeat = false;
+      presencePing(claim);
     }, HEARTBEAT_MS);
   }
   function stopHeartbeat() {
     if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+  }
+
+  async function presenceJoin() {
+    try {
+      const { status, json } = await api(
+        "POST",
+        `/api/diagrams/${encodeURIComponent(slug)}/presence`,
+        { tab_id: TAB_ID }
+      );
+      if (status === 200 && json) updatePresenceState(json);
+    } catch (_) { /* ignore */ }
+  }
+
+  function presenceLeaveBeacon() {
+    try {
+      const blob = new Blob(
+        [JSON.stringify({ tab_id: TAB_ID })],
+        { type: "application/json" }
+      );
+      navigator.sendBeacon(`/api/diagrams/${encodeURIComponent(slug)}/presence/leave`, blob);
+    } catch (_) { /* ignore */ }
   }
 
   async function requestEdit() {
@@ -2724,7 +2764,7 @@
         `/api/diagrams/${encodeURIComponent(slug)}/edit-requests`, { note });
       if ((status === 200 || status === 201) && json && json.request) {
         myEditRequest = json.request;
-        if (json.lock) updateLockFromDto(json.lock); else renderLockBanner();
+        renderLockBanner();
         showToast("Richiesta inviata.");
       } else {
         showToast("Impossibile inviare la richiesta.", "warn");
@@ -2750,12 +2790,8 @@
       if (status !== 200 || !json) return;
       const prev = myEditRequest;
       myEditRequest = json.request;
-      if (myEditRequest && myEditRequest.status === "granted" && myEditRequest.grant_open) {
-        if (!prev || prev.status !== "granted") {
-          showToast("Il tuo turno è stato accordato — premi 'Prendi il turno'.");
-        }
-      } else if (myEditRequest && myEditRequest.status === "rejected"
-                 && prev && prev.status === "pending") {
+      if (myEditRequest && myEditRequest.status === "rejected"
+          && prev && prev.status === "pending") {
         showToast("Richiesta rifiutata.", "warn");
         myEditRequest = null;
       }
@@ -2793,7 +2829,7 @@
     const msg = document.createElement("span");
     msg.innerHTML = `<strong>${escapeHtml(who)}</strong> chiede il turno${note}`;
     const acc = document.createElement("button");
-    acc.className = "primary"; acc.textContent = "Cedi";
+    acc.className = "primary"; acc.textContent = "Cedi scettro";
     acc.addEventListener("click", () => acceptRequest(r.id));
     const dec = document.createElement("button");
     dec.className = "danger"; dec.textContent = "Rifiuta";
@@ -2810,25 +2846,19 @@
 
   async function acceptRequest(id) {
     // Flush autosave so the requester inherits whatever I had typed but not
-    // explicitly saved. No need for the old "perdi modifiche" prompt because
-    // the draft is preserved in the head row.
+    // explicitly saved.
     if ((dirtySource || dirtyLayout) && lastParseValid) {
       await flushDraft({ immediate: true });
     }
     try {
       await api("POST", `/api/diagrams/${encodeURIComponent(slug)}/edit-requests/${id}/accept`, {});
-      stopHeartbeat();
-      lockState = { user_id: null, since: null, is_active: false, expires_at: null };
-      // Work is autosaved on head row; clear dirty so the "modificato" badge
-      // doesn't linger for a passive viewer.
+      // Server has atomically transferred the scepter. Refresh presence so
+      // we move into spectator state immediately.
+      await presencePing(false);
       clearDirty();
       hideIncomingBanner();
-      renderLockBanner();
-      applyReadOnlyMode();
-      // Force an immediate poll so I see the new editor's first edits without
-      // waiting for the next 5s tick.
       pollHead();
-      showToast("Turno ceduto.");
+      showToast("Scettro ceduto.");
     } catch (_) { /* ignore */ }
   }
 
@@ -3082,11 +3112,19 @@
       applyReadOnlyMode();
     }
 
-    // Try to acquire the lock automatically when entering with edit perm.
-    if (canWrite) {
-      const taken = await tryAcquireLock();
-      if (taken) startHeartbeat();
-    }
+    // Join presence: the server may auto-promote us to scepter holder if it
+    // is currently free. Heartbeat runs from every connected client (not only
+    // the holder), so promotion stays current as people come and go.
+    await presenceJoin();
+    startHeartbeat();
+
+    // Becoming "active" in this tab: clicking, typing, focusing the window,
+    // or hitting save all imply intent to edit here. Each event re-claims
+    // active_tab_id so multi-tab handover happens within one heartbeat.
+    window.addEventListener("focus", () => claimActiveTab(false));
+    diagramEl.addEventListener("mousedown", () => claimActiveTab(false));
+    sourceEditor.addEventListener("focus", () => claimActiveTab(false));
+    sourceEditor.addEventListener("input", () => claimActiveTab(false));
 
     // Poll edit-requests (mine if waiting, incoming if editor) every 4s.
     requestPollTimer = setInterval(() => {
@@ -3094,20 +3132,12 @@
       pollIncomingRequests();
     }, 4000);
 
-    window.addEventListener("beforeunload", () => {
-      if (lockHeldByMe()) {
-        // Order matters: flush draft first (so I don't lose pending edits),
-        // then release the lock. Both via fetch keepalive — the request will
-        // complete in the background even after the page is gone.
-        flushDraftBeacon();
-        try {
-          fetch(`/api/diagrams/${encodeURIComponent(slug)}/lock`, {
-            method: "DELETE", keepalive: true,
-            headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
-            body: "{}",
-          });
-        } catch (_) { /* ignore */ }
-      }
+    // Clean exit: tell the server my presence is gone. The request lands via
+    // sendBeacon even after the page is unloaded. If another of my tabs is
+    // alive, its next heartbeat refreshes the row before any peer notices.
+    window.addEventListener("pagehide", () => {
+      if (lockHeldByMe()) flushDraftBeacon();
+      presenceLeaveBeacon();
     });
 
     window.__editorReady = true;

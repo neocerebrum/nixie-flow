@@ -83,7 +83,9 @@ final class Diagram
     }
 
     /**
-     * Create diagram + first revision atomically. Returns [diagram, revision].
+     * Create diagram + #current row atomically. Returns [diagram, current].
+     * No snapshot is created — the user creates snapshots explicitly via Save.
+     * `head_revision_id` on the diagram is the stable id of the #current row.
      * @return array{0: array<string,mixed>, 1: array<string,mixed>}
      */
     public static function createWithFirstRevision(
@@ -103,16 +105,17 @@ final class Diagram
             $diagramId = (int) $pdo->lastInsertId();
 
             $stmt = $pdo->prepare(
-                'INSERT INTO diagram_revisions (diagram_id, parent_id, source, layout, author_id)
-                 VALUES (?, NULL, ?, ?, ?)'
+                'INSERT INTO diagram_revisions
+                   (diagram_id, parent_id, source, layout, author_id, is_current, source_revision_id)
+                 VALUES (?, NULL, ?, ?, ?, 1, NULL)'
             );
             $stmt->execute([$diagramId, $source, $layoutJson, $ownerId]);
-            $revisionId = (int) $pdo->lastInsertId();
+            $currentId = (int) $pdo->lastInsertId();
 
             $stmt = $pdo->prepare(
                 'UPDATE diagrams SET head_revision_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
             );
-            $stmt->execute([$revisionId, $diagramId]);
+            $stmt->execute([$currentId, $diagramId]);
 
             $pdo->commit();
         } catch (\Throwable $e) {
@@ -121,19 +124,11 @@ final class Diagram
         }
 
         $diagram = self::byId($diagramId);
-        $revision = Revision::byId($revisionId);
-        if ($diagram === null || $revision === null) {
+        $current = Revision::byId($currentId);
+        if ($diagram === null || $current === null) {
             throw new \RuntimeException('Failed to reload created diagram');
         }
-        return [$diagram, $revision];
-    }
-
-    public static function setHead(int $diagramId, int $revisionId): void
-    {
-        $stmt = db()->prepare(
-            'UPDATE diagrams SET head_revision_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
-        );
-        $stmt->execute([$revisionId, $diagramId]);
+        return [$diagram, $current];
     }
 
     public static function rename(int $diagramId, ?string $title, ?string $slug): void

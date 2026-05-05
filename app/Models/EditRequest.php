@@ -6,16 +6,15 @@ namespace App\Models;
 use PDO;
 
 /**
- * Hand-over request from a viewer to the current editor.
+ * Hand-over request from a spectator to the current scepter holder.
  * status: pending | granted | rejected | cancelled
  *
- * Once granted, the requester has GRANT_WINDOW_SECONDS to acquire the lock
- * (it has been freed by the editor). After that, anyone may take it.
+ * On accept the scepter is transferred atomically to the requester
+ * (see EditRequestController::accept), so granted is purely a record of
+ * the outcome — there is no acquisition window to race for.
  */
 final class EditRequest
 {
-    public const GRANT_WINDOW_SECONDS = 30;
-
     public static function byId(int $id): ?array
     {
         $stmt = db()->prepare('SELECT * FROM edit_requests WHERE id = ?');
@@ -37,27 +36,20 @@ final class EditRequest
     }
 
     /**
-     * Returns the active request (pending OR granted-with-window-open) for a user.
-     * Granted requests whose 30s acquisition window has expired are NOT returned —
-     * they're treated as concluded so the user can file a fresh request.
+     * Returns the user's active pending request, or null. Granted requests
+     * are not returned: the scepter is transferred atomically on accept, so a
+     * granted record is purely historical.
      */
     public static function activeForUser(int $diagramId, int $userId): ?array
     {
         $stmt = db()->prepare(
             "SELECT * FROM edit_requests
-             WHERE diagram_id = ? AND requester_id = ?
-                   AND status IN ('pending', 'granted')
+             WHERE diagram_id = ? AND requester_id = ? AND status = 'pending'
              ORDER BY id DESC LIMIT 1"
         );
         $stmt->execute([$diagramId, $userId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        if ($row === false) return null;
-        if (($row['status'] ?? '') === 'granted' && !self::isGrantWindowOpen($row)) {
-            // Window expired → consume it so the next request creates a fresh row.
-            self::setStatus((int) $row['id'], 'cancelled');
-            return null;
-        }
-        return $row;
+        return $row !== false ? $row : null;
     }
 
     /** @return array<int, array<string, mixed>> Pending requests on a diagram. */
@@ -90,25 +82,6 @@ final class EditRequest
             'UPDATE edit_requests SET status = ?, resolved_at = CURRENT_TIMESTAMP WHERE id = ?'
         );
         $stmt->execute([$status, $id]);
-    }
-
-    /**
-     * True if the granted timestamp is still within the acquisition window.
-     */
-    public static function isGrantWindowOpen(array $request): bool
-    {
-        if (($request['status'] ?? '') !== 'granted') {
-            return false;
-        }
-        $resolved = $request['resolved_at'] ?? null;
-        if ($resolved === null) {
-            return false;
-        }
-        $ts = strtotime((string) $resolved . ' UTC');
-        if ($ts === false) {
-            return false;
-        }
-        return time() < $ts + self::GRANT_WINDOW_SECONDS;
     }
 
     /** Mark stale pending requests on a diagram as rejected (older than 5 minutes). */

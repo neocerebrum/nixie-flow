@@ -52,15 +52,13 @@ $router->patch('/api/diagrams/{slug}/draft',    [App\Controllers\Api\DiagramCont
 $router->patch('/api/diagrams/{slug}',          [App\Controllers\Api\DiagramController::class, 'patch']);
 $router->delete('/api/diagrams/{slug}',         [App\Controllers\Api\DiagramController::class, 'delete']);
 $router->get('/api/diagrams/{slug}/history',    [App\Controllers\Api\DiagramController::class, 'history']);
-$router->post('/api/diagrams/{slug}/undo',      [App\Controllers\Api\DiagramController::class, 'undo']);
-$router->post('/api/diagrams/{slug}/redo',      [App\Controllers\Api\DiagramController::class, 'redo']);
 $router->post('/api/diagrams/{slug}/checkout',  [App\Controllers\Api\DiagramController::class, 'checkout']);
 $router->post('/api/diagrams/{slug}/restore',   [App\Controllers\Api\DiagramController::class, 'restore']);
 
-// Phase 3: lock + edit-requests + sharing
-$router->post('/api/diagrams/{slug}/lock',           [App\Controllers\Api\LockController::class, 'acquire']);
-$router->post('/api/diagrams/{slug}/lock/heartbeat', [App\Controllers\Api\LockController::class, 'heartbeat']);
-$router->delete('/api/diagrams/{slug}/lock',         [App\Controllers\Api\LockController::class, 'release']);
+// Presence-driven scepter
+$router->post('/api/diagrams/{slug}/presence',           [App\Controllers\Api\PresenceController::class, 'join']);
+$router->post('/api/diagrams/{slug}/presence/heartbeat', [App\Controllers\Api\PresenceController::class, 'heartbeat']);
+$router->post('/api/diagrams/{slug}/presence/leave',     [App\Controllers\Api\PresenceController::class, 'leave']);
 
 $router->post('/api/diagrams/{slug}/edit-requests',                  [App\Controllers\Api\EditRequestController::class, 'create']);
 $router->get('/api/diagrams/{slug}/edit-requests',                   [App\Controllers\Api\EditRequestController::class, 'listForDiagram']);

@@ -145,8 +145,10 @@ final class Quota
 
     public static function countRevisions(int $diagramId): int
     {
+        // Counts user-created snapshots only; the mutable #current row is not
+        // a checkpoint and shouldn't count toward the per-diagram revision cap.
         $stmt = db()->prepare(
-            'SELECT COUNT(*) FROM diagram_revisions WHERE diagram_id = ?'
+            'SELECT COUNT(*) FROM diagram_revisions WHERE diagram_id = ? AND is_current = 0'
         );
         $stmt->execute([$diagramId]);
         return (int) $stmt->fetchColumn();

@@ -3329,6 +3329,9 @@
   function attachResizer(handle, panel, side) {
     handle.addEventListener("pointerdown", (e) => {
       if (e.pointerType === "mouse" && e.button !== 0) return;
+      // No-op while the panel is collapsed — the handle becomes a passive
+      // strip until the user re-expands the panel via the toggle button.
+      if (panel.classList.contains("collapsed")) return;
       e.preventDefault();
       const pointerId = e.pointerId;
       handle.classList.add("dragging");
@@ -3356,10 +3359,28 @@
   attachResizer(resizer, sourcePanel, "left");
   attachResizer(resizerRight, notesPanel, "right");
 
+  // Collapse helper: the resizers write `style="width: Xpx"` inline, which
+  // beats the `.collapsed { width: 30px }` rule on specificity. Stash the
+  // user's chosen width on the element when collapsing so we can both
+  // restore it on expand and let the .collapsed rule actually take effect.
+  function togglePanelCollapse(panel, btn, collapsedArrow, expandedArrow) {
+    const willCollapse = !panel.classList.contains("collapsed");
+    if (willCollapse) {
+      if (panel.style.width) panel.dataset.expandedWidth = panel.style.width;
+      panel.style.width = "";
+    } else {
+      if (panel.dataset.expandedWidth) {
+        panel.style.width = panel.dataset.expandedWidth;
+        delete panel.dataset.expandedWidth;
+      }
+    }
+    panel.classList.toggle("collapsed", willCollapse);
+    btn.textContent = willCollapse ? collapsedArrow : expandedArrow;
+    btn.title = willCollapse ? "Espandi" : "Collassa";
+  }
+
   toggleNotesPanelBtn.addEventListener("click", () => {
-    const collapsed = notesPanel.classList.toggle("collapsed");
-    toggleNotesPanelBtn.textContent = collapsed ? "«" : "»";
-    toggleNotesPanelBtn.title = collapsed ? "Espandi" : "Collassa";
+    togglePanelCollapse(notesPanel, toggleNotesPanelBtn, "«", "»");
   });
 
   notesTextarea.addEventListener("input", () => {
@@ -3395,9 +3416,7 @@
   });
 
   togglePanelBtn.addEventListener("click", () => {
-    const collapsed = sourcePanel.classList.toggle("collapsed");
-    togglePanelBtn.textContent = collapsed ? "»" : "«";
-    togglePanelBtn.title = collapsed ? "Espandi" : "Collassa";
+    togglePanelCollapse(sourcePanel, togglePanelBtn, "»", "«");
   });
 
   document.addEventListener("keydown", (e) => {

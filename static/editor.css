@@ -90,11 +90,12 @@ body { margin: 0; overflow: hidden; display: flex; flex-direction: column; }
     transition: width 0.2s ease;
     flex-shrink: 0;
 }
-#sourcePanel.collapsed { width: 30px; }
+#sourcePanel.collapsed { width: 18px; }
 #sourcePanel.collapsed #editorHost,
 #sourcePanel.collapsed #parseStatus,
 #sourcePanel.collapsed .panel-title { display: none; }
-#sourcePanel.collapsed #togglePanelBtn { transform: rotate(180deg); margin: 0 auto; }
+#sourcePanel.collapsed .panel-header { padding: 8px 0; }
+#sourcePanel.collapsed #togglePanelBtn { margin: 0 auto; }
 .panel-header {
     padding: 8px 12px; font-size: 12px;
     background: #151b23; border-bottom: 1px solid #2a3441;
@@ -149,6 +150,13 @@ body { margin: 0; overflow: hidden; display: flex; flex-direction: column; }
 }
 #resizer:hover, #resizer.dragging,
 #resizerRight:hover, #resizerRight.dragging { background: #5e81ac; }
+/* Disable the resizer cursor/hover affordance when the adjacent panel is
+ * collapsed — the JS pointerdown handler also bails out, but the cursor
+ * needs to reflect that the handle is currently inert. */
+#sourcePanel.collapsed + #resizer,
+#notesPanel.collapsed { /* notesPanel sits AFTER its resizer; matched via :has() */ }
+#sourcePanel.collapsed + #resizer { cursor: default; }
+#main:has(#notesPanel.collapsed) > #resizerRight { cursor: default; }
 body.source-invalid #resizer { background: #bf616a; }
 
 /* Notes panel (right side) — mirror of #sourcePanel */
@@ -159,11 +167,12 @@ body.source-invalid #resizer { background: #bf616a; }
     transition: width 0.2s ease;
     flex-shrink: 0;
 }
-#notesPanel.collapsed { width: 30px; }
+#notesPanel.collapsed { width: 18px; }
 #notesPanel.collapsed #notesBody,
 #notesPanel.collapsed #notesTargetLabel,
 #notesPanel.collapsed .panel-title { display: none; }
-#notesPanel.collapsed #toggleNotesPanelBtn { transform: rotate(180deg); margin: 0 auto; }
+#notesPanel.collapsed .panel-header { padding: 8px 0; }
+#notesPanel.collapsed #toggleNotesPanelBtn { margin: 0 auto; }
 #notesPanel #toggleNotesPanelBtn {
     background: none; border: none; color: #9fadbd;
     cursor: pointer; font-size: 14px; padding: 0 4px;

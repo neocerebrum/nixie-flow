@@ -88,6 +88,12 @@
   const sourcePanel = document.getElementById("sourcePanel");
   const togglePanelBtn = document.getElementById("togglePanelBtn");
   const resizer = document.getElementById("resizer");
+  const resizerRight = document.getElementById("resizerRight");
+  const notesPanel = document.getElementById("notesPanel");
+  const notesTextarea = document.getElementById("notesTextarea");
+  const notesEmpty = document.getElementById("notesEmpty");
+  const notesTargetLabel = document.getElementById("notesTargetLabel");
+  const toggleNotesPanelBtn = document.getElementById("toggleNotesPanelBtn");
 
   // ── State ────────────────────────────────────────────────────────────────
 
@@ -1408,6 +1414,169 @@
     // currently have no label, so we don't dual-attach here.
   }
 
+  // ── Notes (per-element comments) ─────────────────────────────────────────
+  //
+  // Convention (also documented for Claude / human readers):
+  //   %% <id> <free text>
+  // where <id> is a node or subgraph id. Multi-line notes are encoded inline:
+  //   - newline → \n  (literal backslash + 'n')
+  //   - literal \  → \\
+  // One %%-line per id; an empty/whitespace-only note removes the line.
+
+  const NOTE_RE = /^%%\s+([A-Za-z_][\w]*)\s+(.*)$/;
+  let _notesAutosaveTimer = null;
+  let _notesCurrentId = null;     // id of the element currently bound to the panel
+  let _notesCurrentKind = null;   // 'node' | 'subgraph'
+  let _notesSuppressInput = false;
+
+  function encodeNote(text) {
+    return text
+      .replace(/\\/g, "\\\\")
+      .replace(/\r\n?/g, "\n")
+      .replace(/\n/g, "\\n");
+  }
+  function decodeNote(text) {
+    let out = "";
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (ch === "\\" && i + 1 < text.length) {
+        const nx = text[i + 1];
+        if (nx === "n") { out += "\n"; i++; continue; }
+        if (nx === "\\") { out += "\\"; i++; continue; }
+      }
+      out += ch;
+    }
+    return out;
+  }
+
+  function findNoteForId(source, id) {
+    const lines = source.split("\n");
+    for (const line of lines) {
+      const m = line.match(NOTE_RE);
+      if (m && m[1] === id) return m[2];
+    }
+    return null;
+  }
+
+  // Returns the source with the note for `id` set to `encoded` (a single-line
+  // already-encoded payload), or removed if `encoded` is empty/null. Updates
+  // the first matching line; appends at the end if none exists.
+  function upsertNoteInSource(source, id, encoded) {
+    const lines = source.split("\n");
+    let foundIdx = -1;
+    for (let i = 0; i < lines.length; i++) {
+      const m = lines[i].match(NOTE_RE);
+      if (m && m[1] === id) { foundIdx = i; break; }
+    }
+    const isEmpty = !encoded || encoded.length === 0;
+    if (foundIdx === -1) {
+      if (isEmpty) return source;
+      const newLine = `%% ${id} ${encoded}`;
+      if (!source.endsWith("\n")) source += "\n";
+      return source + newLine + "\n";
+    }
+    if (isEmpty) {
+      lines.splice(foundIdx, 1);
+      return lines.join("\n");
+    }
+    lines[foundIdx] = `%% ${id} ${encoded}`;
+    return lines.join("\n");
+  }
+
+  // Read the visible caption (rendered label) of a node or subgraph from the
+  // current SVG — falls back to the id when the label is missing or blank.
+  function noteCaptionFor(kind, id) {
+    let g = null;
+    if (kind === "node" && nodeMap[id]) g = nodeMap[id].g;
+    else if (kind === "subgraph" && clusterMap[id]) {
+      g = clusterMap[id].label || clusterMap[id].g;
+    }
+    if (!g) return id;
+    const labelEl = findLabelTextElement(g);
+    const txt = labelEl ? getLabelText(labelEl) : "";
+    return txt || id;
+  }
+
+  // Decide what (if anything) the panel binds to right now, and refresh it.
+  function updateNotesPanel() {
+    let kind = null, id = null;
+    if (selectedNodeIds.size === 1 && !selectedClusterId && !selectedEdgeKey) {
+      kind = "node"; id = [...selectedNodeIds][0];
+    } else if (selectedClusterId && selectedNodeIds.size === 0 && !selectedEdgeKey) {
+      kind = "subgraph"; id = selectedClusterId;
+    }
+    // Was the panel already bound to this same element? (Compare against the
+    // PREVIOUS binding, before we overwrite it below.) Used to decide whether
+    // a refresh should preserve the user's mid-typing textarea content.
+    const sameBinding = (id !== null && _notesCurrentId === id && _notesCurrentKind === kind);
+
+    // If the bound element changed, flush any pending note edit for the
+    // previous one so we don't lose it on rapid selection switches.
+    if (_notesCurrentId && !sameBinding) {
+      flushPendingNoteEdit();
+    }
+    _notesCurrentId = id;
+    _notesCurrentKind = kind;
+
+    // Only protect mid-typing content when the binding hasn't changed —
+    // otherwise the new element would inherit the previous one's textarea.
+    const isTyping = sameBinding && document.activeElement === notesTextarea;
+
+    if (!id) {
+      notesEmpty.classList.remove("hidden");
+      notesTextarea.classList.add("hidden");
+      notesTargetLabel.textContent = "";
+      _notesSuppressInput = true;
+      try { notesTextarea.value = ""; } finally { _notesSuppressInput = false; }
+      return;
+    }
+
+    const caption = noteCaptionFor(kind, id);
+    notesTargetLabel.innerHTML =
+      `<span class="notes-target-id"></span><span class="notes-target-sep">·</span><span class="notes-target-caption"></span>`;
+    notesTargetLabel.querySelector(".notes-target-id").textContent = id;
+    notesTargetLabel.querySelector(".notes-target-caption").textContent = caption;
+
+    if (!isTyping) {
+      const encoded = findNoteForId(currentSource, id) || "";
+      _notesSuppressInput = true;
+      try {
+        notesTextarea.value = decodeNote(encoded);
+      } finally { _notesSuppressInput = false; }
+    }
+
+    notesEmpty.classList.add("hidden");
+    notesTextarea.classList.remove("hidden");
+    notesTextarea.disabled = isReadOnly || !canWrite;
+  }
+
+  // Apply the textarea content to currentSource for the bound element.
+  // Returns true if the source actually changed.
+  function applyNoteEdit() {
+    if (!_notesCurrentId) return false;
+    const id = _notesCurrentId;
+    const text = notesTextarea.value || "";
+    const encoded = encodeNote(text).trim();
+    const next = upsertNoteInSource(currentSource, id, encoded);
+    if (next === currentSource) return false;
+    currentSource = next;
+    // Sync CodeMirror, but suppress its change handler — comments are pure
+    // metadata so we skip the diagram re-render entirely.
+    setSourceValue(currentSource);
+    // Use the typing-debounce autosave path so rapid edits coalesce.
+    _typingFromCM = true;
+    try { markDirtySource(); } finally { _typingFromCM = false; }
+    return true;
+  }
+
+  function flushPendingNoteEdit() {
+    if (_notesAutosaveTimer) {
+      clearTimeout(_notesAutosaveTimer);
+      _notesAutosaveTimer = null;
+    }
+    if (applyNoteEdit()) pushHistory();
+  }
+
   // ── Add/delete node/edge ─────────────────────────────────────────────────
 
   function appendLineToSource(source, line) {
@@ -1987,6 +2156,7 @@
     if (shapePaletteEl) {
       for (const b of shapePaletteEl.querySelectorAll("button")) b.disabled = !shapeEnabled;
     }
+    updateNotesPanel();
   }
 
   function toggleClusterSelection(id) {
@@ -3056,6 +3226,52 @@
     }
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
+  });
+
+  resizerRight.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    resizerRight.classList.add("dragging");
+    const startX = e.clientX;
+    const startWidth = notesPanel.getBoundingClientRect().width;
+    function onMove(ev) {
+      // Drag right shrinks the panel; drag left grows it.
+      const w = Math.max(120, Math.min(window.innerWidth - 200, startWidth - (ev.clientX - startX)));
+      notesPanel.style.width = w + "px";
+    }
+    function onUp() {
+      resizerRight.classList.remove("dragging");
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    }
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  });
+
+  toggleNotesPanelBtn.addEventListener("click", () => {
+    const collapsed = notesPanel.classList.toggle("collapsed");
+    toggleNotesPanelBtn.textContent = collapsed ? "«" : "»";
+    toggleNotesPanelBtn.title = collapsed ? "Espandi" : "Collassa";
+  });
+
+  notesTextarea.addEventListener("input", () => {
+    if (_notesSuppressInput) return;
+    if (!_notesCurrentId) return;
+    // Debounce: apply to currentSource on a short delay so rapid typing
+    // coalesces into one source rewrite + autosave cycle.
+    if (_notesAutosaveTimer) clearTimeout(_notesAutosaveTimer);
+    _notesAutosaveTimer = setTimeout(() => {
+      _notesAutosaveTimer = null;
+      applyNoteEdit();
+    }, 400);
+  });
+  notesTextarea.addEventListener("blur", () => {
+    if (_notesAutosaveTimer) {
+      clearTimeout(_notesAutosaveTimer);
+      _notesAutosaveTimer = null;
+    }
+    // pushHistory only when an actual write to the source happens — keeps
+    // undo discrete (one entry per coalesced note edit, not per keystroke).
+    if (applyNoteEdit()) pushHistory();
   });
 
   window.addEventListener("beforeunload", (e) => {

@@ -213,9 +213,28 @@ final class McpController
 
     // ── Tool definitions (advertised via tools/list) ────────────────────────
 
+    /**
+     * Per-element notes are stored as Mermaid comments, one line per element:
+     *
+     *     %% <id> <free text>
+     *
+     * where <id> is a node id or subgraph id. Multi-line notes are encoded
+     * inline: literal newline → `\n` (two characters: backslash + n), literal
+     * backslash → `\\`. At most one note line per id; the line may appear
+     * anywhere in the source. Mermaid ignores `%%` lines, so notes do not
+     * affect the rendered diagram. Read these comments to recover authorial
+     * intent for a node/subgraph; write/update them by adding or rewriting
+     * the matching `%% <id> ...` line.
+     */
+    private const NOTES_CONVENTION_DOC =
+        "Per-element notes are stored as Mermaid comments using the convention `%% <id> <text>` (one line per node/subgraph id). "
+        . "Multi-line notes are encoded inline: newline → `\\n` (literal backslash + n), backslash → `\\\\`. "
+        . "At most one such line per id; absence = no note. These comments are authored via the Aquata editor's notes panel and convey authorial intent — read them, and preserve/update them when rewriting the source (do not strip `%% <id> ...` lines unless you want to delete the corresponding note).";
+
     /** @return array<int, array<string, mixed>> */
     private function toolDefinitions(): array
     {
+        $notesDoc = self::NOTES_CONVENTION_DOC;
         return [
             [
                 'name' => 'list_diagrams',
@@ -227,7 +246,7 @@ final class McpController
             ],
             [
                 'name' => 'get_diagram',
-                'description' => 'Fetch a diagram by slug. Returns source, layout, revision_id, title, lock state.',
+                'description' => 'Fetch a diagram by slug. Returns source, layout, revision_id, title, lock state. ' . $notesDoc,
                 'inputSchema' => [
                     'type' => 'object',
                     'properties' => ['slug' => ['type' => 'string']],
@@ -236,12 +255,12 @@ final class McpController
             ],
             [
                 'name' => 'save_diagram',
-                'description' => 'Create a new immutable snapshot from the live working copy. expected_version is the snapshot id the working copy is currently based on (null/0 on a never-saved diagram); mismatch returns a conflict error. Auto-acquires the edit lock. The source MUST be a Mermaid flowchart (flowchart/graph TD|LR|TB|BT|RL); other Mermaid diagram types (sequence, class, ER, state, gantt, etc.) are not supported by the editor. Do NOT include style directives, classDef, or per-node fill/stroke/color: visual styling is managed by the user via the editor palette and stored separately.',
+                'description' => 'Create a new immutable snapshot from the live working copy. expected_version is the snapshot id the working copy is currently based on (null/0 on a never-saved diagram); mismatch returns a conflict error. Auto-acquires the edit lock. The source MUST be a Mermaid flowchart (flowchart/graph TD|LR|TB|BT|RL); other Mermaid diagram types (sequence, class, ER, state, gantt, etc.) are not supported by the editor. Do NOT include style directives, classDef, or per-node fill/stroke/color: visual styling is managed by the user via the editor palette and stored separately. ' . $notesDoc,
                 'inputSchema' => [
                     'type' => 'object',
                     'properties' => [
                         'slug'             => ['type' => 'string'],
-                        'source'           => ['type' => 'string', 'description' => 'Mermaid flowchart source. Plain nodes/edges/subgraphs only — no style/classDef/colors.'],
+                        'source'           => ['type' => 'string', 'description' => 'Mermaid flowchart source. Plain nodes/edges/subgraphs only — no style/classDef/colors. ' . $notesDoc],
                         'expected_version' => ['type' => 'integer'],
                         'layout'           => ['type' => 'object'],
                         'message'          => ['type' => 'string'],
@@ -251,13 +270,13 @@ final class McpController
             ],
             [
                 'name' => 'create_diagram',
-                'description' => 'Create a new diagram with an initial revision. If slug is omitted it is generated from title. The source MUST be a Mermaid flowchart (flowchart/graph TD|LR|TB|BT|RL); other Mermaid diagram types (sequence, class, ER, state, gantt, etc.) are not supported by the editor. Do NOT include style directives, classDef, or per-node fill/stroke/color: visual styling is managed by the user via the editor palette and stored separately.',
+                'description' => 'Create a new diagram with an initial revision. If slug is omitted it is generated from title. The source MUST be a Mermaid flowchart (flowchart/graph TD|LR|TB|BT|RL); other Mermaid diagram types (sequence, class, ER, state, gantt, etc.) are not supported by the editor. Do NOT include style directives, classDef, or per-node fill/stroke/color: visual styling is managed by the user via the editor palette and stored separately. ' . $notesDoc,
                 'inputSchema' => [
                     'type' => 'object',
                     'properties' => [
                         'title'  => ['type' => 'string'],
                         'slug'   => ['type' => 'string'],
-                        'source' => ['type' => 'string', 'description' => 'Mermaid flowchart source. Plain nodes/edges/subgraphs only — no style/classDef/colors.'],
+                        'source' => ['type' => 'string', 'description' => 'Mermaid flowchart source. Plain nodes/edges/subgraphs only — no style/classDef/colors. ' . $notesDoc],
                         'layout' => ['type' => 'object'],
                     ],
                     'required' => ['title', 'source'],

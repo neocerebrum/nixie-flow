@@ -75,6 +75,22 @@
         </div>
         <div id="diagram"></div>
     </div>
+    <div id="resizerRight" title="Trascina per ridimensionare"></div>
+    <aside id="notesPanel">
+        <div class="panel-header">
+            <button id="toggleNotesPanelBtn" title="Collassa">»</button>
+            <span class="panel-title">Note</span>
+            <span id="notesTargetLabel" class="notes-target"></span>
+        </div>
+        <div id="notesBody">
+            <div id="notesEmpty" class="notes-empty">
+                Seleziona un nodo o un subgraph per modificarne le note.
+            </div>
+            <textarea id="notesTextarea" class="hidden"
+                      spellcheck="false"
+                      placeholder="Scrivi qui le note per l'elemento selezionato. Sono salvate nel sorgente come commenti %% (visibili anche da Claude)."></textarea>
+        </div>
+    </aside>
 </div>
 
 <!-- Modal: nuovo nodo -->

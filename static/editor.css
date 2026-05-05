@@ -142,13 +142,60 @@ body { margin: 0; overflow: hidden; display: flex; flex-direction: column; }
 #editorHost .cm-number { color: #ebcb8b; }
 #editorHost .cm-comment { color: #6f7a88; font-style: italic; }
 
-#resizer {
+#resizer, #resizerRight {
     width: 4px; background: #151b23; cursor: col-resize;
     border-left: 1px solid #2a3441; border-right: 1px solid #2a3441;
     flex-shrink: 0;
 }
-#resizer:hover, #resizer.dragging { background: #5e81ac; }
+#resizer:hover, #resizer.dragging,
+#resizerRight:hover, #resizerRight.dragging { background: #5e81ac; }
 body.source-invalid #resizer { background: #bf616a; }
+
+/* Notes panel (right side) — mirror of #sourcePanel */
+#notesPanel {
+    width: 340px; background: #0f1419;
+    border-left: 1px solid #2a3441;
+    display: flex; flex-direction: column;
+    transition: width 0.2s ease;
+    flex-shrink: 0;
+}
+#notesPanel.collapsed { width: 30px; }
+#notesPanel.collapsed #notesBody,
+#notesPanel.collapsed #notesTargetLabel,
+#notesPanel.collapsed .panel-title { display: none; }
+#notesPanel.collapsed #toggleNotesPanelBtn { transform: rotate(180deg); margin: 0 auto; }
+#notesPanel #toggleNotesPanelBtn {
+    background: none; border: none; color: #9fadbd;
+    cursor: pointer; font-size: 14px; padding: 0 4px;
+    order: -1;
+}
+#notesPanel #toggleNotesPanelBtn:hover { color: #eceff4; }
+#notesPanel .panel-title { color: #88c0d0; font-weight: 600; }
+.notes-target {
+    flex: 1; font-size: 11px; font-family: monospace;
+    color: #8fbcbb;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.notes-target .notes-target-id { color: #ebcb8b; }
+.notes-target .notes-target-sep { color: #6f7a88; margin: 0 4px; }
+.notes-target .notes-target-caption { color: #d8dee9; }
+#notesBody {
+    flex: 1; display: flex; flex-direction: column;
+    min-height: 0; overflow: hidden;
+}
+.notes-empty {
+    padding: 14px 12px; font-size: 12px; color: #6f7a88;
+    line-height: 1.5;
+}
+#notesTextarea {
+    flex: 1; background: #0b0f14; color: #d8dee9;
+    border: none; outline: none; resize: none;
+    padding: 12px; font-family: inherit;
+    font-size: 13px; line-height: 1.5;
+    tab-size: 4;
+}
+#notesTextarea:disabled { opacity: 0.5; cursor: not-allowed; }
+body.readonly #notesTextarea { opacity: 0.55; pointer-events: none; }
 
 #canvas { flex: 1; overflow: hidden; background: #1e2530;
           position: relative; min-width: 0; }

@@ -557,6 +557,7 @@
       };
     }
     // Clusters indexed AFTER nodes so findSubgraphMembers can resolve IDs.
+    // Pass 1: collect g/bg/label/members/directChildren for every cluster.
     const clusters = svgEl.querySelectorAll("g.cluster");
     for (const g of clusters) {
       const id = extractNodeId(g);
@@ -568,37 +569,42 @@
       }
       const label = g.querySelector(":scope > g.cluster-label, :scope > g.label");
       const members = findSubgraphMembers(currentSource, id);
-      // Remember the offset between the rect and the original member bbox so we
-      // can resize the rect later while preserving Mermaid's original padding.
-      let padding = null;
-      let labelOffset = null;
-      if (bg && bg.tagName.toLowerCase() === "rect") {
-        const ct = getNodeTranslate(g);
-        const rx = parseFloat(bg.getAttribute("x")) || 0;
-        const ry = parseFloat(bg.getAttribute("y")) || 0;
-        const rw = parseFloat(bg.getAttribute("width")) || 0;
-        const rh = parseFloat(bg.getAttribute("height")) || 0;
-        const wx1 = ct.x + rx, wy1 = ct.y + ry;
-        const wx2 = wx1 + rw, wy2 = wy1 + rh;
-        const mb = computeMemberWorldBboxFromIds(members);
-        if (mb) {
-          padding = {
-            left:   mb.minX - wx1,
-            top:    mb.minY - wy1,
-            right:  wx2 - mb.maxX,
-            bottom: wy2 - mb.maxY,
-            rx, ry,
-          };
-        }
-        if (label) {
-          const lt = getNodeTranslate(label);
-          labelOffset = { dx: lt.x - rx - rw / 2, dy: lt.y - ry };
-        }
-      }
+      const direct = findSubgraphDirectChildren(currentSource, id);
       clusterMap[id] = {
-        g, bg, label, members, padding, labelOffset,
+        g, bg, label, members,
+        directNodes: direct.nodes,
+        directSubgraphs: direct.subgraphs,
+        padding: null, labelOffset: null,
         incomingEdges: [], outgoingEdges: [],
       };
+    }
+    // Pass 2: compute padding using direct-children bbox (nodes ∪ inner
+    // cluster rects). Sub-cluster bgs are now visible in the SVG so their
+    // world bboxes resolve correctly via clusterMap.
+    for (const id of Object.keys(clusterMap)) {
+      const c = clusterMap[id];
+      if (!c.bg || c.bg.tagName.toLowerCase() !== "rect") continue;
+      const ct = getNodeTranslate(c.g);
+      const rx = parseFloat(c.bg.getAttribute("x")) || 0;
+      const ry = parseFloat(c.bg.getAttribute("y")) || 0;
+      const rw = parseFloat(c.bg.getAttribute("width")) || 0;
+      const rh = parseFloat(c.bg.getAttribute("height")) || 0;
+      const wx1 = ct.x + rx, wy1 = ct.y + ry;
+      const wx2 = wx1 + rw, wy2 = wy1 + rh;
+      const mb = computeClusterDirectChildrenBbox(id);
+      if (mb) {
+        c.padding = {
+          left:   mb.minX - wx1,
+          top:    mb.minY - wy1,
+          right:  wx2 - mb.maxX,
+          bottom: wy2 - mb.maxY,
+          rx, ry,
+        };
+      }
+      if (c.label) {
+        const lt = getNodeTranslate(c.label);
+        c.labelOffset = { dx: lt.x - rx - rw / 2, dy: lt.y - ry };
+      }
     }
     const paths = svgEl.querySelectorAll("g.edgePaths path, g.edges path");
     const labelGroups = Array.from(svgEl.querySelectorAll("g.edgeLabels > g"));
@@ -957,12 +963,54 @@
     return any ? { minX, minY, maxX, maxY } : null;
   }
 
+  // World bbox of a cluster's bg rect, in current SVG state. The bg's x/y
+  // is g-local; we add the g's translate to lift it into world coords.
+  function getClusterRectWorldBbox(c) {
+    if (!c || !c.bg || c.bg.tagName.toLowerCase() !== "rect") return null;
+    const t = getNodeTranslate(c.g);
+    const rx = parseFloat(c.bg.getAttribute("x")) || 0;
+    const ry = parseFloat(c.bg.getAttribute("y")) || 0;
+    const rw = parseFloat(c.bg.getAttribute("width")) || 0;
+    const rh = parseFloat(c.bg.getAttribute("height")) || 0;
+    return { minX: t.x + rx, minY: t.y + ry, maxX: t.x + rx + rw, maxY: t.y + ry + rh };
+  }
+
+  // Bbox a cluster should *enclose with padding*: union of direct child
+  // node bboxes plus nested cluster rects. Computing this from direct
+  // children — instead of every recursively-nested node — keeps the
+  // outer cluster's margins symmetric when nested clusters move.
+  function computeClusterDirectChildrenBbox(clusterId) {
+    const c = clusterMap[clusterId];
+    if (!c) return null;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let any = false;
+    function include(b) {
+      if (b.minX < minX) minX = b.minX;
+      if (b.minY < minY) minY = b.minY;
+      if (b.maxX > maxX) maxX = b.maxX;
+      if (b.maxY > maxY) maxY = b.maxY;
+      any = true;
+    }
+    for (const nid of (c.directNodes || [])) {
+      const n = nodeMap[nid];
+      if (!n) continue;
+      let bb;
+      try { bb = n.g.getBBox(); } catch (_) { continue; }
+      const t = getNodeTranslate(n.g);
+      include({ minX: bb.x + t.x, minY: bb.y + t.y, maxX: bb.x + t.x + bb.width, maxY: bb.y + t.y + bb.height });
+    }
+    for (const sgId of (c.directSubgraphs || [])) {
+      const sb = getClusterRectWorldBbox(clusterMap[sgId]);
+      if (sb) include(sb);
+    }
+    return any ? { minX, minY, maxX, maxY } : null;
+  }
+
   function updateClusterBounds(clusterId) {
     const c = clusterMap[clusterId];
     if (!c || !c.bg || !c.padding) return;
     if (c.bg.tagName.toLowerCase() !== "rect") return;
-    if (!c.members || c.members.size === 0) return;
-    const mb = computeMemberWorldBboxFromIds(c.members);
+    const mb = computeClusterDirectChildrenBbox(clusterId);
     if (!mb) return;
     const pad = c.padding;
     const newCx = mb.minX - pad.left - pad.rx;
@@ -1046,11 +1094,20 @@
       const dx = cur.x - start.x;
       const dy = cur.y - start.y;
       if (!moved && (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5)) moved = true;
+      // Move members manually; the dragged cluster (and any nested/outer
+      // clusters that share members with it) will be repositioned by
+      // updateAllClusterBounds below, which derives each cluster's box
+      // from its current members. The fallback setNodeTranslate keeps
+      // non-rect cluster bgs (polygon/path) following the drag.
       setNodeTranslate(c.g, clusterOrigin.x + dx, clusterOrigin.y + dy);
       for (const m of memberStates) {
         setNodeTranslate(m.n.g, m.originX + dx, m.originY + dy);
         rerouteNodeEdges(m.id);
       }
+      // Recompute every cluster's bounds: the dragged cluster's outer
+      // ancestors need to grow/shrink, and its inner descendants need
+      // their own bg rect to follow the moved members.
+      updateAllClusterBounds();
       // Edges incident to the cluster itself (cluster↔cluster or cluster↔node)
       // aren't on any member's edge list — reroute them explicitly.
       if (c.incomingEdges) for (const e of c.incomingEdges) rerouteEdge(e);
@@ -1834,6 +1891,43 @@
   // returns the set of node IDs (keys of nodeMap) referenced inside — including
   // those contained in nested subgraphs, since dragging the outer cluster must
   // physically move every descendant for the auto-derived bbox to follow.
+  // Direct children of a subgraph (depth=1 only): nodes and nested subgraphs
+  // declared at the top level inside `subgraph id ... end`. Used to compute
+  // a cluster's bounding envelope as nodes ∪ inner-cluster-rects, instead of
+  // nodes-only — otherwise nested subgraph rects (with their own internal
+  // padding) get ignored and the outer cluster's margins go asymmetric.
+  function findSubgraphDirectChildren(source, id) {
+    const idEsc = regexEscape(id);
+    const headerRe = new RegExp(`^\\s*subgraph\\s+${idEsc}(\\s|\\[|$)`, "i");
+    const subgraphHeaderRe = /^\s*subgraph\s+([A-Za-z_]\w*)/i;
+    const endRe = /^\s*end\s*$/i;
+    const wordRe = /\b[A-Za-z_][A-Za-z0-9_]*\b/g;
+    const lines = source.split("\n");
+    let headerIdx = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (headerRe.test(lines[i])) { headerIdx = i; break; }
+    }
+    const result = { nodes: new Set(), subgraphs: new Set() };
+    if (headerIdx === -1) return result;
+    let depth = 1;
+    for (let i = headerIdx + 1; i < lines.length; i++) {
+      const line = lines[i];
+      const sgMatch = line.match(subgraphHeaderRe);
+      if (sgMatch) {
+        if (depth === 1) result.subgraphs.add(sgMatch[1]);
+        depth++;
+        continue;
+      }
+      if (endRe.test(line)) { depth--; if (depth === 0) break; continue; }
+      if (depth !== 1) continue;
+      const matches = line.match(wordRe) || [];
+      for (const w of matches) {
+        if (nodeMap[w]) result.nodes.add(w);
+      }
+    }
+    return result;
+  }
+
   function findSubgraphMembers(source, id) {
     const idEsc = regexEscape(id);
     const headerRe = new RegExp(`^\\s*subgraph\\s+${idEsc}(\\s|\\[|$)`, "i");

@@ -70,6 +70,10 @@
   const toggleEdgeStyleBtn = document.getElementById("toggleEdgeStyleBtn");
   const cycleEdgeArrowBtn = document.getElementById("cycleEdgeArrowBtn");
   const reverseEdgeBtn = document.getElementById("reverseEdgeBtn");
+  const alignVBtn = document.getElementById("alignVBtn");
+  const alignHBtn = document.getElementById("alignHBtn");
+  const distributeHBtn = document.getElementById("distributeHBtn");
+  const distributeVBtn = document.getElementById("distributeVBtn");
   const exportBtn = document.getElementById("exportBtn");
   const saveBtn = document.getElementById("saveBtn");
   const fitBtn = document.getElementById("fitBtn");
@@ -1611,6 +1615,135 @@
     setStatus(`${edge.source}→${edge.target}: invertito`);
   }
 
+  // ── Align / Distribute selected nodes ────────────────────────────────────
+
+  // Cycling state for the two align toggle buttons. Button text reflects
+  // the *current* mode that will be applied on click.
+  const ALIGN_V_MODES = ["middle", "top", "bottom"]; // Y-axis cycle
+  const ALIGN_H_MODES = ["center", "left", "right"]; // X-axis cycle
+  const ALIGN_V_LABELS = { middle: "↕ centro", top: "↕ alto", bottom: "↕ basso" };
+  const ALIGN_H_LABELS = { center: "↔ centro", left: "↔ sinistra", right: "↔ destra" };
+  let alignVMode = ALIGN_V_MODES[0];
+  let alignHMode = ALIGN_H_MODES[0];
+
+  // Snapshot of each selected node's geometry in world coords. Used both
+  // for align (target = aggregate) and distribute (sort by axis).
+  function snapshotSelectedNodes() {
+    const items = [];
+    for (const id of selectedNodeIds) {
+      const n = nodeMap[id];
+      if (!n) continue;
+      const t = getNodeTranslate(n.g);
+      const parentT = getElementParentTranslate(n.g);
+      const cx = parentT.x + t.x + n.centerLocal.x;
+      const cy = parentT.y + t.y + n.centerLocal.y;
+      items.push({
+        id, n, t, parentT, cx, cy,
+        halfW: n.halfW, halfH: n.halfH,
+      });
+    }
+    return items;
+  }
+
+  function commitNewWorldCenter(it, newCx, newCy) {
+    const newTx = newCx - it.parentT.x - it.n.centerLocal.x;
+    const newTy = newCy - it.parentT.y - it.n.centerLocal.y;
+    setNodeTranslate(it.n.g, newTx, newTy);
+    positions[it.id] = { x: newTx, y: newTy };
+  }
+
+  function applyAlignV() {
+    if (selectedNodeIds.size < 2) { setStatus("seleziona almeno 2 nodi per allineare", true); return; }
+    const items = snapshotSelectedNodes();
+    if (items.length < 2) return;
+    let targetCy;
+    if (alignVMode === "top")    targetCy = Math.min(...items.map(it => it.cy - it.halfH));
+    else if (alignVMode === "bottom") targetCy = Math.max(...items.map(it => it.cy + it.halfH));
+    else /* middle */          targetCy = items.reduce((s, it) => s + it.cy, 0) / items.length;
+    for (const it of items) {
+      let newCy;
+      if (alignVMode === "top")    newCy = targetCy + it.halfH;
+      else if (alignVMode === "bottom") newCy = targetCy - it.halfH;
+      else                       newCy = targetCy;
+      commitNewWorldCenter(it, it.cx, newCy);
+      rerouteNodeEdges(it.id);
+    }
+    updateAllClusterBounds();
+    markDirtyLayout();
+    pushHistory();
+    setStatus(`allineati ${items.length} nodi su Y: ${alignVMode}`);
+    // Cycle to next mode for next click.
+    alignVMode = ALIGN_V_MODES[(ALIGN_V_MODES.indexOf(alignVMode) + 1) % ALIGN_V_MODES.length];
+    if (alignVBtn) alignVBtn.textContent = ALIGN_V_LABELS[alignVMode];
+  }
+
+  function applyAlignH() {
+    if (selectedNodeIds.size < 2) { setStatus("seleziona almeno 2 nodi per allineare", true); return; }
+    const items = snapshotSelectedNodes();
+    if (items.length < 2) return;
+    let targetCx;
+    if (alignHMode === "left")   targetCx = Math.min(...items.map(it => it.cx - it.halfW));
+    else if (alignHMode === "right")  targetCx = Math.max(...items.map(it => it.cx + it.halfW));
+    else /* center */          targetCx = items.reduce((s, it) => s + it.cx, 0) / items.length;
+    for (const it of items) {
+      let newCx;
+      if (alignHMode === "left")   newCx = targetCx + it.halfW;
+      else if (alignHMode === "right")  newCx = targetCx - it.halfW;
+      else                       newCx = targetCx;
+      commitNewWorldCenter(it, newCx, it.cy);
+      rerouteNodeEdges(it.id);
+    }
+    updateAllClusterBounds();
+    markDirtyLayout();
+    pushHistory();
+    setStatus(`allineati ${items.length} nodi su X: ${alignHMode}`);
+    alignHMode = ALIGN_H_MODES[(ALIGN_H_MODES.indexOf(alignHMode) + 1) % ALIGN_H_MODES.length];
+    if (alignHBtn) alignHBtn.textContent = ALIGN_H_LABELS[alignHMode];
+  }
+
+  // Distribute: keep the bounding extremes of the selection, redistribute
+  // intermediate nodes so the *gap* between consecutive nodes is uniform.
+  // Gap-based (not center-based) so nodes with different sizes still look
+  // evenly spaced visually.
+  function applyDistribute(axis) {
+    if (selectedNodeIds.size < 3) { setStatus("seleziona almeno 3 nodi per distribuire", true); return; }
+    const items = snapshotSelectedNodes();
+    if (items.length < 3) return;
+    if (axis === "h") {
+      items.sort((a, b) => a.cx - b.cx);
+      const totalSpan = (items[items.length - 1].cx + items[items.length - 1].halfW) -
+                        (items[0].cx - items[0].halfW);
+      let sumW = 0;
+      for (const it of items) sumW += 2 * it.halfW;
+      const gap = (totalSpan - sumW) / (items.length - 1);
+      let leftEdge = items[0].cx - items[0].halfW;
+      for (const it of items) {
+        const newCx = leftEdge + it.halfW;
+        commitNewWorldCenter(it, newCx, it.cy);
+        rerouteNodeEdges(it.id);
+        leftEdge += 2 * it.halfW + gap;
+      }
+    } else {
+      items.sort((a, b) => a.cy - b.cy);
+      const totalSpan = (items[items.length - 1].cy + items[items.length - 1].halfH) -
+                        (items[0].cy - items[0].halfH);
+      let sumH = 0;
+      for (const it of items) sumH += 2 * it.halfH;
+      const gap = (totalSpan - sumH) / (items.length - 1);
+      let topEdge = items[0].cy - items[0].halfH;
+      for (const it of items) {
+        const newCy = topEdge + it.halfH;
+        commitNewWorldCenter(it, it.cx, newCy);
+        rerouteNodeEdges(it.id);
+        topEdge += 2 * it.halfH + gap;
+      }
+    }
+    updateAllClusterBounds();
+    markDirtyLayout();
+    pushHistory();
+    setStatus(`distribuiti ${items.length} nodi su ${axis === "h" ? "X" : "Y"}`);
+  }
+
   function startLabelEdit(el, kind, meta) {
     const rect = el.getBoundingClientRect();
     const input = document.createElement("input");
@@ -2597,6 +2730,12 @@
     if (toggleEdgeStyleBtn) toggleEdgeStyleBtn.disabled = (kind !== "edge");
     if (cycleEdgeArrowBtn)  cycleEdgeArrowBtn.disabled  = (kind !== "edge");
     if (reverseEdgeBtn)     reverseEdgeBtn.disabled     = (kind !== "edge");
+    const alignEnabled = (kind === "node" && nNodes >= 2);
+    const distributeEnabled = (kind === "node" && nNodes >= 3);
+    if (alignVBtn)        alignVBtn.disabled        = !alignEnabled;
+    if (alignHBtn)        alignHBtn.disabled        = !alignEnabled;
+    if (distributeHBtn)   distributeHBtn.disabled   = !distributeEnabled;
+    if (distributeVBtn)   distributeVBtn.disabled   = !distributeEnabled;
     // Palette: Colore agisce su nodi e subgraph; Forma solo su nodi.
     const colorEnabled = (kind === "node") || (kind === "subgraph");
     const shapeEnabled = (kind === "node");
@@ -3637,6 +3776,10 @@
   }
   if (cycleEdgeArrowBtn) cycleEdgeArrowBtn.addEventListener("click", applyCycleEdgeArrow);
   if (reverseEdgeBtn) reverseEdgeBtn.addEventListener("click", applyReverseEdge);
+  if (alignVBtn) alignVBtn.addEventListener("click", applyAlignV);
+  if (alignHBtn) alignHBtn.addEventListener("click", applyAlignH);
+  if (distributeHBtn) distributeHBtn.addEventListener("click", () => applyDistribute("h"));
+  if (distributeVBtn) distributeVBtn.addEventListener("click", () => applyDistribute("v"));
   if (addSubgraphBtn) addSubgraphBtn.addEventListener("click", applyAddSubgraph);
   if (deleteBtn) deleteBtn.addEventListener("click", applyDelete);
   exportBtn.addEventListener("click", exportSource);

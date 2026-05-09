@@ -54,6 +54,11 @@
     <button id="toggleEdgeStyleBtn" class="palette-btn" title="Edge selezionato: continuo ↔ tratteggiato" disabled>↔ Stile</button>
     <button id="cycleEdgeArrowBtn" class="palette-btn" title="Edge selezionato: ciclo freccia → / — / ↔" disabled>→ Freccia</button>
     <button id="reverseEdgeBtn" class="palette-btn" title="Edge selezionato: inverti verso (scambia sorgente/destinazione)" disabled>⇄ Inverti</button>
+    <span class="palette-label" style="margin-left: 16px;">Allinea:</span>
+    <button id="alignVBtn" class="palette-btn" title="Allinea selezione su Y (alto/centro/basso). Click per ciclare modalità" disabled>↕ centro</button>
+    <button id="alignHBtn" class="palette-btn" title="Allinea selezione su X (sinistra/centro/destra). Click per ciclare modalità" disabled>↔ centro</button>
+    <button id="distributeHBtn" class="palette-btn" title="Distribuisci selezione orizzontalmente: spaziatura tra nodi uguale, mantenendo gli estremi" disabled>⇆ distrib.</button>
+    <button id="distributeVBtn" class="palette-btn" title="Distribuisci selezione verticalmente: spaziatura tra nodi uguale, mantenendo gli estremi" disabled>⇅ distrib.</button>
 </div>
 
 <div id="main">

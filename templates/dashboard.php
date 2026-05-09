@@ -102,4 +102,29 @@
     </div>
 </div>
 
+<!-- Modal: conferma generica (riusa lo stile dell'editor) -->
+<div id="confirmDialogModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-box">
+        <h2 id="confirmDialogTitle">Conferma</h2>
+        <div id="confirmDialogMessage" class="modal-info"></div>
+        <div class="modal-buttons">
+            <button id="confirmDialogCancelBtn">Annulla</button>
+            <button id="confirmDialogOkBtn" class="primary">Conferma</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: info / errore (alert non bloccante) -->
+<div id="infoDialogModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-box">
+        <h2 id="infoDialogTitle">Avviso</h2>
+        <div id="infoDialogMessage" class="modal-info"></div>
+        <div class="modal-buttons">
+            <button id="infoDialogOkBtn" class="primary">OK</button>
+        </div>
+    </div>
+</div>
+
 <script src="/static/dashboard.js"></script>

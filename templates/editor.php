@@ -120,6 +120,41 @@
     </div>
 </div>
 
+<!-- Modal: conferma generica (riutilizzato per tutte le conferme distruttive) -->
+<div id="confirmDialogModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-box">
+        <h2 id="confirmDialogTitle">Conferma</h2>
+        <div id="confirmDialogMessage" class="modal-info"></div>
+        <div class="modal-buttons">
+            <button id="confirmDialogCancelBtn">Annulla</button>
+            <button id="confirmDialogOkBtn" class="primary">Conferma</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: nuovo subgraph -->
+<div id="addSubgraphModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-box">
+        <h2>Nuovo subgraph</h2>
+        <label class="field">
+            <span>ID <small>(lettere/numeri/_, unico)</small></span>
+            <input id="subgraphIdInput" type="text" autocomplete="off">
+        </label>
+        <label class="field">
+            <span>Titolo <small>(vuoto = usa ID)</small></span>
+            <input id="subgraphTitleInput" type="text" autocomplete="off">
+        </label>
+        <div id="subgraphMembersInfo" class="modal-info"></div>
+        <div id="subgraphModalError"></div>
+        <div class="modal-buttons">
+            <button id="subgraphCancelBtn">Annulla</button>
+            <button id="subgraphOkBtn" class="primary">Crea</button>
+        </div>
+    </div>
+</div>
+
 <!-- Modal: rinomina -->
 <div id="renameModal" class="modal hidden">
     <div class="modal-backdrop"></div>

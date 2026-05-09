@@ -422,4 +422,23 @@ table.data th.actions { text-align: right; }
 }
 .modal-box input[type=text]:focus { outline: none; border-color: var(--accent); }
 .modal-buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+.modal-buttons button {
+    background: var(--bg-elev, #1c242e); color: var(--fg, #d8dee9);
+    border: 1px solid var(--border, #3a4551); border-radius: 4px;
+    padding: 6px 14px; font-size: 13px; font-family: inherit;
+    cursor: pointer;
+}
+.modal-buttons button:hover { background: var(--bg-hover, #25303c); }
+.modal-buttons button.primary {
+    background: var(--accent, #5e81ac); border-color: var(--accent, #5e81ac);
+    color: var(--text-strong, #eceff4);
+}
+.modal-buttons button.primary:hover {
+    background: var(--accent-dark, #81a1c1); border-color: var(--accent-dark, #81a1c1);
+}
+.modal-buttons button.danger {
+    background: rgba(191, 97, 106, 0.15); border-color: #bf616a; color: #bf616a;
+}
+.modal-buttons button.danger:hover { background: rgba(191, 97, 106, 0.30); }
+.modal-info { font-size: 12px; color: var(--accent-soft, #8fbcbb); margin: 4px 0 8px; }
 #newDiagramError, #renameError { min-height: 16px; font-size: 0.78em; color: var(--warn); margin-bottom: 4px; }

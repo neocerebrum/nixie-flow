@@ -252,6 +252,34 @@
     statusEl.className = isError ? "error" : "";
   }
 
+  // Promise-based replacement for window.confirm: in-app modal so the browser
+  // can't silently block repeated dialogs. Resolves to true (OK) or false
+  // (Cancel / Escape / backdrop click).
+  let _confirmDialogResolve = null;
+  function confirmDialog(message, opts) {
+    opts = opts || {};
+    const titleEl   = document.getElementById("confirmDialogTitle");
+    const messageEl = document.getElementById("confirmDialogMessage");
+    const okBtn     = document.getElementById("confirmDialogOkBtn");
+    const cancelBtn = document.getElementById("confirmDialogCancelBtn");
+    const modal     = document.getElementById("confirmDialogModal");
+    titleEl.textContent   = opts.title || "Conferma";
+    messageEl.textContent = message;
+    okBtn.textContent     = opts.confirmLabel || "Conferma";
+    cancelBtn.textContent = opts.cancelLabel || "Annulla";
+    okBtn.classList.toggle("danger", !!opts.danger);
+    okBtn.classList.toggle("primary", !opts.danger);
+    modal.classList.remove("hidden");
+    setTimeout(() => okBtn.focus(), 0);
+    return new Promise(resolve => { _confirmDialogResolve = resolve; });
+  }
+  function _confirmDialogClose(result) {
+    document.getElementById("confirmDialogModal").classList.add("hidden");
+    const r = _confirmDialogResolve;
+    _confirmDialogResolve = null;
+    if (r) r(result);
+  }
+
   function updateDirtyBadge() {
     dirtyBadge.classList.toggle("hidden", !(dirtySource || dirtyLayout));
   }
@@ -1899,7 +1927,11 @@
     return { ok: true, source: source + block + "\n" };
   }
 
-  async function applyAddSubgraph() {
+  // Member ids captured when the subgraph modal opens, so the user can't
+  // change selection mid-modal and create a subgraph from a stale set.
+  let _subgraphPendingIds = null;
+
+  function applyAddSubgraph() {
     if (!requireValidSource("+ subgraph")) return;
     if (selectedNodeIds.size < 2) {
       setStatus("seleziona almeno 2 nodi (Shift+click)", true);
@@ -1912,25 +1944,49 @@
       setStatus(`gia' in altro subgraph: ${conflicts.join(", ")}`, true);
       return;
     }
-    const idRaw = (prompt("ID del subgraph (lettere/numeri/_, unico):", "") || "").trim();
-    if (!idRaw) { setStatus("creazione subgraph annullata"); return; }
-    if (!/^[A-Za-z_][\w]*$/.test(idRaw)) { setStatus(`ID non valido: '${idRaw}'`, true); return; }
-    if (nodeMap[idRaw] || clusterMap[idRaw]) { setStatus(`'${idRaw}' esiste gia'`, true); return; }
-    const titleRaw = prompt("Titolo del subgraph (vuoto = usa ID):", "");
-    if (titleRaw === null) { setStatus("creazione subgraph annullata"); return; }
+    openAddSubgraphModal(ids);
+  }
+
+  function openAddSubgraphModal(ids) {
+    _subgraphPendingIds = ids;
+    document.getElementById("addSubgraphModal").classList.remove("hidden");
+    document.getElementById("subgraphModalError").textContent = "";
+    document.getElementById("subgraphIdInput").value = "";
+    document.getElementById("subgraphTitleInput").value = "";
+    document.getElementById("subgraphMembersInfo").textContent =
+      `${ids.length} nodi: ${ids.join(", ")}`;
+    setTimeout(() => document.getElementById("subgraphIdInput").focus(), 0);
+  }
+  function closeAddSubgraphModal() {
+    document.getElementById("addSubgraphModal").classList.add("hidden");
+    _subgraphPendingIds = null;
+  }
+
+  async function submitAddSubgraphModal() {
+    const ids = _subgraphPendingIds;
+    if (!ids) { closeAddSubgraphModal(); return; }
+    const idRaw = document.getElementById("subgraphIdInput").value.trim();
+    const titleRaw = document.getElementById("subgraphTitleInput").value;
+    const errorEl = document.getElementById("subgraphModalError");
+    errorEl.textContent = "";
+    if (!idRaw) { errorEl.textContent = "ID obbligatorio"; return; }
+    if (!/^[A-Za-z_][\w]*$/.test(idRaw)) { errorEl.textContent = `ID non valido: '${idRaw}'`; return; }
+    if (nodeMap[idRaw] || clusterMap[idRaw]) { errorEl.textContent = `'${idRaw}' esiste gia'`; return; }
     const title = titleRaw.trim();
     const result = addSubgraphToSource(currentSource, idRaw, title, ids);
-    if (!result.ok) { setStatus(`+ subgraph: ${result.error}`, true); return; }
+    if (!result.ok) { errorEl.textContent = result.error; return; }
     currentSource = result.source;
     markDirtySource();
     deselectNode();
+    closeAddSubgraphModal();
     await renderDiagram();
     pushHistory();
     setStatus(`+ subgraph ${idRaw} con ${ids.length} nodi`);
   }
 
   async function handleDeleteSubgraphClick(id) {
-    if (!confirm(`Eliminare il subgraph '${id}' (i contenuti restano)?`)) return;
+    if (!await confirmDialog(`Eliminare il subgraph '${id}'? I contenuti restano.`,
+      { confirmLabel: "Elimina", danger: true })) return;
     let result = deleteSubgraphFromSource(currentSource, id);
     if (!result.ok) { setStatus(`delete subgraph: ${result.error}`, true); return; }
     let next = result.source;
@@ -1991,7 +2047,8 @@
   async function handleDeleteEdgeClick(edge) {
     const label = `${edge.source} → ${edge.target}` +
       (edge.ordinal > 0 ? ` (#${edge.ordinal + 1})` : "");
-    if (!confirm(`Eliminare la freccia ${label}?`)) return;
+    if (!await confirmDialog(`Eliminare la freccia ${label}?`,
+      { confirmLabel: "Elimina", danger: true })) return;
     const result = deleteEdgeFromSource(currentSource, edge.source, edge.target, edge.ordinal);
     if (!result.ok) { setStatus(`delete edge: ${result.error}`, true); return; }
     currentSource = result.source;
@@ -2010,7 +2067,8 @@
     if (!requireValidSource("rimuovi nodo")) return;
     const ids = [...selectedNodeIds];
     const label = ids.length === 1 ? `il nodo '${ids[0]}'` : `${ids.length} nodi`;
-    if (!confirm(`Eliminare ${label} e tutti i riferimenti?`)) return;
+    if (!await confirmDialog(`Eliminare ${label} e tutti i riferimenti?`,
+      { confirmLabel: "Elimina", danger: true })) return;
     let next = currentSource, ok = 0, errs = [];
     for (const id of ids) {
       const r = deleteNodeFromSource(next, id);
@@ -2051,16 +2109,16 @@
     const src = connectSource, tgt = id;
     cancelConnectMode();
     if (src === tgt) { setStatus(`self-loop ${src}→${tgt} non supportato`, true); return; }
-    const labelRaw = prompt(`Label della freccia ${src} → ${tgt} (vuoto = senza label):`, "");
-    if (labelRaw === null) { setStatus("creazione edge annullata"); return; }
-    const label = labelRaw.trim();
-    const result = addEdgeToSource(currentSource, src, tgt, label);
+    // Create the edge unlabeled. User adds a label later via dblclick on
+    // the edge — avoids the browser prompt() (some browsers silently block
+    // repeated prompts) and matches the inline-edit flow used elsewhere.
+    const result = addEdgeToSource(currentSource, src, tgt, "");
     if (!result.ok) { setStatus(`add edge: ${result.error}`, true); return; }
     currentSource = result.source;
     markDirtySource();
     await renderDiagram();
     pushHistory();
-    setStatus(`+ edge ${src} → ${tgt}${label ? ` |${label}|` : ""}`);
+    setStatus(`+ edge ${src} → ${tgt} (doppio click per aggiungere label)`);
   }
 
   function startGhostEdge(svgEl, srcId) {
@@ -2897,7 +2955,9 @@
 
   async function checkout(revisionId) {
     if (dirtySource || dirtyLayout) {
-      if (!confirm("Le modifiche dopo l'ultima snapshot non sono state salvate come snapshot. Caricando #" + revisionId + " il working copy verrà sostituito. Continuare?")) return;
+      if (!await confirmDialog(
+        `Le modifiche dopo l'ultima snapshot non sono state salvate come snapshot. Caricando #${revisionId} il working copy verrà sostituito.`,
+        { confirmLabel: "Continua", danger: true })) return;
     }
     try {
       const { status, json } = await api("POST", `/api/diagrams/${encodeURIComponent(slug)}/checkout`, {
@@ -3360,7 +3420,8 @@
       const removeBtn = document.createElement("button");
       removeBtn.textContent = "Rimuovi";
       removeBtn.addEventListener("click", async () => {
-        if (!confirm("Rimuovere la condivisione con questo utente?")) return;
+        if (!await confirmDialog("Rimuovere la condivisione con questo utente?",
+          { confirmLabel: "Rimuovi", danger: true })) return;
         try {
           await api("DELETE", `/api/diagrams/${encodeURIComponent(slug)}/shares/${s.user_id}`, {});
           await loadShareList();
@@ -3395,7 +3456,8 @@
 
   reloadBtn.addEventListener("click", async () => {
     if (dirtySource || dirtyLayout) {
-      if (!confirm("Scartare le modifiche locali e ricaricare dal server?")) return;
+      if (!await confirmDialog("Scartare le modifiche locali e ricaricare dal server?",
+        { confirmLabel: "Scarta e ricarica", danger: true })) return;
     }
     await reloadFromServer();
   });
@@ -3432,6 +3494,26 @@
     document.getElementById(inputId).addEventListener("keydown", (e) => {
       if (e.key === "Enter") { e.preventDefault(); submitAddNodeModal(); }
       else if (e.key === "Escape") { e.preventDefault(); closeAddNodeModal(); }
+    });
+  }
+
+  document.getElementById("confirmDialogOkBtn").addEventListener("click", () => _confirmDialogClose(true));
+  document.getElementById("confirmDialogCancelBtn").addEventListener("click", () => _confirmDialogClose(false));
+  document.getElementById("confirmDialogModal").querySelector(".modal-backdrop")
+    .addEventListener("click", () => _confirmDialogClose(false));
+  document.getElementById("confirmDialogModal").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); _confirmDialogClose(true); }
+    else if (e.key === "Escape") { e.preventDefault(); _confirmDialogClose(false); }
+  });
+
+  document.getElementById("subgraphCancelBtn").addEventListener("click", closeAddSubgraphModal);
+  document.getElementById("subgraphOkBtn").addEventListener("click", submitAddSubgraphModal);
+  document.getElementById("addSubgraphModal").querySelector(".modal-backdrop")
+    .addEventListener("click", closeAddSubgraphModal);
+  for (const inputId of ["subgraphIdInput", "subgraphTitleInput"]) {
+    document.getElementById(inputId).addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); submitAddSubgraphModal(); }
+      else if (e.key === "Escape") { e.preventDefault(); closeAddSubgraphModal(); }
     });
   }
 

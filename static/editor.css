@@ -319,7 +319,8 @@ body.deleting g.cluster:hover > *:first-child {
 .shape-btn.selected { border-color: #88c0d0; background: #25303c; color: #eceff4; }
 .shape-btn svg { width: 40px; height: 28px; color: #6f7a88; }
 .shape-btn.selected svg { color: #88c0d0; }
-#modalError, #renameError { min-height: 16px; font-size: 12px; color: #bf616a; }
+#modalError, #renameError, #subgraphModalError { min-height: 16px; font-size: 12px; color: #bf616a; }
+.modal-info { font-size: 12px; color: #8fbcbb; margin: 4px 0 8px; }
 
 /* History modal */
 .modal-wide .modal-box { min-width: 600px; max-width: 720px; max-height: 80vh; overflow: auto; }
@@ -350,11 +351,32 @@ body.deleting g.cluster:hover > *:first-child {
 .muted-small { font-size: 11px; color: #6f7a88; margin: 0 0 8px; }
 
 /* Stack buttons in conflict modal */
+/* Base modal button: ensures consistent radius/padding across all modals so
+   that overrides (.primary, .danger) keep the same shape. Without this, any
+   override that sets `background` would drop the browser's native button
+   rendering (and its rounded corners). */
+.modal-buttons button,
+.modal-buttons-stack button {
+    background: #1c242e; color: #d8dee9;
+    border: 1px solid #3a4551; border-radius: 4px;
+    padding: 6px 14px; font-size: 13px; font-family: inherit;
+    cursor: pointer;
+}
+.modal-buttons button:hover,
+.modal-buttons-stack button:hover { background: #25303c; }
+.modal-buttons button.primary,
+.modal-buttons-stack button.primary {
+    background: #5e81ac; border-color: #5e81ac; color: #eceff4;
+}
+.modal-buttons button.primary:hover,
+.modal-buttons-stack button.primary:hover { background: #81a1c1; border-color: #81a1c1; }
 .modal-buttons-stack { flex-direction: column; align-items: stretch; gap: 6px; }
 .modal-buttons-stack button { padding: 8px 12px; }
+.modal-buttons button.danger,
 .modal-buttons-stack button.danger {
     background: rgba(191, 97, 106, 0.15); border-color: #bf616a; color: #bf616a;
 }
+.modal-buttons button.danger:hover,
 .modal-buttons-stack button.danger:hover { background: rgba(191, 97, 106, 0.30); }
 
 /* Toast (live) */

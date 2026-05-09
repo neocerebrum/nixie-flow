@@ -4,6 +4,57 @@
 
   const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
 
+  // ── In-app dialogs (replace native confirm/alert which Firefox can block) ─
+  let _confirmResolve = null;
+  function confirmDialog(message, opts) {
+    opts = opts || {};
+    document.getElementById("confirmDialogTitle").textContent = opts.title || "Conferma";
+    document.getElementById("confirmDialogMessage").textContent = message;
+    const okBtn = document.getElementById("confirmDialogOkBtn");
+    okBtn.textContent = opts.confirmLabel || "Conferma";
+    document.getElementById("confirmDialogCancelBtn").textContent = opts.cancelLabel || "Annulla";
+    okBtn.classList.toggle("danger", !!opts.danger);
+    okBtn.classList.toggle("primary", !opts.danger);
+    document.getElementById("confirmDialogModal").classList.remove("hidden");
+    setTimeout(() => okBtn.focus(), 0);
+    return new Promise(res => { _confirmResolve = res; });
+  }
+  function _confirmClose(result) {
+    document.getElementById("confirmDialogModal").classList.add("hidden");
+    const r = _confirmResolve; _confirmResolve = null;
+    if (r) r(result);
+  }
+
+  let _infoResolve = null;
+  function infoDialog(message, opts) {
+    opts = opts || {};
+    document.getElementById("infoDialogTitle").textContent = opts.title || "Avviso";
+    document.getElementById("infoDialogMessage").textContent = message;
+    const okBtn = document.getElementById("infoDialogOkBtn");
+    okBtn.classList.toggle("danger", !!opts.danger);
+    okBtn.classList.toggle("primary", !opts.danger);
+    document.getElementById("infoDialogModal").classList.remove("hidden");
+    setTimeout(() => okBtn.focus(), 0);
+    return new Promise(res => { _infoResolve = res; });
+  }
+  function _infoClose() {
+    document.getElementById("infoDialogModal").classList.add("hidden");
+    const r = _infoResolve; _infoResolve = null;
+    if (r) r();
+  }
+  document.getElementById("confirmDialogOkBtn").addEventListener("click", () => _confirmClose(true));
+  document.getElementById("confirmDialogCancelBtn").addEventListener("click", () => _confirmClose(false));
+  document.getElementById("confirmDialogModal").querySelector(".modal-backdrop")
+    .addEventListener("click", () => _confirmClose(false));
+  document.getElementById("infoDialogOkBtn").addEventListener("click", _infoClose);
+  document.getElementById("infoDialogModal").querySelector(".modal-backdrop")
+    .addEventListener("click", _infoClose);
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (!document.getElementById("confirmDialogModal").classList.contains("hidden")) _confirmClose(false);
+    else if (!document.getElementById("infoDialogModal").classList.contains("hidden")) _infoClose();
+  });
+
   async function api(method, path, body) {
     const isReadOnly = method === "GET" || method === "HEAD";
     const init = { method, headers: { "X-CSRF-Token": csrfToken } };
@@ -127,7 +178,8 @@
       const removeBtn = document.createElement("button");
       removeBtn.textContent = "Rimuovi";
       removeBtn.addEventListener("click", async () => {
-        if (!confirm("Rimuovere la condivisione con questo utente?")) return;
+        if (!await confirmDialog("Rimuovere la condivisione con questo utente?",
+          { confirmLabel: "Rimuovi", danger: true })) return;
         try {
           await api("DELETE", `/api/diagrams/${encodeURIComponent(currentShareSlug)}/shares/${s.user_id}`);
           await reloadShareList();
@@ -179,7 +231,9 @@
       e.preventDefault();
       const slug = btn.dataset.slug;
       const title = btn.dataset.title || slug;
-      if (!confirm(`Eliminare il diagramma "${title}"?\n(Verrà spostato nel cestino, recuperabile da admin.)`)) return;
+      if (!await confirmDialog(
+        `Eliminare il diagramma "${title}"? Verrà spostato nel cestino, recuperabile da admin.`,
+        { confirmLabel: "Elimina", danger: true })) return;
       try {
         const { status } = await api("DELETE", `/api/diagrams/${encodeURIComponent(slug)}`);
         if (status === 204) {
@@ -191,10 +245,10 @@
             location.reload();
           }
         } else {
-          alert(`Eliminazione fallita: HTTP ${status}`);
+          await infoDialog(`Eliminazione fallita: HTTP ${status}`, { title: "Errore", danger: true });
         }
       } catch (err) {
-        alert(`Eliminazione fallita: ${err.message}`);
+        await infoDialog(`Eliminazione fallita: ${err.message}`, { title: "Errore", danger: true });
       }
     });
   }

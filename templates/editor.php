@@ -52,6 +52,8 @@
     <span id="shapePalette"></span>
     <span class="palette-label" style="margin-left: 16px;">Edge:</span>
     <button id="toggleEdgeStyleBtn" class="palette-btn" title="Edge selezionato: continuo ↔ tratteggiato" disabled>↔ Stile</button>
+    <button id="cycleEdgeArrowBtn" class="palette-btn" title="Edge selezionato: ciclo freccia → / — / ↔" disabled>→ Freccia</button>
+    <button id="reverseEdgeBtn" class="palette-btn" title="Edge selezionato: inverti verso (scambia sorgente/destinazione)" disabled>⇄ Inverti</button>
 </div>
 
 <div id="main">

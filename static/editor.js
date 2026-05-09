@@ -68,6 +68,8 @@
   const addSubgraphBtn = document.getElementById("addSubgraphBtn");
   const deleteBtn = document.getElementById("deleteBtn");
   const toggleEdgeStyleBtn = document.getElementById("toggleEdgeStyleBtn");
+  const cycleEdgeArrowBtn = document.getElementById("cycleEdgeArrowBtn");
+  const reverseEdgeBtn = document.getElementById("reverseEdgeBtn");
   const exportBtn = document.getElementById("exportBtn");
   const saveBtn = document.getElementById("saveBtn");
   const fitBtn = document.getElementById("fitBtn");
@@ -1192,6 +1194,11 @@
     return { ok: true, source: lines.join("\n") };
   }
 
+  // Connector body pattern for Mermaid edges. Covers forward (-->), no-arrow
+  // (---), bidirectional (<-->), dashed/solid/thick variants, and the {x,o}
+  // arrowhead glyphs. Used in line-based source edits.
+  const EDGE_CONN = "<?[-=.~][-=.~<>xo]*";
+
   // Line-based edge label rewrite. Handles:
   //   - existing label  → replace
   //   - missing label   → insert |newLabel|
@@ -1201,7 +1208,7 @@
   function rewriteEdgeLabelInSource(source, src, tgt, ordinal, newLabel) {
     if (/[|\n]/.test(newLabel)) return { ok: false, error: "edge label: niente | o newline" };
     const sEsc = regexEscape(src), tEsc = regexEscape(tgt);
-    const edgeRe = new RegExp(`\\b${sEsc}\\b\\s*[-=.~][-=.~<>xo]*\\s*\\b${tEsc}\\b`);
+    const edgeRe = new RegExp(`\\b${sEsc}\\b\\s*${EDGE_CONN}\\s*\\b${tEsc}\\b`);
     const lines = source.split("\n");
     let matched = 0;
     for (let i = 0; i < lines.length; i++) {
@@ -1211,11 +1218,11 @@
         .replace(/\{[^}\n]*\}/g, " ");
       if (!edgeRe.test(stripped)) continue;
       if (matched !== ordinal) { matched++; continue; }
-      const arrowSegs = (stripped.match(/[-=.~][-=.~<>xo]*\s*\w+/g) || []).length;
+      const arrowSegs = (stripped.match(new RegExp(`${EDGE_CONN}\\s*\\w+`, "g")) || []).length;
       if (arrowSegs > 1) {
         return { ok: false, error: "edge in chain: dividi la linea per modificarne la label" };
       }
-      const re = new RegExp(`(\\b${sEsc})(\\s+)([-=.~][-=.~<>xo]*)(\\s*)(?:\\|([^|\\n]*)\\|(\\s*))?(${tEsc}\\b)`);
+      const re = new RegExp(`(\\b${sEsc})(\\s+)(${EDGE_CONN})(\\s*)(?:\\|([^|\\n]*)\\|(\\s*))?(${tEsc}\\b)`);
       const m = lines[i].match(re);
       if (!m) return { ok: false, error: `edge ${src}→${tgt}: pattern interno non trovato` };
       const arrow = m[3];
@@ -1232,14 +1239,37 @@
   // edge, line-based. Supports common connector forms only; thick (==>) and
   // less common variants are refused with an explanatory error.
   function toggleEdgeStyleInSource(source, src, tgt, ordinal) {
-    const sEsc = regexEscape(src), tEsc = regexEscape(tgt);
-    const edgeRe = new RegExp(`\\b${sEsc}\\b\\s*[-=.~][-=.~<>xo]*\\s*\\b${tEsc}\\b`);
     const STYLE_TOGGLE = {
       "-->": "-.->",
       "-.->": "-->",
       "---": "-.-",
       "-.-": "---",
+      "<-->": "<-.->",
+      "<-.->": "<-->",
     };
+    return mutateEdgeConnector(source, src, tgt, ordinal, STYLE_TOGGLE,
+      "stile", "solo --> ↔ -.->, --- ↔ -.-, <--> ↔ <-.->");
+  }
+
+  // Cycle the arrowhead through forward → none → both, preserving solid/dashed.
+  function cycleEdgeArrowInSource(source, src, tgt, ordinal) {
+    const ARROW_CYCLE = {
+      "-->": "---",
+      "---": "<-->",
+      "<-->": "-->",
+      "-.->": "-.-",
+      "-.-": "<-.->",
+      "<-.->": "-.->",
+    };
+    return mutateEdgeConnector(source, src, tgt, ordinal, ARROW_CYCLE,
+      "freccia", "solo connettori solid/dashed");
+  }
+
+  // Shared scaffolding for connector mutations: locate the (src,tgt,ordinal)
+  // edge line, refuse chains, look up new connector in `cycleMap`.
+  function mutateEdgeConnector(source, src, tgt, ordinal, cycleMap, opName, supportedHint) {
+    const sEsc = regexEscape(src), tEsc = regexEscape(tgt);
+    const edgeRe = new RegExp(`\\b${sEsc}\\b\\s*${EDGE_CONN}\\s*\\b${tEsc}\\b`);
     const lines = source.split("\n");
     let matched = 0;
     for (let i = 0; i < lines.length; i++) {
@@ -1249,17 +1279,61 @@
         .replace(/\{[^}\n]*\}/g, " ");
       if (!edgeRe.test(stripped)) continue;
       if (matched !== ordinal) { matched++; continue; }
-      const arrowSegs = (stripped.match(/[-=.~][-=.~<>xo]*\s*\w+/g) || []).length;
+      const arrowSegs = (stripped.match(new RegExp(`${EDGE_CONN}\\s*\\w+`, "g")) || []).length;
       if (arrowSegs > 1) {
-        return { ok: false, error: "edge in chain: dividi la linea per cambiare stile" };
+        return { ok: false, error: `edge in chain: dividi la linea per cambiare ${opName}` };
       }
-      const re = new RegExp(`(\\b${sEsc}\\s+)([-=.~][-=.~<>xo]*)(\\s*(?:\\|[^|\\n]*\\|\\s*)?${tEsc}\\b)`);
+      const re = new RegExp(`(\\b${sEsc}\\s+)(${EDGE_CONN})(\\s*(?:\\|[^|\\n]*\\|\\s*)?${tEsc}\\b)`);
       const m = lines[i].match(re);
       if (!m) return { ok: false, error: `edge ${src}→${tgt}: pattern interno non trovato` };
-      const newConn = STYLE_TOGGLE[m[2]];
-      if (!newConn) return { ok: false, error: `connettore '${m[2]}': toggle non supportato (solo --> ↔ -.->, --- ↔ -.-)` };
+      const newConn = cycleMap[m[2]];
+      if (!newConn) return { ok: false, error: `connettore '${m[2]}': ${opName} non supportato (${supportedHint})` };
       lines[i] = lines[i].replace(re, `${m[1]}${newConn}${m[3]}`);
       return { ok: true, source: lines.join("\n"), from: m[2], to: newConn };
+    }
+    return { ok: false, error: `edge ${src}→${tgt} #${ordinal} non trovata` };
+  }
+
+  // Reverse an edge by swapping src and tgt operands in the source line.
+  // The connector form is preserved, so `<-->` stays bidirectional; for
+  // forward arrows the visual flips because the endpoints are swapped.
+  // Also returns `newOrdinal`: the index of the rewritten edge among other
+  // (tgt,src) edges in source order, so the caller can keep selection.
+  function reverseEdgeInSource(source, src, tgt, ordinal) {
+    const sEsc = regexEscape(src), tEsc = regexEscape(tgt);
+    const edgeRe = new RegExp(`\\b${sEsc}\\b\\s*${EDGE_CONN}\\s*\\b${tEsc}\\b`);
+    // Pattern for the swapped direction (tgt → src), used to count the new
+    // edge's ordinal after the rewrite.
+    const swapRe = new RegExp(`\\b${tEsc}\\b\\s*${EDGE_CONN}\\s*\\b${sEsc}\\b`);
+    const lines = source.split("\n");
+    let matched = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const stripped = stripEdgeLabels(lines[i])
+        .replace(/\[[^\]\n]*\]/g, " ")
+        .replace(/\([^)\n]*\)/g, " ")
+        .replace(/\{[^}\n]*\}/g, " ");
+      if (!edgeRe.test(stripped)) continue;
+      if (matched !== ordinal) { matched++; continue; }
+      const arrowSegs = (stripped.match(new RegExp(`${EDGE_CONN}\\s*\\w+`, "g")) || []).length;
+      if (arrowSegs > 1) {
+        return { ok: false, error: "edge in chain: dividi la linea per invertire" };
+      }
+      const re = new RegExp(`(\\b)(${sEsc})(\\s+${EDGE_CONN}\\s*(?:\\|[^|\\n]*\\|\\s*)?)(${tEsc})(\\b)`);
+      const m = lines[i].match(re);
+      if (!m) return { ok: false, error: `edge ${src}→${tgt}: pattern interno non trovato` };
+      lines[i] = lines[i].replace(re, `${m[1]}${m[4]}${m[3]}${m[2]}${m[5]}`);
+      // Count pre-existing (tgt,src) edges in source lines before i — that's
+      // the new edge's ordinal after the rewrite. Mermaid render order tracks
+      // source line order, so this matches the ordinal in the rebuilt SVG.
+      let newOrdinal = 0;
+      for (let j = 0; j < i; j++) {
+        const sj = stripEdgeLabels(lines[j])
+          .replace(/\[[^\]\n]*\]/g, " ")
+          .replace(/\([^)\n]*\)/g, " ")
+          .replace(/\{[^}\n]*\}/g, " ");
+        if (swapRe.test(sj)) newOrdinal++;
+      }
+      return { ok: true, source: lines.join("\n"), newOrdinal };
     }
     return { ok: false, error: `edge ${src}→${tgt} #${ordinal} non trovata` };
   }
@@ -1344,6 +1418,38 @@
     await renderDiagram();
     pushHistory();
     setStatus(`${edge.source}→${edge.target}: ${result.from} → ${result.to}`);
+  }
+
+  async function applyCycleEdgeArrow() {
+    if (!selectedEdgeKey) { setStatus("seleziona prima un edge", true); return; }
+    if (!requireValidSource("cycle edge arrow")) return;
+    const edge = findEdgeByKey(selectedEdgeKey);
+    if (!edge) return;
+    const result = cycleEdgeArrowInSource(currentSource, edge.source, edge.target, edge.ordinal);
+    if (!result.ok) { setStatus(`freccia: ${result.error}`, true); return; }
+    currentSource = result.source;
+    markDirtySource();
+    await renderDiagram();
+    pushHistory();
+    setStatus(`${edge.source}→${edge.target}: ${result.from} → ${result.to}`);
+  }
+
+  // Reverse swaps src↔tgt in the source line. The edge identity changes, so
+  // we update selectedEdgeKey to (tgt, src, newOrdinal) before re-rendering;
+  // renderDiagram will re-apply selection visuals from selectedEdgeKey.
+  async function applyReverseEdge() {
+    if (!selectedEdgeKey) { setStatus("seleziona prima un edge", true); return; }
+    if (!requireValidSource("reverse edge")) return;
+    const edge = findEdgeByKey(selectedEdgeKey);
+    if (!edge) return;
+    const result = reverseEdgeInSource(currentSource, edge.source, edge.target, edge.ordinal);
+    if (!result.ok) { setStatus(`inverti: ${result.error}`, true); return; }
+    currentSource = result.source;
+    markDirtySource();
+    selectedEdgeKey = `${edge.target}|${edge.source}|${result.newOrdinal}`;
+    await renderDiagram();
+    pushHistory();
+    setStatus(`${edge.source}→${edge.target}: invertito`);
   }
 
   function startLabelEdit(el, kind, meta) {
@@ -1645,7 +1751,7 @@
 
   function deleteEdgeFromSource(source, src, tgt, ordinal) {
     const sEsc = regexEscape(src), tEsc = regexEscape(tgt);
-    const edgeRe = new RegExp(`\\b${sEsc}\\b\\s*[-=.~][-=.~<>xo]*\\s*\\b${tEsc}\\b`);
+    const edgeRe = new RegExp(`\\b${sEsc}\\b\\s*${EDGE_CONN}\\s*\\b${tEsc}\\b`);
     const lines = source.split("\n");
     let matched = 0;
     for (let i = 0; i < lines.length; i++) {
@@ -1655,7 +1761,7 @@
         .replace(/\{[^}\n]*\}/g, " ");
       if (!edgeRe.test(stripped)) continue;
       if (matched !== ordinal) { matched++; continue; }
-      const arrowSegs = (stripped.match(/[-=.~][-=.~<>xo]*\s*\w+/g) || []).length;
+      const arrowSegs = (stripped.match(new RegExp(`${EDGE_CONN}\\s*\\w+`, "g")) || []).length;
       const chainLine = arrowSegs > 1;
       lines.splice(i, 1);
       return { ok: true, source: lines.join("\n"), chainLine };
@@ -2263,6 +2369,8 @@
     if (addSubgraphBtn)  addSubgraphBtn.disabled  = !(kind === "node" && nNodes >= 2);
     if (deleteBtn)       deleteBtn.disabled       = (kind === null);
     if (toggleEdgeStyleBtn) toggleEdgeStyleBtn.disabled = (kind !== "edge");
+    if (cycleEdgeArrowBtn)  cycleEdgeArrowBtn.disabled  = (kind !== "edge");
+    if (reverseEdgeBtn)     reverseEdgeBtn.disabled     = (kind !== "edge");
     // Palette: Colore agisce su nodi e subgraph; Forma solo su nodi.
     const colorEnabled = (kind === "node") || (kind === "subgraph");
     const shapeEnabled = (kind === "node");
@@ -2481,8 +2589,27 @@
     markDirtySource();
     closeAddNodeModal();
     await renderDiagram();
+    placeNodeAtViewportCenter(id);
     pushHistory();
     setStatus(`+ node ${id} (${modalSelectedShape.name})`);
+  }
+
+  // Move a freshly-added node so its visual center sits at the current
+  // viewport center, instead of wherever Mermaid's auto-layout dropped it
+  // (often offscreen relative to the user's pan/zoom).
+  function placeNodeAtViewportCenter(id) {
+    const n = nodeMap[id];
+    if (!n || !viewState) return;
+    const cx = viewState.x + viewState.width / 2;
+    const cy = viewState.y + viewState.height / 2;
+    const parentT = getElementParentTranslate(n.g);
+    const tx = cx - parentT.x - n.centerLocal.x;
+    const ty = cy - parentT.y - n.centerLocal.y;
+    setNodeTranslate(n.g, tx, ty);
+    positions[id] = { x: tx, y: ty };
+    markDirtyLayout();
+    rerouteNodeEdges(id);
+    updateAllClusterBounds();
   }
 
   // ── Save (atomic POST + optimistic locking) ──────────────────────────────
@@ -3278,6 +3405,8 @@
   if (toggleEdgeStyleBtn) {
     toggleEdgeStyleBtn.addEventListener("click", applyToggleEdgeStyle);
   }
+  if (cycleEdgeArrowBtn) cycleEdgeArrowBtn.addEventListener("click", applyCycleEdgeArrow);
+  if (reverseEdgeBtn) reverseEdgeBtn.addEventListener("click", applyReverseEdge);
   if (addSubgraphBtn) addSubgraphBtn.addEventListener("click", applyAddSubgraph);
   if (deleteBtn) deleteBtn.addEventListener("click", applyDelete);
   exportBtn.addEventListener("click", exportSource);
@@ -3446,6 +3575,9 @@
   });
 
   diagramEl.addEventListener("click", (e) => {
+    // Shift/Ctrl/Cmd held: user is mid-multiselect and missed an element —
+    // preserve the current selection instead of clearing it.
+    if (e.shiftKey || e.ctrlKey || e.metaKey) return;
     if (!e.target.closest("g.node") && selectedNodeIds.size > 0) {
       deselectNode();
       setStatus("");

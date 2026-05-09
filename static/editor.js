@@ -522,8 +522,35 @@
       else selectedEdgeKey = null;
     }
     updateToolbarState();
+    applyNoteTooltips();
     if (!skipSourceSync) setSourceValue(currentSource);
     setSourceValidity(true);
+  }
+
+  // Set a native SVG <title> child on each node/cluster that has a note,
+  // so hovering shows the decoded text as a browser-native tooltip after
+  // the usual hover delay. Removes the title when the note is gone.
+  function applyNoteTooltips() {
+    function setTitle(g, text) {
+      let existing = g.querySelector(":scope > title");
+      if (!text) {
+        if (existing) existing.remove();
+        return;
+      }
+      if (!existing) {
+        existing = document.createElementNS("http://www.w3.org/2000/svg", "title");
+        g.insertBefore(existing, g.firstChild);
+      }
+      existing.textContent = text;
+    }
+    for (const id of Object.keys(nodeMap)) {
+      const enc = findNoteForId(currentSource, id);
+      setTitle(nodeMap[id].g, enc ? decodeNote(enc) : null);
+    }
+    for (const id of Object.keys(clusterMap)) {
+      const enc = findNoteForId(currentSource, id);
+      setTitle(clusterMap[id].g, enc ? decodeNote(enc) : null);
+    }
   }
 
   async function safeRenderFromTextarea() {
@@ -694,10 +721,19 @@
   }
 
   function applySavedPositions() {
+    // Prune positions for ids that no longer exist in the rendered graph
+    // (typically because the user renamed/removed a node via direct source
+    // edits). Mark layout dirty so the cleanup gets autosaved instead of
+    // hanging around as orphan entries forever.
+    const orphans = [];
     for (const [id, pos] of Object.entries(positions)) {
       const n = nodeMap[id];
-      if (!n) { console.warn(`orphan position for missing node: ${id}`); continue; }
+      if (!n) { orphans.push(id); continue; }
       setNodeTranslate(n.g, pos.x, pos.y);
+    }
+    if (orphans.length > 0) {
+      for (const id of orphans) delete positions[id];
+      markDirtyLayout();
     }
   }
 

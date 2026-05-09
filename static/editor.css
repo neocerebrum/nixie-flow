@@ -299,8 +299,8 @@ body.deleting g.cluster:hover > *:first-child {
     fill: #3a4551 !important;
     stroke: none !important;
     opacity: 1 !important;
-    rx: 3 !important;
-    ry: 3 !important;
+    rx: 3px !important;
+    ry: 3px !important;
 }
 #diagram g.edgeLabels text,
 #diagram g.edgeLabels tspan { fill: #eceff4 !important; }

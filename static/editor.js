@@ -1186,12 +1186,31 @@
     }
 
     const n = nodeMap[id];
+    // Group drag: pointerdown on a node that's part of an existing
+    // multi-selection drags every selected node by the same delta — same
+    // ergonomics as if they were inside a virtual subgraph. Pointerdown on
+    // a non-selected node falls back to single-node drag.
+    const draggingGroup = selectedNodeIds.has(id) && selectedNodeIds.size > 1;
+    const groupStates = [];
+    if (draggingGroup) {
+      for (const gid of selectedNodeIds) {
+        const ng = nodeMap[gid];
+        if (!ng) continue;
+        groupStates.push({ id: gid, n: ng, origin: getNodeTranslate(ng.g) });
+      }
+    } else {
+      groupStates.push({ id, n, origin: getNodeTranslate(n.g) });
+    }
+    const groupIds = new Set(groupStates.map(gs => gs.id));
+
     // Connected peers (nodes AND clusters) reachable via incoming/outgoing
-    // edges — narrow snap targets for Ctrl/Cmd alone.
+    // edges of the *primary* node — narrow snap targets for Ctrl/Cmd alone.
+    // We exclude any peer that's also being dragged, since the group moves
+    // as a rigid unit and snapping to a moving member is meaningless.
     const connectedIds = new Set();
     for (const e of n.incomingEdges) connectedIds.add(e.source === id ? e.target : e.source);
     for (const e of n.outgoingEdges) connectedIds.add(e.source === id ? e.target : e.source);
-    connectedIds.delete(id);
+    for (const gid of groupIds) connectedIds.delete(gid);
     const parentT = getElementParentTranslate(n.g);
 
     n.g.classList.add("dragging");
@@ -1225,7 +1244,7 @@
           ...Object.keys(nodeMap),
           ...Object.keys(clusterMap),
         ]);
-        candidates.delete(id);
+        for (const gid of groupIds) candidates.delete(gid);
       } else {
         candidates = connectedIds;
       }
@@ -1252,8 +1271,14 @@
       let ny = origin.y + (cur.y - start.y);
       const snap = applySnap(nx, ny, e);
       nx = snap.nx; ny = snap.ny;
-      setNodeTranslate(n.g, nx, ny);
-      rerouteNodeEdges(id);
+      // Apply the same world-space delta to every group member so they
+      // move as a rigid unit. Each member's parent translate doesn't
+      // change during a drag, so adding world delta to local origin is OK.
+      const dx = nx - origin.x, dy = ny - origin.y;
+      for (const gs of groupStates) {
+        setNodeTranslate(gs.n.g, gs.origin.x + dx, gs.origin.y + dy);
+        rerouteNodeEdges(gs.id);
+      }
       updateAllClusterBounds();
       n.g.classList.toggle("snapping", !!(snap.snapX || snap.snapY));
       if (snap.snapX || snap.snapY) {
@@ -1268,11 +1293,19 @@
       n.g.classList.remove("dragging");
       n.g.classList.remove("snapping");
       const t = getNodeTranslate(n.g);
-      if (t.x !== origin.x || t.y !== origin.y) {
-        positions[id] = { x: t.x, y: t.y };
+      const moved = t.x !== origin.x || t.y !== origin.y;
+      if (moved) {
+        for (const gs of groupStates) {
+          const gt = getNodeTranslate(gs.n.g);
+          positions[gs.id] = { x: gt.x, y: gt.y };
+        }
         markDirtyLayout();
         pushHistory();
-        setStatus(`${id} → (${t.x.toFixed(0)}, ${t.y.toFixed(0)})`, false);
+        if (draggingGroup) {
+          setStatus(`${groupStates.length} nodi spostati`, false);
+        } else {
+          setStatus(`${id} → (${t.x.toFixed(0)}, ${t.y.toFixed(0)})`, false);
+        }
       } else {
         // No movement: treat as click. Any modifier (Shift/Ctrl/Cmd) toggles
         // multi-selection; plain click selects only this node.

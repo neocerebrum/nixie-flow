@@ -1150,6 +1150,10 @@
     return { x: p.x, y: p.y };
   }
 
+  // Threshold (in SVG world coords) for axis-aligned snap to a connected
+  // node's center while dragging with Ctrl/Cmd held.
+  const SNAP_THRESHOLD = 20;
+
   function startDrag(ev, svgEl, id) {
     if (connectingState) {
       ev.preventDefault();
@@ -1161,9 +1165,11 @@
     if (!ev.isPrimary) return;
     ev.preventDefault();
     const pointerId = ev.pointerId;
-    const additive = ev.shiftKey || ev.ctrlKey || ev.metaKey;
-    if (additive) {
-      // Shift/Ctrl/Cmd+click: don't drag, just toggle selection on pointerup.
+
+    // Shift-only+down (no Ctrl/Cmd): "no-drag, just toggle multi-select".
+    // Ctrl+Shift falls through to the drag path so it can be used for the
+    // wide-snap mode (snap to every node/cluster, not just connected peers).
+    if (ev.shiftKey && !ev.ctrlKey && !ev.metaKey) {
       function onUpAdditive(e) {
         if (e && e.pointerId !== pointerId) return;
         document.removeEventListener("pointerup", onUpAdditive);
@@ -1174,23 +1180,89 @@
       document.addEventListener("pointercancel", onUpAdditive);
       return;
     }
+
     const n = nodeMap[id];
+    // Connected peers (nodes AND clusters) reachable via incoming/outgoing
+    // edges — narrow snap targets for Ctrl/Cmd alone.
+    const connectedIds = new Set();
+    for (const e of n.incomingEdges) connectedIds.add(e.source === id ? e.target : e.source);
+    for (const e of n.outgoingEdges) connectedIds.add(e.source === id ? e.target : e.source);
+    connectedIds.delete(id);
+    const parentT = getElementParentTranslate(n.g);
+
     n.g.classList.add("dragging");
     const start = screenToSvg(svgEl, ev.clientX, ev.clientY);
     const origin = getNodeTranslate(n.g);
 
+    // Snap target center for any peer id — node center (uses local bbox)
+    // or cluster bg-rect center.
+    function peerCenter(pid) {
+      if (nodeMap[pid]) return nodeCenter(pid);
+      const c = clusterMap[pid];
+      if (c) {
+        const bb = getClusterRectWorldBbox(c);
+        if (!bb) return null;
+        return { x: (bb.minX + bb.maxX) / 2, y: (bb.minY + bb.maxY) / 2 };
+      }
+      return null;
+    }
+
+    // Snap modes:
+    //   Ctrl/Cmd        → connected peers only (focused)
+    //   Ctrl/Cmd+Shift  → every node + every cluster (broad)
+    function applySnap(nx, ny, e) {
+      if (!(e.ctrlKey || e.metaKey)) {
+        return { nx, ny, snapX: null, snapY: null };
+      }
+      const wide = e.shiftKey;
+      let candidates;
+      if (wide) {
+        candidates = new Set([
+          ...Object.keys(nodeMap),
+          ...Object.keys(clusterMap),
+        ]);
+        candidates.delete(id);
+      } else {
+        candidates = connectedIds;
+      }
+      if (candidates.size === 0) return { nx, ny, snapX: null, snapY: null };
+      const cx = parentT.x + nx + n.centerLocal.x;
+      const cy = parentT.y + ny + n.centerLocal.y;
+      let bestDx = 0, bestDxAbs = Infinity, snapX = null;
+      let bestDy = 0, bestDyAbs = Infinity, snapY = null;
+      for (const pid of candidates) {
+        const cc = peerCenter(pid);
+        if (!cc) continue;
+        const dx = cc.x - cx, dy = cc.y - cy;
+        const adx = Math.abs(dx), ady = Math.abs(dy);
+        if (adx <= SNAP_THRESHOLD && adx < bestDxAbs) { bestDxAbs = adx; bestDx = dx; snapX = pid; }
+        if (ady <= SNAP_THRESHOLD && ady < bestDyAbs) { bestDyAbs = ady; bestDy = dy; snapY = pid; }
+      }
+      return { nx: nx + bestDx, ny: ny + bestDy, snapX, snapY };
+    }
+
     function onMove(e) {
       if (e.pointerId !== pointerId) return;
       const cur = screenToSvg(svgEl, e.clientX, e.clientY);
-      const nx = origin.x + (cur.x - start.x);
-      const ny = origin.y + (cur.y - start.y);
+      let nx = origin.x + (cur.x - start.x);
+      let ny = origin.y + (cur.y - start.y);
+      const snap = applySnap(nx, ny, e);
+      nx = snap.nx; ny = snap.ny;
       setNodeTranslate(n.g, nx, ny);
       rerouteNodeEdges(id);
       updateAllClusterBounds();
+      n.g.classList.toggle("snapping", !!(snap.snapX || snap.snapY));
+      if (snap.snapX || snap.snapY) {
+        const parts = [];
+        if (snap.snapX) parts.push(`x=${snap.snapX}`);
+        if (snap.snapY) parts.push(`y=${snap.snapY}`);
+        setStatus(`${id} snap → ${parts.join(", ")}`, false);
+      }
     }
     function onUp(e) {
       if (e && e.pointerId !== pointerId) return;
       n.g.classList.remove("dragging");
+      n.g.classList.remove("snapping");
       const t = getNodeTranslate(n.g);
       if (t.x !== origin.x || t.y !== origin.y) {
         positions[id] = { x: t.x, y: t.y };
@@ -1198,7 +1270,9 @@
         pushHistory();
         setStatus(`${id} → (${t.x.toFixed(0)}, ${t.y.toFixed(0)})`, false);
       } else {
-        toggleNodeSelection(id, false);
+        // No movement: treat as click. Any modifier (Shift/Ctrl/Cmd) toggles
+        // multi-selection; plain click selects only this node.
+        toggleNodeSelection(id, e.ctrlKey || e.metaKey || e.shiftKey);
       }
       document.removeEventListener("pointermove", onMove);
       document.removeEventListener("pointerup", onUp);

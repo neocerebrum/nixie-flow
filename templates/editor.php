@@ -78,6 +78,7 @@
             <button id="addNodeBtn" title="Aggiungi nodo">+ Nodo</button>
             <button id="addEdgeBtn" title="Collega: seleziona prima un nodo sorgente, poi clicca qui e infine il target" disabled>+ Edge</button>
             <button id="addSubgraphBtn" title="Crea subgraph dai nodi selezionati (≥2, Shift+click per multiselezione)" disabled>+ Subgraph</button>
+            <button id="moveToSubgraphBtn" title="Sposta selezione: clicca un subgraph come destinazione (o lo sfondo per la root)" disabled>&gt; Subgraph</button>
             <button id="deleteBtn" class="danger" title="Elimina la selezione (nodo, edge o subgraph)" disabled>Elimina</button>
         </div>
         <div id="diagram"></div>

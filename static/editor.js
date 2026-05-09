@@ -74,6 +74,7 @@
   const alignHBtn = document.getElementById("alignHBtn");
   const distributeHBtn = document.getElementById("distributeHBtn");
   const distributeVBtn = document.getElementById("distributeVBtn");
+  const moveToSubgraphBtn = document.getElementById("moveToSubgraphBtn");
   const exportBtn = document.getElementById("exportBtn");
   const saveBtn = document.getElementById("saveBtn");
   const fitBtn = document.getElementById("fitBtn");
@@ -1070,6 +1071,7 @@
         ev.preventDefault();
         ev.stopPropagation();
         if (connectingState === "edge-target") { handleConnectClick(id); return; }
+        if (connectingState === "move-target") { handleMoveTargetClick(id); return; }
         if (connectingState) return;
         startClusterDrag(ev, svgEl, id);
       });
@@ -2250,20 +2252,175 @@
     return owners;
   }
 
-  function addSubgraphToSource(source, id, title, memberIds) {
+  // Reparent a list of nodes and/or subgraph blocks to a target subgraph,
+  // or to the root level if targetId is null. Pure-identifier member lines
+  // are removed from inside any subgraph block; for moved subgraphs, the
+  // entire `subgraph X ... end` block is cut and reinserted at the target.
+  // Validates against cycles (target inside a moved subgraph).
+  function moveToSubgraphInSource(source, ids, targetId) {
+    const subgraphHeaderRe = /^\s*subgraph\b/i;
+    const endRe = /^\s*end\s*$/i;
+
+    function findSubgraphRange(lines, sgId) {
+      const idEsc = regexEscape(sgId);
+      const headerRe = new RegExp(`^\\s*subgraph\\s+${idEsc}(\\s|\\[|$)`, "i");
+      let headerIdx = -1;
+      for (let i = 0; i < lines.length; i++) {
+        if (headerRe.test(lines[i])) { headerIdx = i; break; }
+      }
+      if (headerIdx === -1) return null;
+      let d = 1, endIdx = -1;
+      for (let i = headerIdx + 1; i < lines.length; i++) {
+        if (subgraphHeaderRe.test(lines[i])) d++;
+        else if (endRe.test(lines[i])) { d--; if (d === 0) { endIdx = i; break; } }
+      }
+      if (endIdx === -1) return null;
+      return { headerIdx, endIdx };
+    }
+
+    // Validate: target can't be inside any moved subgraph block (cycle).
+    if (targetId) {
+      let probeLines = source.split("\n");
+      for (const id of ids) {
+        if (!clusterMap[id]) continue;
+        const range = findSubgraphRange(probeLines, id);
+        if (!range) continue;
+        const tgtEsc = regexEscape(targetId);
+        const tgtRe = new RegExp(`^\\s*subgraph\\s+${tgtEsc}(\\s|\\[|$)`, "i");
+        for (let i = range.headerIdx + 1; i < range.endIdx; i++) {
+          if (tgtRe.test(probeLines[i])) {
+            return { ok: false, error: `'${targetId}' è dentro '${id}': sposta non permesso (ciclo)` };
+          }
+        }
+      }
+    }
+
+    let lines = source.split("\n");
+
+    // Phase A: cut subgraph blocks for any moved subgraph id. Process largest
+    // first to keep nested cuts well-defined.
+    const cutBlocks = []; // [{ id, blockLines }]
+    const movedSubgraphIds = ids.filter(id => clusterMap[id]);
+    for (const id of movedSubgraphIds) {
+      if (id === targetId) {
+        return { ok: false, error: `'${id}' è già la destinazione` };
+      }
+      const range = findSubgraphRange(lines, id);
+      if (!range) {
+        return { ok: false, error: `subgraph '${id}' non trovato nel sorgente` };
+      }
+      const blockLines = lines.slice(range.headerIdx, range.endIdx + 1);
+      lines = lines.slice(0, range.headerIdx).concat(lines.slice(range.endIdx + 1));
+      cutBlocks.push({ id, blockLines });
+    }
+
+    // Phase B: remove pure-identifier member lines for moved nodes from
+    // inside any subgraph block. Leaves root-level decl lines intact.
+    const movedNodeIds = ids.filter(id => nodeMap[id]);
+    if (movedNodeIds.length > 0) {
+      const escIds = movedNodeIds.map(regexEscape).join("|");
+      const memberLineRe = new RegExp(`^\\s*(?:${escIds})\\s*$`);
+      const cleaned = [];
+      let depth = 0;
+      for (const line of lines) {
+        if (subgraphHeaderRe.test(line)) { cleaned.push(line); depth++; continue; }
+        if (endRe.test(line)) { cleaned.push(line); depth = Math.max(0, depth - 1); continue; }
+        if (depth > 0 && memberLineRe.test(line)) continue;
+        cleaned.push(line);
+      }
+      lines = cleaned;
+    }
+
+    // Phase C: insert at target. For root, append node-id member lines and
+    // the cut blocks at end of file. For a target subgraph, splice them in
+    // just before its closing `end`.
+    function appendInside(lines, sgId, contentLines) {
+      const range = findSubgraphRange(lines, sgId);
+      if (!range) return null;
+      lines.splice(range.endIdx, 0, ...contentLines);
+      return lines;
+    }
+
+    const insertPieces = [];
+    for (const id of movedNodeIds) insertPieces.push(`    ${id}`);
+    for (const { blockLines } of cutBlocks) insertPieces.push(...blockLines);
+
+    if (insertPieces.length === 0) {
+      return { ok: false, error: "niente da spostare" };
+    }
+    if (targetId) {
+      const result = appendInside(lines, targetId, insertPieces);
+      if (!result) return { ok: false, error: `subgraph '${targetId}' non trovato` };
+      lines = result;
+    } else {
+      if (lines.length > 0 && lines[lines.length - 1] === "") {
+        lines.splice(lines.length - 1, 0, ...insertPieces);
+      } else {
+        lines.push(...insertPieces);
+      }
+    }
+
+    return { ok: true, source: lines.join("\n") };
+  }
+
+  function addSubgraphToSource(source, id, title, memberIds, parentId) {
     if (!/^[A-Za-z_][\w]*$/.test(id)) return { ok: false, error: `ID non valido: '${id}'` };
     if (nodeMap[id] || clusterMap[id]) return { ok: false, error: `'${id}' esiste gia'` };
     if (title && /[\]\n]/.test(title)) return { ok: false, error: "titolo non puo' contenere ] o newline" };
     const head = title ? `subgraph ${id} [${title}]` : `subgraph ${id}`;
-    const body = memberIds.map(m => `    ${m}`).join("\n");
-    const block = `${head}\n${body}\nend`;
-    if (source.length && !source.endsWith("\n")) source += "\n";
-    return { ok: true, source: source + block + "\n" };
+    const blockLines = [head, ...memberIds.map(m => `    ${m}`), "end"];
+
+    // Root-level: just append the block.
+    if (!parentId) {
+      if (source.length && !source.endsWith("\n")) source += "\n";
+      return { ok: true, source: source + blockLines.join("\n") + "\n" };
+    }
+
+    // Nested: locate parent's range, strip member lines from its direct body
+    // (depth 1 inside parent), then splice the new subgraph block before
+    // parent's closing `end`. The members live now only inside the new
+    // subgraph, so Mermaid renders the nesting correctly.
+    const lines = source.split("\n");
+    const subgraphHeaderRe = /^\s*subgraph\b/i;
+    const endRe = /^\s*end\s*$/i;
+    const idEsc = regexEscape(parentId);
+    const headerRe = new RegExp(`^\\s*subgraph\\s+${idEsc}(\\s|\\[|$)`, "i");
+    let headerIdx = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (headerRe.test(lines[i])) { headerIdx = i; break; }
+    }
+    if (headerIdx === -1) return { ok: false, error: `parent '${parentId}' non trovato` };
+    let d = 1, endIdx = -1;
+    for (let i = headerIdx + 1; i < lines.length; i++) {
+      if (subgraphHeaderRe.test(lines[i])) d++;
+      else if (endRe.test(lines[i])) { d--; if (d === 0) { endIdx = i; break; } }
+    }
+    if (endIdx === -1) return { ok: false, error: `parent '${parentId}' senza end` };
+
+    const escIds = memberIds.map(regexEscape).join("|");
+    const memberLineRe = new RegExp(`^\\s*(?:${escIds})\\s*$`);
+    const before = lines.slice(0, headerIdx + 1);
+    const body = lines.slice(headerIdx + 1, endIdx);
+    const after = lines.slice(endIdx); // includes parent's `end`
+
+    // Drop member lines that are direct (depth-1) members of parent.
+    // Don't touch lines inside nested subgraphs of parent.
+    const cleanedBody = [];
+    let bodyDepth = 0;
+    for (const line of body) {
+      if (subgraphHeaderRe.test(line)) { cleanedBody.push(line); bodyDepth++; continue; }
+      if (endRe.test(line)) { cleanedBody.push(line); bodyDepth--; continue; }
+      if (bodyDepth === 0 && memberLineRe.test(line)) continue;
+      cleanedBody.push(line);
+    }
+    const newLines = before.concat(cleanedBody, blockLines, after);
+    return { ok: true, source: newLines.join("\n") };
   }
 
-  // Member ids captured when the subgraph modal opens, so the user can't
-  // change selection mid-modal and create a subgraph from a stale set.
+  // Member ids + parent captured when the subgraph modal opens, so the user
+  // can't change selection mid-modal and create a subgraph from a stale set.
   let _subgraphPendingIds = null;
+  let _subgraphPendingParent = null;
 
   function applyAddSubgraph() {
     if (!requireValidSource("+ subgraph")) return;
@@ -2273,31 +2430,42 @@
     }
     const ids = [...selectedNodeIds];
     const owners = computeNodeSubgraphOwners(currentSource);
-    const conflicts = ids.filter(id => owners[id]);
-    if (conflicts.length) {
-      setStatus(`gia' in altro subgraph: ${conflicts.join(", ")}`, true);
-      return;
+    // Determine common parent: all selected nodes must share the same
+    // parent subgraph (or all be at root). When they do, the new subgraph
+    // is nested inside that parent. Mixed selection is refused — there's
+    // no unambiguous "one parent" to nest under.
+    const parent = owners[ids[0]] || null;
+    for (const id of ids) {
+      const o = owners[id] || null;
+      if (o !== parent) {
+        setStatus(`selezione mista: '${id}' è in ${o || "root"}, atteso ${parent || "root"}`, true);
+        return;
+      }
     }
-    openAddSubgraphModal(ids);
+    openAddSubgraphModal(ids, parent);
   }
 
-  function openAddSubgraphModal(ids) {
+  function openAddSubgraphModal(ids, parentId) {
     _subgraphPendingIds = ids;
+    _subgraphPendingParent = parentId || null;
     document.getElementById("addSubgraphModal").classList.remove("hidden");
     document.getElementById("subgraphModalError").textContent = "";
     document.getElementById("subgraphIdInput").value = "";
     document.getElementById("subgraphTitleInput").value = "";
+    const where = parentId ? ` (annidato in ${parentId})` : "";
     document.getElementById("subgraphMembersInfo").textContent =
-      `${ids.length} nodi: ${ids.join(", ")}`;
+      `${ids.length} nodi${where}: ${ids.join(", ")}`;
     setTimeout(() => document.getElementById("subgraphIdInput").focus(), 0);
   }
   function closeAddSubgraphModal() {
     document.getElementById("addSubgraphModal").classList.add("hidden");
     _subgraphPendingIds = null;
+    _subgraphPendingParent = null;
   }
 
   async function submitAddSubgraphModal() {
     const ids = _subgraphPendingIds;
+    const parent = _subgraphPendingParent;
     if (!ids) { closeAddSubgraphModal(); return; }
     const idRaw = document.getElementById("subgraphIdInput").value.trim();
     const titleRaw = document.getElementById("subgraphTitleInput").value;
@@ -2307,7 +2475,7 @@
     if (!/^[A-Za-z_][\w]*$/.test(idRaw)) { errorEl.textContent = `ID non valido: '${idRaw}'`; return; }
     if (nodeMap[idRaw] || clusterMap[idRaw]) { errorEl.textContent = `'${idRaw}' esiste gia'`; return; }
     const title = titleRaw.trim();
-    const result = addSubgraphToSource(currentSource, idRaw, title, ids);
+    const result = addSubgraphToSource(currentSource, idRaw, title, ids, parent);
     if (!result.ok) { errorEl.textContent = result.error; return; }
     currentSource = result.source;
     markDirtySource();
@@ -2315,7 +2483,8 @@
     closeAddSubgraphModal();
     await renderDiagram();
     pushHistory();
-    setStatus(`+ subgraph ${idRaw} con ${ids.length} nodi`);
+    const where = parent ? ` (in ${parent})` : "";
+    setStatus(`+ subgraph ${idRaw} con ${ids.length} nodi${where}`);
   }
 
   async function handleDeleteSubgraphClick(id) {
@@ -2516,6 +2685,98 @@
     addEdgeBtn.classList.remove("active"); addEdgeBtn.textContent = "+ Edge";
     updateToolbarState();
     setStatus("");
+  }
+
+  // ── Move-to-subgraph: pick a target subgraph (or root) for the current
+  // selection. Reuses connectingState as a mode flag, value "move-target".
+  let _moveSelectionIds = null;
+
+  function startMoveMode() {
+    if (connectingState === "move-target") { cancelMoveMode(); return; }
+    if (connectingState) return;
+    if (!requireValidSource("> Subgraph")) return;
+    const ids = [];
+    if (selectedNodeIds.size > 0) ids.push(...selectedNodeIds);
+    if (selectedClusterId) ids.push(selectedClusterId);
+    if (ids.length === 0) {
+      setStatus("seleziona prima 1+ nodi o 1 subgraph", true);
+      return;
+    }
+    connectingState = "move-target";
+    _moveSelectionIds = ids;
+    document.body.classList.add("moving");
+    moveToSubgraphBtn.classList.add("active");
+    moveToSubgraphBtn.textContent = "Annulla";
+    setStatus(`sposta ${ids.length === 1 ? ids[0] : ids.length + " elementi"}: clicca un subgraph (o lo sfondo per la root). Esc per annullare.`);
+  }
+
+  function cancelMoveMode() {
+    connectingState = null;
+    _moveSelectionIds = null;
+    document.body.classList.remove("moving");
+    if (moveToSubgraphBtn) {
+      moveToSubgraphBtn.classList.remove("active");
+      moveToSubgraphBtn.textContent = "> Subgraph";
+    }
+    updateToolbarState();
+    setStatus("");
+  }
+
+  async function handleMoveTargetClick(targetId) {
+    if (connectingState !== "move-target") return;
+    const ids = _moveSelectionIds;
+    cancelMoveMode();
+    if (!ids || ids.length === 0) return;
+    if (targetId && ids.includes(targetId)) {
+      setStatus("destinazione = selezione, sposta annullato", true);
+      return;
+    }
+    // Capture pre-move world translates for every node whose parent will
+    // change: directly moved nodes plus descendants of moved subgraphs.
+    // We restore these world coords after the re-render by adjusting each
+    // node's local translate to compensate for the new parent translate.
+    const preserveIds = new Set();
+    for (const id of ids) {
+      if (nodeMap[id]) preserveIds.add(id);
+      else if (clusterMap[id]) {
+        const members = findSubgraphMembers(currentSource, id);
+        for (const m of members) preserveIds.add(m);
+      }
+    }
+    const oldWorld = {};
+    for (const pid of preserveIds) {
+      const n = nodeMap[pid];
+      if (!n) continue;
+      oldWorld[pid] = getWorldTranslate(n.g);
+    }
+    const result = moveToSubgraphInSource(currentSource, ids, targetId);
+    if (!result.ok) { setStatus(`sposta: ${result.error}`, true); return; }
+    currentSource = result.source;
+    markDirtySource();
+    await renderDiagram();
+    // After Mermaid re-layout, derive a fresh local translate for each
+    // preserved node such that its world position matches the captured one.
+    let restored = 0;
+    for (const pid of Object.keys(oldWorld)) {
+      const n = nodeMap[pid];
+      if (!n) continue;
+      const newParent = getElementParentTranslate(n.g);
+      const newLocalX = oldWorld[pid].x - newParent.x;
+      const newLocalY = oldWorld[pid].y - newParent.y;
+      setNodeTranslate(n.g, newLocalX, newLocalY);
+      positions[pid] = { x: newLocalX, y: newLocalY };
+      restored++;
+    }
+    if (restored > 0) {
+      for (const pid of Object.keys(oldWorld)) {
+        if (nodeMap[pid]) rerouteNodeEdges(pid);
+      }
+      updateAllClusterBounds();
+      markDirtyLayout();
+    }
+    pushHistory();
+    const where = targetId ? `→ ${targetId}` : "→ root";
+    setStatus(`spostati ${ids.length} elementi ${where}`);
   }
 
   // ── Pan / zoom ───────────────────────────────────────────────────────────
@@ -2755,6 +3016,7 @@
   // button is repurposed as Cancel and stays clickable.
   function updateToolbarState() {
     if (connectingState === "edge-target") return; // managed by startConnectMode
+    if (connectingState === "move-target") return; // managed by startMoveMode
     const kind = selectionKind();
     const nNodes = selectedNodeIds.size;
     if (addEdgeBtn)      addEdgeBtn.disabled      = !((kind === "node" && nNodes === 1) || kind === "subgraph");
@@ -2769,6 +3031,9 @@
     if (alignHBtn)        alignHBtn.disabled        = !alignEnabled;
     if (distributeHBtn)   distributeHBtn.disabled   = !distributeEnabled;
     if (distributeVBtn)   distributeVBtn.disabled   = !distributeEnabled;
+    if (moveToSubgraphBtn) {
+      moveToSubgraphBtn.disabled = !((kind === "node") || kind === "subgraph");
+    }
     // Palette: Colore agisce su nodi e subgraph; Forma solo su nodi.
     const colorEnabled = (kind === "node") || (kind === "subgraph");
     const shapeEnabled = (kind === "node");
@@ -3813,6 +4078,7 @@
   if (alignHBtn) alignHBtn.addEventListener("click", applyAlignH);
   if (distributeHBtn) distributeHBtn.addEventListener("click", () => applyDistribute("h"));
   if (distributeVBtn) distributeVBtn.addEventListener("click", () => applyDistribute("v"));
+  if (moveToSubgraphBtn) moveToSubgraphBtn.addEventListener("click", startMoveMode);
   if (addSubgraphBtn) addSubgraphBtn.addEventListener("click", applyAddSubgraph);
   if (deleteBtn) deleteBtn.addEventListener("click", applyDelete);
   exportBtn.addEventListener("click", exportSource);
@@ -3985,6 +4251,8 @@
     }
     if (inInput) return;
     if (e.key === "Escape") {
+      if (connectingState === "edge-target") { cancelConnectMode(); return; }
+      if (connectingState === "move-target") { cancelMoveMode(); return; }
       if (connectingState) { cancelConnectMode(); return; }
       if (selectedNodeIds.size > 0) { deselectNode(); setStatus(""); }
       if (selectedClusterId) { deselectCluster(); setStatus(""); }
@@ -4001,6 +4269,14 @@
   });
 
   diagramEl.addEventListener("click", (e) => {
+    // Move-to-subgraph mode: click on empty canvas (no node/cluster/edge)
+    // means "move to root". Cluster pointerdown intercepts the in-cluster
+    // case before this fires.
+    if (connectingState === "move-target") {
+      const onSomething = e.target.closest("g.node, g.cluster, path.flowchart-link, g.edgeLabel, g.edgeLabels");
+      if (!onSomething) { handleMoveTargetClick(null); return; }
+      return; // node click during move-target: ignore (Esc to cancel)
+    }
     // Shift/Ctrl/Cmd held: user is mid-multiselect and missed an element —
     // preserve the current selection instead of clearing it.
     if (e.shiftKey || e.ctrlKey || e.metaKey) return;

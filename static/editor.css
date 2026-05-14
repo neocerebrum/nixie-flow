@@ -237,13 +237,30 @@ body.readonly #notesTextarea { opacity: 0.55; pointer-events: none; }
 }
 .canvas-pad button {
     background: #1c242e; color: #d8dee9; border: 1px solid #3a4551;
-    padding: 5px 10px; font-size: 12px; border-radius: 3px; cursor: pointer;
-    font-family: inherit; text-align: left; min-width: 110px;
+    padding: 0; width: 32px; height: 32px; border-radius: 3px; cursor: pointer;
+    font-family: inherit;
+    display: inline-flex; align-items: center; justify-content: center;
 }
-.canvas-pad button:hover { background: #25303c; }
+.canvas-pad button .icon { width: 18px; height: 18px; }
+.canvas-pad button:hover { background: #25303c; border-color: #88c0d0; }
 .canvas-pad button:disabled { opacity: 0.4; cursor: not-allowed; }
-.canvas-pad button.active { background: #5e81ac; color: #eceff4; }
-.canvas-pad button.danger.active { background: #bf616a; color: #eceff4; }
+.canvas-pad button:disabled:hover { background: #1c242e; border-color: #3a4551; }
+.canvas-pad button.active { background: #5e81ac; color: #eceff4; border-color: #88c0d0; }
+.canvas-pad button.danger.active { background: #bf616a; color: #eceff4; border-color: #bf616a; }
+
+/* Fit-view button: floats in the top-right corner of the diagram, flush
+   against the notes panel resizer. Mirror of .canvas-pad on the opposite
+   side for visual balance. */
+.canvas-fit-btn {
+    position: absolute; top: 10px; right: 10px; z-index: 5;
+    background: rgba(21, 27, 35, 0.85); color: #d8dee9;
+    border: 1px solid #2a3441; border-radius: 4px;
+    padding: 0; width: 32px; height: 32px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    backdrop-filter: blur(2px);
+}
+.canvas-fit-btn .icon { width: 18px; height: 18px; }
+.canvas-fit-btn:hover { background: rgba(37, 48, 60, 0.95); border-color: #88c0d0; }
 
 /* Palette edge-style button matches the rest of the palette */
 #palette button.palette-btn {

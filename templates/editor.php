@@ -22,7 +22,6 @@
     <div class="ed-toolbar">
         <button id="undoBtn" class="ed-tb-icon" title="Undo (Ctrl+Z)" aria-label="Undo"><svg class="icon"><use href="#icon-undo"/></svg></button>
         <button id="redoBtn" class="ed-tb-icon" title="Redo (Ctrl+Shift+Z)" aria-label="Redo"><svg class="icon"><use href="#icon-redo"/></svg></button>
-        <button id="fitBtn" class="ed-tb-icon" title="Fit view" aria-label="Fit view"><svg class="icon"><use href="#icon-fit"/></svg></button>
         <button id="historyBtn" class="ed-tb-icon" title="Cronologia revisioni" aria-label="Cronologia revisioni"><svg class="icon"><use href="#icon-history"/></svg></button>
         <button id="renameBtn" class="ed-tb-icon" title="Rinomina" aria-label="Rinomina"><svg class="icon"><use href="#icon-rename"/></svg></button>
         <button id="shareBtn" class="ed-tb-icon hidden" title="Condividi" aria-label="Condividi"><svg class="icon"><use href="#icon-share"/></svg></button>
@@ -76,12 +75,13 @@
     </aside>
     <div id="resizer" title="Trascina per ridimensionare"></div>
     <div id="canvas">
+        <button id="fitBtn" class="canvas-fit-btn" title="Fit view (0 / Home)" aria-label="Fit view"><svg class="icon"><use href="#icon-fit"/></svg></button>
         <div id="canvasPad" class="canvas-pad">
-            <button id="addNodeBtn" title="Aggiungi nodo (N). Con un subgraph selezionato, il nuovo nodo viene creato al suo interno.">+ Node</button>
-            <button id="addEdgeBtn" title="Collega (E): seleziona prima un nodo sorgente, poi premi E (o clicca) e infine il target" disabled>+ Edge</button>
-            <button id="addSubgraphBtn" title="Crea subgraph dai nodi selezionati (≥2, Shift+click per multiselezione)" disabled>+ Subgraph</button>
-            <button id="moveToSubgraphBtn" title="Sposta selezione: clicca un subgraph come destinazione (o lo sfondo per la root)" disabled>&gt; Subgraph</button>
-            <button id="deleteBtn" class="danger" title="Elimina la selezione (nodo, edge o subgraph)" disabled>Elimina</button>
+            <button id="addNodeBtn" title="Aggiungi nodo (N). Con un subgraph selezionato, il nuovo nodo viene creato al suo interno." aria-label="Aggiungi nodo"><svg class="icon"><use href="#icon-square-plus"/></svg></button>
+            <button id="addEdgeBtn" title="Collega (E): seleziona prima un nodo sorgente, poi premi E (o clicca) e infine il target" aria-label="Collega" disabled><svg class="icon"><use href="#icon-arrow-link"/></svg></button>
+            <button id="addSubgraphBtn" title="Crea subgraph dai nodi selezionati (≥2, Shift+click per multiselezione)" aria-label="Crea subgraph" disabled><svg class="icon"><use href="#icon-group"/></svg></button>
+            <button id="moveToSubgraphBtn" title="Sposta selezione: clicca un subgraph come destinazione (o lo sfondo per la root)" aria-label="Sposta nella subgraph" disabled><svg class="icon"><use href="#icon-log-in"/></svg></button>
+            <button id="deleteBtn" class="danger" title="Elimina la selezione (nodo, edge o subgraph)" aria-label="Elimina" disabled><svg class="icon"><use href="#icon-trash"/></svg></button>
         </div>
         <div id="diagram"></div>
     </div>

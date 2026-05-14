@@ -2792,7 +2792,9 @@
     document.body.classList.add("connecting");
     if (nodeMap[src]) nodeMap[src].g.classList.add("connect-source");
     else if (clusterMap[src]) clusterMap[src].g.classList.add("connect-source");
-    addEdgeBtn.classList.add("active"); addEdgeBtn.textContent = "Cancel";
+    addEdgeBtn.classList.add("active");
+    addEdgeBtn.innerHTML = '<svg class="icon"><use href="#icon-x"/></svg>';
+    addEdgeBtn.title = "Annulla collegamento (Esc)";
     const svgEl = diagramEl.querySelector("svg");
     _ghostCleanup = startGhostEdge(svgEl, src);
     setStatus(`source: ${src}. Ora clicca il target (Esc per annullare).`);
@@ -2806,7 +2808,9 @@
     }
     connectSource = null;
     document.body.classList.remove("connecting");
-    addEdgeBtn.classList.remove("active"); addEdgeBtn.textContent = "+ Edge";
+    addEdgeBtn.classList.remove("active");
+    addEdgeBtn.innerHTML = '<svg class="icon"><use href="#icon-arrow-link"/></svg>';
+    addEdgeBtn.title = "Collega (E): seleziona prima un nodo sorgente, poi premi E (o clicca) e infine il target";
     updateToolbarState();
     setStatus("");
   }
@@ -2830,7 +2834,8 @@
     _moveSelectionIds = ids;
     document.body.classList.add("moving");
     moveToSubgraphBtn.classList.add("active");
-    moveToSubgraphBtn.textContent = "Annulla";
+    moveToSubgraphBtn.innerHTML = '<svg class="icon"><use href="#icon-x"/></svg>';
+    moveToSubgraphBtn.title = "Annulla spostamento (Esc)";
     setStatus(`sposta ${ids.length === 1 ? ids[0] : ids.length + " elementi"}: clicca un subgraph (o lo sfondo per la root). Esc per annullare.`);
   }
 
@@ -2840,7 +2845,8 @@
     document.body.classList.remove("moving");
     if (moveToSubgraphBtn) {
       moveToSubgraphBtn.classList.remove("active");
-      moveToSubgraphBtn.textContent = "> Subgraph";
+      moveToSubgraphBtn.innerHTML = '<svg class="icon"><use href="#icon-log-in"/></svg>';
+      moveToSubgraphBtn.title = "Sposta selezione: clicca un subgraph come destinazione (o lo sfondo per la root)";
     }
     updateToolbarState();
     setStatus("");
@@ -4633,6 +4639,26 @@
   document.getElementById("conflictReloadBtn").addEventListener("click", conflictReload);
   document.getElementById("conflictCancelBtn").addEventListener("click", closeConflictModal);
 
+  // ── Side-panel prefs (localStorage) ──────────────────────────────────────
+  // Persist source/notes panel width + collapsed state across reloads. Single
+  // global key (not per-diagram): the user's preferred workspace layout is the
+  // same regardless of which diagram is open.
+  const PANEL_PREFS_KEY = "aquata.editor.panels";
+  function loadPanelPrefs() {
+    try {
+      const raw = localStorage.getItem(PANEL_PREFS_KEY);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      return (parsed && typeof parsed === "object") ? parsed : {};
+    } catch (_) { return {}; }
+  }
+  function updatePanelPref(side, patch) {
+    const prefs = loadPanelPrefs();
+    prefs[side] = { ...(prefs[side] || {}), ...patch };
+    try { localStorage.setItem(PANEL_PREFS_KEY, JSON.stringify(prefs)); }
+    catch (_) { /* quota / private-mode: ignore */ }
+  }
+
   function attachResizer(handle, panel, side) {
     handle.addEventListener("pointerdown", (e) => {
       if (e.pointerType === "mouse" && e.button !== 0) return;
@@ -4657,6 +4683,9 @@
         document.removeEventListener("pointermove", onMove);
         document.removeEventListener("pointerup", onUp);
         document.removeEventListener("pointercancel", onUp);
+        // Persist the final width once the drag settles.
+        const finalW = panel.getBoundingClientRect().width;
+        if (finalW > 0) updatePanelPref(side, { width: finalW });
       }
       document.addEventListener("pointermove", onMove);
       document.addEventListener("pointerup", onUp);
@@ -4665,6 +4694,29 @@
   }
   attachResizer(resizer, sourcePanel, "left");
   attachResizer(resizerRight, notesPanel, "right");
+
+  // Apply saved prefs after resizers are wired. Width clamps to current
+  // viewport in case the window shrunk since the value was stored.
+  function restorePanelState(panel, btn, side, collapsedArrow, expandedArrow) {
+    const p = loadPanelPrefs()[side];
+    if (!p) return;
+    if (typeof p.width === "number" && p.width >= 120) {
+      panel.style.width = Math.min(p.width, window.innerWidth - 200) + "px";
+    }
+    if (p.collapsed) {
+      // Stash the width so the next expand restores the user's preferred size
+      // (mirrors what togglePanelCollapse does when collapsing live).
+      if (panel.style.width) {
+        panel.dataset.expandedWidth = panel.style.width;
+        panel.style.width = "";
+      }
+      panel.classList.add("collapsed");
+      btn.textContent = collapsedArrow;
+      btn.title = "Espandi";
+    }
+  }
+  restorePanelState(sourcePanel, togglePanelBtn, "left", "»", "«");
+  restorePanelState(notesPanel, toggleNotesPanelBtn, "right", "«", "»");
 
   // Collapse helper: the resizers write `style="width: Xpx"` inline, which
   // beats the `.collapsed { width: 30px }` rule on specificity. Stash the
@@ -4684,6 +4736,8 @@
     panel.classList.toggle("collapsed", willCollapse);
     btn.textContent = willCollapse ? collapsedArrow : expandedArrow;
     btn.title = willCollapse ? "Espandi" : "Collassa";
+    updatePanelPref(panel.id === "sourcePanel" ? "left" : "right",
+      { collapsed: willCollapse });
   }
 
   toggleNotesPanelBtn.addEventListener("click", () => {

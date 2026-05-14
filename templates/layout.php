@@ -16,6 +16,7 @@ $noNav = $noNav ?? false;
     <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
+<?php include __DIR__ . '/partials/icons.php'; ?>
 <?php if (!$noNav && $currentUser !== null): ?>
     <?php include __DIR__ . '/partials/nav.php'; ?>
 <?php endif; ?>

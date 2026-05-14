@@ -58,6 +58,7 @@ $router->post('/api/diagrams/{slug}/restore',   [App\Controllers\Api\DiagramCont
 // Presence-driven scepter
 $router->post('/api/diagrams/{slug}/presence',           [App\Controllers\Api\PresenceController::class, 'join']);
 $router->post('/api/diagrams/{slug}/presence/heartbeat', [App\Controllers\Api\PresenceController::class, 'heartbeat']);
+$router->post('/api/diagrams/{slug}/presence/selection', [App\Controllers\Api\PresenceController::class, 'selection']);
 $router->post('/api/diagrams/{slug}/presence/leave',     [App\Controllers\Api\PresenceController::class, 'leave']);
 
 $router->post('/api/diagrams/{slug}/edit-requests',                  [App\Controllers\Api\EditRequestController::class, 'create']);

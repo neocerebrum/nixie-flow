@@ -6,7 +6,7 @@
 <section class="page">
     <header class="page-header">
         <h1>Dashboard</h1>
-        <button id="newDiagramBtn" class="btn btn-primary">+ Nuovo diagramma</button>
+        <button id="newDiagramBtn" class="btn btn-primary"><svg class="icon icon-sm"><use href="#icon-plus"/></svg> Nuovo diagramma</button>
     </header>
 
     <p class="muted">Bentornato, <strong><?= e($user['display_name'] ?? $user['email']) ?></strong>.</p>
@@ -28,11 +28,14 @@
                         </p>
                     </a>
                     <div class="diagram-card-actions">
-                        <button class="btn-link diagram-share" data-slug="<?= e($d['slug']) ?>" data-title="<?= e($d['title']) ?>">
-                            Condividi
+                        <button class="btn-icon diagram-share" data-slug="<?= e($d['slug']) ?>" data-title="<?= e($d['title']) ?>" title="Condividi" aria-label="Condividi">
+                            <svg class="icon"><use href="#icon-share"/></svg>
                         </button>
-                        <button class="btn-link diagram-delete" data-slug="<?= e($d['slug']) ?>" data-title="<?= e($d['title']) ?>">
-                            Elimina
+                        <button class="btn-icon diagram-rename" data-slug="<?= e($d['slug']) ?>" data-title="<?= e($d['title']) ?>" title="Rinomina" aria-label="Rinomina">
+                            <svg class="icon"><use href="#icon-rename"/></svg>
+                        </button>
+                        <button class="btn-icon danger diagram-delete" data-slug="<?= e($d['slug']) ?>" data-title="<?= e($d['title']) ?>" title="Elimina" aria-label="Elimina">
+                            <svg class="icon"><use href="#icon-trash"/></svg>
                         </button>
                     </div>
                 </article>
@@ -76,6 +79,23 @@
         <div class="modal-buttons">
             <button id="newDiagramCancelBtn">Annulla</button>
             <button id="newDiagramOkBtn" class="btn btn-primary">Crea</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal rinomina -->
+<div id="renameDiagramModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-box">
+        <h2>Rinomina diagramma</h2>
+        <label class="field">
+            <span>Titolo</span>
+            <input id="renameDiagramTitle" type="text" autocomplete="off">
+        </label>
+        <div id="renameDiagramError"></div>
+        <div class="modal-buttons">
+            <button id="renameDiagramCancelBtn">Annulla</button>
+            <button id="renameDiagramOkBtn" class="btn btn-primary">Salva</button>
         </div>
     </div>
 </div>

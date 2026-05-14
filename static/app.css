@@ -288,11 +288,39 @@ table.data th.actions { text-align: right; }
     color: var(--muted);
 }
 .diagram-card-actions {
-    padding: 6px 16px 10px;
-    text-align: right;
+    padding: 6px 12px 8px;
     border-top: 1px solid var(--border);
-    display: flex; gap: 12px; justify-content: flex-end;
+    display: flex; gap: 4px; justify-content: flex-end;
 }
+
+/* Icons (SVG sprite, inherits currentColor) */
+.icon {
+    width: 18px; height: 18px;
+    flex: none;
+    stroke: currentColor;
+    fill: none;
+    vertical-align: middle;
+    pointer-events: none;
+}
+.icon-sm { width: 14px; height: 14px; }
+.icon-lg { width: 22px; height: 22px; }
+
+/* Icon-only buttons (used in card actions) */
+.btn-icon {
+    background: none;
+    border: 1px solid transparent;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.btn-icon:hover { background: var(--bg-hover); color: var(--fg); border-color: var(--border); }
+.btn-icon:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.btn-icon.danger:hover { color: var(--warn); border-color: rgba(249, 117, 131, 0.4); background: rgba(249, 117, 131, 0.10); }
 .diagram-card-shared { border-style: dashed; }
 .share-perm-badge {
     background: var(--bg-elev, #1c242e);

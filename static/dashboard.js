@@ -224,6 +224,68 @@
     }
   }
 
+  // ── Rename modal ─────────────────────────────────────────────────────────
+
+  const renameModal = document.getElementById("renameDiagramModal");
+  const renameInput = document.getElementById("renameDiagramTitle");
+  const renameError = document.getElementById("renameDiagramError");
+  let renameCurrentSlug = null;
+
+  function openRenameModal(slug, title) {
+    renameCurrentSlug = slug;
+    renameInput.value = title || "";
+    renameError.textContent = "";
+    renameModal.classList.remove("hidden");
+    setTimeout(() => { renameInput.focus(); renameInput.select(); }, 0);
+  }
+  function closeRenameModal() {
+    renameModal.classList.add("hidden");
+    renameCurrentSlug = null;
+  }
+  async function submitRename() {
+    if (!renameCurrentSlug) return;
+    const newTitle = renameInput.value.trim();
+    renameError.textContent = "";
+    if (!newTitle) { renameError.textContent = "Titolo obbligatorio"; return; }
+    try {
+      const { status, json } = await api("PATCH",
+        `/api/diagrams/${encodeURIComponent(renameCurrentSlug)}`,
+        { title: newTitle });
+      if (status === 200) {
+        // Aggiorna in-place le card che puntano a questo slug
+        for (const btn of document.querySelectorAll(`[data-slug="${CSS.escape(renameCurrentSlug)}"]`)) {
+          btn.dataset.title = newTitle;
+        }
+        const card = document.querySelector(`.diagram-share[data-slug="${CSS.escape(renameCurrentSlug)}"]`)?.closest(".diagram-card");
+        if (card) {
+          const h = card.querySelector("h3");
+          if (h) h.textContent = newTitle;
+        }
+        closeRenameModal();
+      } else {
+        renameError.textContent = (json && json.error) || ("HTTP " + status);
+      }
+    } catch (e) {
+      renameError.textContent = e.message || String(e);
+    }
+  }
+
+  if (renameModal) {
+    document.getElementById("renameDiagramCancelBtn").addEventListener("click", closeRenameModal);
+    document.getElementById("renameDiagramOkBtn").addEventListener("click", submitRename);
+    renameModal.querySelector(".modal-backdrop").addEventListener("click", closeRenameModal);
+    renameInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); submitRename(); }
+      else if (e.key === "Escape") { e.preventDefault(); closeRenameModal(); }
+    });
+    for (const btn of document.querySelectorAll(".diagram-rename")) {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        openRenameModal(btn.dataset.slug, btn.dataset.title);
+      });
+    }
+  }
+
   // ── Delete buttons ───────────────────────────────────────────────────────
 
   for (const btn of document.querySelectorAll(".diagram-delete")) {

@@ -52,6 +52,18 @@ body { margin: 0; overflow: hidden; display: flex; flex-direction: column; }
 .ed-toolbar button.active { background: #5e81ac; color: #eceff4; }
 .ed-toolbar button.danger.active { background: #bf616a; color: #eceff4; }
 
+/* Toolbar icon buttons (Lucide sprite from partials/icons.php) */
+.ed-toolbar button.ed-tb-icon,
+.ed-toolbar button.ed-tb-iconlabel {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    line-height: 1;
+}
+.ed-toolbar button.ed-tb-icon { padding: 5px 7px; }
+.ed-toolbar .icon { width: 15px; height: 15px; }
+
 #status { font-size: 12px; color: #8fbcbb; margin-left: auto; }
 #status.error { color: #bf616a; }
 
@@ -247,35 +259,62 @@ body.source-invalid #canvas {
 body.source-invalid #diagram svg { opacity: 0.85; filter: saturate(0.65); }
 body.source-invalid #sourcePanel { border-right-color: #bf616a; }
 #diagram { width: 100%; height: 100%; }
-#diagram svg { width: 100%; height: 100%; display: block; cursor: grab; }
+#diagram svg { width: 100%; height: 100%; display: block; cursor: default; }
 #diagram svg.panning { cursor: grabbing; }
 .node { cursor: grab; }
 .node.dragging { cursor: grabbing; }
-.node:hover > *:first-child { filter: brightness(1.15); }
+
+/* The visible shape of a node/cluster is whichever rect/polygon/path/circle/
+   ellipse is the *first of its kind* among the g's children. Using explicit
+   selectors instead of `> *:first-child` so a sibling <title> (added by
+   applyNoteTooltips for hover-notes) doesn't intercept the highlight. */
+.node:hover > rect:first-of-type,
+.node:hover > polygon:first-of-type,
+.node:hover > path:first-of-type,
+.node:hover > circle:first-of-type,
+.node:hover > ellipse:first-of-type { filter: brightness(1.15); }
 
 body.connecting .node { cursor: crosshair; }
-body.connecting .node.connect-source > *:first-child {
+body.connecting .node.connect-source > rect:first-of-type,
+body.connecting .node.connect-source > polygon:first-of-type,
+body.connecting .node.connect-source > path:first-of-type,
+body.connecting .node.connect-source > circle:first-of-type,
+body.connecting .node.connect-source > ellipse:first-of-type {
     stroke: #88c0d0; stroke-width: 3px;
 }
 body.deleting .node { cursor: not-allowed; }
-body.deleting .node:hover > *:first-child { stroke: #bf616a; stroke-width: 3px; }
+body.deleting .node:hover > rect:first-of-type,
+body.deleting .node:hover > polygon:first-of-type,
+body.deleting .node:hover > path:first-of-type,
+body.deleting .node:hover > circle:first-of-type,
+body.deleting .node:hover > ellipse:first-of-type { stroke: #bf616a; stroke-width: 3px; }
 body.deleting-edge g.edgePaths path { cursor: not-allowed; }
 body.deleting-edge g.edgePaths path:hover { stroke: #c0392b !important; stroke-width: 5px !important; }
 body.deleting-edge g.edgeLabels > g { cursor: not-allowed; }
 body.deleting-edge g.edgeLabels > g:hover rect,
 body.deleting-edge g.edgeLabels > g:hover .edgeLabel { outline: 2px solid #bf616a; }
 
-.node.selected > *:first-child {
+.node.selected > rect:first-of-type,
+.node.selected > polygon:first-of-type,
+.node.selected > path:first-of-type,
+.node.selected > circle:first-of-type,
+.node.selected > ellipse:first-of-type {
     stroke: #c0392b !important; stroke-width: 3px !important;
     stroke-dasharray: none !important;
 }
 
-g.cluster:hover > *:first-child { filter: brightness(1.15); }
-g.cluster.selected > *:first-child {
+g.cluster:hover > rect:first-of-type,
+g.cluster:hover > polygon:first-of-type,
+g.cluster:hover > path:first-of-type { filter: brightness(1.15); }
+g.cluster.selected > rect:first-of-type,
+g.cluster.selected > polygon:first-of-type,
+g.cluster.selected > path:first-of-type {
     stroke: #c0392b !important; stroke-width: 3px !important;
     stroke-dasharray: none !important;
 }
-body.deleting g.cluster:hover > *:first-child {
+body.deleting g.cluster:hover > rect:first-of-type,
+body.deleting g.cluster:hover > polygon:first-of-type,
+body.deleting g.cluster:hover > path:first-of-type {
     stroke: #c0392b !important; stroke-width: 3px !important;
 }
 
@@ -284,6 +323,48 @@ body.deleting g.cluster:hover > *:first-child {
     stroke: #c0392b !important;
     stroke-width: 3.5px !important;
 }
+
+/* Peer selections (other viewers' current selection, shared via presence).
+   Rendered as an overlay <g class="peer-selections"> with sibling rects/paths
+   above the diagram. Pointer-inert so it never steals clicks. Colors come
+   from the JS palette and are applied inline (one slot per peer). */
+#diagram g.peer-selections { pointer-events: none; }
+#diagram g.peer-selections rect.peer-ring {
+    fill: none;
+    stroke-width: 2.5px;
+    stroke-dasharray: none;
+    opacity: 0.9;
+}
+#diagram g.peer-selections path.peer-ring {
+    fill: none;
+    stroke-width: 4.5px;
+    stroke-linecap: round;
+    opacity: 0.55;
+}
+#diagram g.peer-selections text.peer-label {
+    font: 600 10px/1 -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif;
+    paint-order: stroke fill;
+    stroke: #1c242e; stroke-width: 3px; stroke-linejoin: round;
+    pointer-events: none;
+}
+
+/* Viewer-list color swatches (legend mapping viewer → peer-ring color) */
+.peer-swatch {
+    display: inline-block; width: 10px; height: 10px; border-radius: 2px;
+    vertical-align: middle; margin-right: 4px;
+    border: 1px solid rgba(255,255,255,0.15);
+}
+.lock-viewers {
+    margin-left: auto;
+    display: inline-flex; align-items: center; gap: 10px;
+    font-size: 12px; color: #d8dee9;
+}
+.lock-viewers .peer-tag {
+    display: inline-flex; align-items: center;
+    padding: 2px 6px; border-radius: 3px;
+    background: rgba(255,255,255,0.06);
+}
+.lock-viewers .peer-tag.me { opacity: 0.7; font-style: italic; }
 
 /* Edge labels readability */
 #diagram g.edgeLabels foreignObject .labelBkg,
@@ -430,8 +511,9 @@ footer { display: none; }
 .lock-banner button:hover { background: #25303c; }
 .lock-banner button.primary:hover { background: #81a1c1; }
 
-/* Read-only mode dims edit-only buttons */
-body.readonly .canvas-pad,
+/* Read-only mode dims edit-only buttons. The canvas itself stays interactive
+   so viewers can still click to select elements (and share their selection
+   with peers in shared-view mode). Drag/edit gestures are blocked in JS. */
 body.readonly .ed-toolbar button#undoBtn,
 body.readonly .ed-toolbar button#redoBtn,
 body.readonly .ed-toolbar button#resetBtn,

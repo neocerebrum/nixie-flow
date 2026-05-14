@@ -140,6 +140,7 @@
   let dirtySource = false;
   let dirtyLayout = false;
   let connectingState = null;
+  let _skipNextDiagramClick = false;
   let connectSource = null;
   let selectedNodeIds = new Set(); // multi-select via Shift/Ctrl/Cmd+click
   let selectedClusterId = null;
@@ -180,6 +181,7 @@
   const lockBannerEl   = document.getElementById("lockBanner");
   const lockMessageEl  = document.getElementById("lockMessage");
   const lockActionsEl  = document.getElementById("lockActions");
+  const lockViewersEl  = document.getElementById("lockViewers");
   const incomingReqEl  = document.getElementById("incomingRequestBanner");
   const shareBtn       = document.getElementById("shareBtn");
 
@@ -523,6 +525,9 @@
     }
     updateToolbarState();
     applyNoteTooltips();
+    // SVG was rebuilt — repaint peer-selection overlay so external selections
+    // stay visible across remote-poll reloads.
+    if (typeof renderPeerSelections === "function") renderPeerSelections();
     if (!skipSourceSync) setSourceValue(currentSource);
     setSourceValidity(true);
   }
@@ -1103,7 +1108,20 @@
         // the primary contact, which is what we want.
         if (ev.pointerType === "mouse" && ev.button !== 0) return;
         if (!ev.isPrimary) return;
-        if (isReadOnly) return; // spectator: no selection / drag
+        if (isReadOnly) {
+          // Spectator: select-only, no drag.
+          ev.preventDefault(); ev.stopPropagation();
+          const pointerId = ev.pointerId;
+          function onUpRO(e) {
+            if (e && e.pointerId !== pointerId) return;
+            document.removeEventListener("pointerup", onUpRO);
+            document.removeEventListener("pointercancel", onUpRO);
+            toggleClusterSelection(id);
+          }
+          document.addEventListener("pointerup", onUpRO);
+          document.addEventListener("pointercancel", onUpRO);
+          return;
+        }
         ev.preventDefault();
         ev.stopPropagation();
         if (connectingState === "edge-target") { handleConnectClick(id); return; }
@@ -1118,6 +1136,13 @@
     const c = clusterMap[id];
     if (!c) return;
     const pointerId = ev.pointerId;
+    // Eager select-on-press for clusters too: pick the cluster as soon as
+    // the gesture starts so it stays selected at the end of a drag.
+    let selectedOnDown = false;
+    if (selectedClusterId !== id) {
+      toggleClusterSelection(id);
+      selectedOnDown = true;
+    }
     const members = findSubgraphMembers(currentSource, id);
     const memberStates = [];
     for (const mid of members) {
@@ -1161,7 +1186,9 @@
       document.removeEventListener("pointerup", onUp);
       document.removeEventListener("pointercancel", onUp);
       if (!moved) {
-        toggleClusterSelection(id);
+        // Click without drag: if we already selected on pointerdown, leave
+        // the cluster selected; otherwise toggle (re-click to deselect).
+        if (!selectedOnDown) toggleClusterSelection(id);
         return;
       }
       let changed = 0;
@@ -1202,9 +1229,22 @@
       handleConnectClick(id);
       return;
     }
-    if (isReadOnly) return; // spectator: no selection / drag
     if (ev.pointerType === "mouse" && ev.button !== 0) return;
     if (!ev.isPrimary) return;
+    if (isReadOnly) {
+      // Spectator: select-only on click, no drag.
+      ev.preventDefault();
+      const pointerId = ev.pointerId;
+      function onUpRO(e) {
+        if (e && e.pointerId !== pointerId) return;
+        document.removeEventListener("pointerup", onUpRO);
+        document.removeEventListener("pointercancel", onUpRO);
+        toggleNodeSelection(id, e.ctrlKey || e.metaKey || e.shiftKey);
+      }
+      document.addEventListener("pointerup", onUpRO);
+      document.addEventListener("pointercancel", onUpRO);
+      return;
+    }
     ev.preventDefault();
     const pointerId = ev.pointerId;
 
@@ -1224,6 +1264,19 @@
     }
 
     const n = nodeMap[id];
+    // Eager select-on-press: if no modifier is held and the node isn't
+    // already part of the current selection, select it right now so the
+    // user has visual feedback during the drag and the node stays selected
+    // after the drag completes. With a modifier (Ctrl/Cmd → additive
+    // toggle on click) we defer to the mouseup path so the existing
+    // multi-select semantics are preserved. The shift-only branch above
+    // returns earlier and never reaches this point.
+    const noModifier = !ev.ctrlKey && !ev.metaKey && !ev.shiftKey;
+    let selectedOnDown = false;
+    if (noModifier && !selectedNodeIds.has(id)) {
+      toggleNodeSelection(id, false);
+      selectedOnDown = true;
+    }
     // Group drag: pointerdown on a node that's part of an existing
     // multi-selection drags every selected node by the same delta — same
     // ergonomics as if they were inside a virtual subgraph. Pointerdown on
@@ -1344,9 +1397,10 @@
         } else {
           setStatus(`${id} → (${t.x.toFixed(0)}, ${t.y.toFixed(0)})`, false);
         }
-      } else {
-        // No movement: treat as click. Any modifier (Shift/Ctrl/Cmd) toggles
-        // multi-selection; plain click selects only this node.
+      } else if (!selectedOnDown) {
+        // No movement and we didn't already select on pointerdown: treat as
+        // a click. Modifier-click toggles multi-selection; plain click on
+        // the already-only-selected node deselects it.
         toggleNodeSelection(id, e.ctrlKey || e.metaKey || e.shiftKey);
       }
       document.removeEventListener("pointermove", onMove);
@@ -2079,7 +2133,7 @@
     return lines.join("\n");
   }
 
-  function addNodeToSource(source, id, label, shape) {
+  function addNodeToSource(source, id, label, shape, subgraphId) {
     if (!/^[A-Za-z_][\w]*$/.test(id)) {
       return { ok: false, error: `ID non valido: '${id}'` };
     }
@@ -2089,6 +2143,28 @@
     const err = validateLabelForShape(lbl, shp);
     if (err) return { ok: false, error: err };
     const line = `    ${id}${shp.open}${lbl}${shp.close}`;
+    if (subgraphId && clusterMap[subgraphId]) {
+      const lines = source.split("\n");
+      const idEsc = regexEscape(subgraphId);
+      const headerRe = new RegExp(`^\\s*subgraph\\s+${idEsc}(\\s|\\[|$)`, "i");
+      const subgraphHeaderRe = /^\s*subgraph\b/i;
+      const endRe = /^\s*end\s*$/i;
+      let headerIdx = -1;
+      for (let i = 0; i < lines.length; i++) {
+        if (headerRe.test(lines[i])) { headerIdx = i; break; }
+      }
+      if (headerIdx !== -1) {
+        let depth = 1, endIdx = -1;
+        for (let i = headerIdx + 1; i < lines.length; i++) {
+          if (subgraphHeaderRe.test(lines[i])) depth++;
+          else if (endRe.test(lines[i])) { depth--; if (depth === 0) { endIdx = i; break; } }
+        }
+        if (endIdx !== -1) {
+          lines.splice(endIdx, 0, line);
+          return { ok: true, source: lines.join("\n") };
+        }
+      }
+    }
     const nodeDeclRegex = /^\s*[A-Za-z_]\w*\s*[\[(\{]/;
     return { ok: true, source: insertAfterLastMatch(source, nodeDeclRegex, line) };
   }
@@ -2569,7 +2645,6 @@
         if (t === edge.label) t.style.pointerEvents = "auto";
         t.addEventListener("click", (ev) => {
           if (connectingState) return;
-          if (isReadOnly) return; // spectator: no selection
           ev.stopPropagation(); ev.preventDefault();
           toggleEdgeSelection(edge);
         });
@@ -2648,6 +2723,9 @@
     const src = connectSource, tgt = id;
     cancelConnectMode();
     if (src === tgt) { setStatus(`self-loop ${src}→${tgt} non supportato`, true); return; }
+    // Count existing edges between src and tgt: the new edge will have
+    // ordinal = that count (ordinals are 0-based, in document order).
+    const newOrdinal = edges.filter(e => e.source === src && e.target === tgt).length;
     // Create the edge unlabeled. User adds a label later via dblclick on
     // the edge — avoids the browser prompt() (some browsers silently block
     // repeated prompts) and matches the inline-edit flow used elsewhere.
@@ -2655,6 +2733,16 @@
     if (!result.ok) { setStatus(`add edge: ${result.error}`, true); return; }
     currentSource = result.source;
     markDirtySource();
+    // Set selection synchronously *before* awaiting render: the target
+    // click still bubbles up to diagramEl (line ~4360) and would deselect
+    // any edge it sees set. The one-shot flag tells that listener to
+    // skip this click — and renderDiagram's restore-selection logic will
+    // apply the visual highlight from selectedEdgeKey once the new edge
+    // is in the DOM.
+    deselectNode();
+    deselectCluster();
+    selectedEdgeKey = `${src}|${tgt}|${newOrdinal}`;
+    _skipNextDiagramClick = true;
     await renderDiagram();
     pushHistory();
     setStatus(`+ edge ${src} → ${tgt} (doppio click per aggiungere label)`);
@@ -2906,14 +2994,22 @@
     }
 
     function onPointerDown(e) {
-      // Background-only: drags on nodes/edges/clusters/labels are handled
-      // by their own pointerdown listeners.
-      if (e.target.closest("g.node")) return;
-      if (e.target.closest("g.cluster")) return;
-      if (e.target.closest("g.edgePaths path")) return;
-      if (e.target.closest("g.edgeLabels > g")) return;
+      // Middle-mouse pan works anywhere on the canvas (incl. over nodes /
+      // subgraphs / edges). For non-middle-button events we keep the
+      // background-only behavior so per-element drag handlers can take
+      // precedence.
+      const isMiddleMouse = e.pointerType === "mouse" && e.button === 1;
+      if (!isMiddleMouse) {
+        if (e.target.closest("g.node")) return;
+        if (e.target.closest("g.cluster")) return;
+        if (e.target.closest("g.edgePaths path")) return;
+        if (e.target.closest("g.edgeLabels > g")) return;
+      }
       if (connectingState) return;
-      if (e.pointerType === "mouse" && e.button !== 0) return;
+      // Mouse: pan only with the middle button. Left button on background
+      // is free for future use (rubber-band selection etc.). Touch/pen:
+      // single-contact pan still works (button === 0 on primary contact).
+      if (e.pointerType === "mouse" && e.button !== 1) return;
       e.preventDefault();
       activePointers.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
       ensureDoc();
@@ -3015,6 +3111,7 @@
       updateToolbarState();
       const n = selectedNodeIds.size;
       setStatus(n === 0 ? "" : (n === 1 ? `selected: ${[...selectedNodeIds][0]}` : `selected: ${n} nodi`));
+      broadcastSelection();
       return;
     }
     // Plain click: replace selection with [id]; clicking the only-selected node deselects.
@@ -3029,6 +3126,7 @@
     if (nodeMap[id]) nodeMap[id].g.classList.add("selected");
     updateToolbarState();
     setStatus(`selected: ${id}`);
+    broadcastSelection();
   }
   function deselectNode() {
     for (const sid of selectedNodeIds) {
@@ -3036,6 +3134,7 @@
     }
     selectedNodeIds.clear();
     updateToolbarState();
+    broadcastSelection();
   }
 
   // Selection bus: derive the current selection kind from state.
@@ -3093,6 +3192,7 @@
     clusterMap[id].g.classList.add("selected");
     updateToolbarState();
     setStatus(`selected subgraph: ${id}`);
+    broadcastSelection();
   }
   function deselectCluster() {
     if (selectedClusterId && clusterMap[selectedClusterId]) {
@@ -3100,6 +3200,7 @@
     }
     selectedClusterId = null;
     updateToolbarState();
+    broadcastSelection();
   }
 
   function edgeKey(edge) { return `${edge.source}|${edge.target}|${edge.ordinal}`; }
@@ -3121,6 +3222,7 @@
     const lbl = `${edge.source} → ${edge.target}` + (edge.ordinal > 0 ? ` (#${edge.ordinal + 1})` : "");
     setStatus(`selected edge: ${lbl}`);
     updateToolbarState();
+    broadcastSelection();
   }
   function deselectEdge() {
     if (selectedEdgeKey) {
@@ -3129,6 +3231,7 @@
     }
     selectedEdgeKey = null;
     updateToolbarState();
+    broadcastSelection();
   }
 
   function setNodeStyleInSource(source, nodeId, styleStr) {
@@ -3265,16 +3368,31 @@
     }
   }
 
+  let _addNodeTargetSubgraph = null;
   function openAddNodeModal() {
     if (!requireValidSource("aggiungi nodo")) return;
+    _addNodeTargetSubgraph = selectedClusterId || null;
     document.getElementById("addNodeModal").classList.remove("hidden");
     document.getElementById("modalError").textContent = "";
+    const hint = document.getElementById("addNodeSubgraphHint");
+    if (hint) {
+      if (_addNodeTargetSubgraph) {
+        hint.textContent = `Il nodo verrà creato dentro il subgraph "${_addNodeTargetSubgraph}".`;
+        hint.classList.remove("hidden");
+      } else {
+        hint.textContent = "";
+        hint.classList.add("hidden");
+      }
+    }
     document.getElementById("nodeIdInput").value = "";
     document.getElementById("nodeLabelInput").value = "";
     selectShape(SHAPES[0]);
     setTimeout(() => document.getElementById("nodeIdInput").focus(), 0);
   }
-  function closeAddNodeModal() { document.getElementById("addNodeModal").classList.add("hidden"); }
+  function closeAddNodeModal() {
+    document.getElementById("addNodeModal").classList.add("hidden");
+    _addNodeTargetSubgraph = null;
+  }
 
   async function submitAddNodeModal() {
     const id = document.getElementById("nodeIdInput").value.trim();
@@ -3282,7 +3400,8 @@
     const errorEl = document.getElementById("modalError");
     errorEl.textContent = "";
     if (!id) { errorEl.textContent = "ID obbligatorio"; return; }
-    const result = addNodeToSource(currentSource, id, label, modalSelectedShape);
+    const targetSg = _addNodeTargetSubgraph;
+    const result = addNodeToSource(currentSource, id, label, modalSelectedShape, targetSg);
     if (!result.ok) { errorEl.textContent = result.error; return; }
     currentSource = result.source;
     markDirtySource();
@@ -3290,7 +3409,9 @@
     await renderDiagram();
     placeNodeAtViewportCenter(id);
     pushHistory();
-    setStatus(`+ node ${id} (${modalSelectedShape.name})`);
+    setStatus(targetSg
+      ? `+ node ${id} in ${targetSg} (${modalSelectedShape.name})`
+      : `+ node ${id} (${modalSelectedShape.name})`);
   }
 
   // Move a freshly-added node so its visual center sits at the current
@@ -3472,9 +3593,9 @@
       document.title = currentTitle + " — Aquata";
     }
     clearDirty();
-    selectedNodeIds.clear();
-    selectedClusterId = null;
-    selectedEdgeKey = null;
+    // Keep selection across remote reloads: renderDiagram's restore-selection
+    // pass drops only ids that no longer exist in the new source, so picking
+    // a node (or its note panel binding) survives the scepter holder's edits.
     // Keep viewState/initialViewBox — preserves the viewer's current pan/zoom
     // across remote-update reloads (poll, checkout, reload). renderDiagram
     // recomputes initialViewBox from the new geometry but keeps viewState if set.
@@ -3764,6 +3885,8 @@
       showToast("Modifica trasferita a un'altra tua scheda.", "warn");
     }
     renderLockBanner();
+    renderViewerList();
+    renderPeerSelections();
     applyReadOnlyMode();
   }
 
@@ -3772,19 +3895,15 @@
       || lockHeldByOther()
       || (permission === "view")
       || (lockHeldByMe() && !iAmActiveTab());
-    const wasReadOnly = isReadOnly;
     isReadOnly = blocked;
     document.body.classList.toggle("readonly", blocked);
     if (sourceCM) sourceCM.setOption("readOnly", blocked ? "nocursor" : false);
     else if (sourceEditor) sourceEditor.readOnly = blocked;
-    // Entering spectator mode: drop any existing selection so the highlight
-    // doesn't linger ambiguously while the user can no longer act on it.
-    if (blocked && !wasReadOnly) {
-      deselectNode();
-      deselectCluster();
-      deselectEdge();
-      updateToolbarState();
-    }
+    // Selection is kept alive in readonly so the viewer can point at elements
+    // for the rest of the room (the selection is broadcast via the presence
+    // channel). Edit-only toolbar buttons remain disabled via updateToolbarState
+    // + the body.readonly CSS dimming.
+    updateToolbarState();
   }
 
   function lockHolderLabel() {
@@ -3885,6 +4004,216 @@
   }
   function stopHeartbeat() {
     if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+  }
+
+  // ── Selection broadcast (presence side-channel) ─────────────────────────
+  // The selection endpoint is a fast, lightweight UPDATE (no scepter logic),
+  // so we can poll it every ~1.5s for near-realtime peer selection without
+  // contending with promotion. It also doubles as a presence touch — keeps
+  // last_seen_at fresh between the slower 15s heartbeats.
+
+  const PEER_SELECTION_POLL_MS = 1500;
+  let peerSelectionTimer = null;
+  let selectionDebTimer = null;
+  let lastSentSelectionKey = "__unset__";
+
+  function currentSelection() {
+    const nodes = [...selectedNodeIds];
+    const edges = selectedEdgeKey ? [selectedEdgeKey] : [];
+    const cluster = selectedClusterId || null;
+    if (nodes.length === 0 && edges.length === 0 && !cluster) return null;
+    return { nodes, edges, cluster };
+  }
+
+  async function sendSelection(force) {
+    const sel = currentSelection();
+    const key = sel ? JSON.stringify(sel) : "";
+    if (!force && key === lastSentSelectionKey) return;
+    lastSentSelectionKey = key;
+    try {
+      const { status, json } = await api(
+        "POST",
+        `/api/diagrams/${encodeURIComponent(slug)}/presence/selection`,
+        { tab_id: TAB_ID, selection: sel }
+      );
+      if (status === 200 && json) updatePresenceState(json);
+    } catch (_) { /* ignore */ }
+  }
+
+  // Debounced trigger: called from selection-change hooks. Coalesces rapid
+  // toggles (e.g. shift-clicking multiple nodes) into one network call.
+  function broadcastSelection() {
+    if (selectionDebTimer) clearTimeout(selectionDebTimer);
+    selectionDebTimer = setTimeout(() => sendSelection(false), 250);
+  }
+
+  function startPeerSelectionPoll() {
+    stopPeerSelectionPoll();
+    peerSelectionTimer = setInterval(() => {
+      if (document.hidden) return;
+      // Force-fetch so we receive peers' updates even when our own selection
+      // hasn't changed. The server UPDATE is a single indexed row — cheap.
+      sendSelection(true);
+    }, PEER_SELECTION_POLL_MS);
+  }
+  function stopPeerSelectionPoll() {
+    if (peerSelectionTimer) { clearInterval(peerSelectionTimer); peerSelectionTimer = null; }
+  }
+
+  // Palette for peer selection highlights. Nord-muted tones; red is reserved
+  // for the local user's own selection so peers never collide visually.
+  const PEER_PALETTE = [
+    "#88c0d0", // frost blue
+    "#a3be8c", // green
+    "#ebcb8b", // yellow
+    "#d08770", // orange
+    "#b48ead", // violet
+    "#8fbcbb", // teal
+    "#5e81ac", // dark blue
+    "#d381c9", // pink
+    "#e5e9f0", // pale
+    "#81a1c1", // light blue
+  ];
+
+  // Deterministic palette slot for a user id. Knuth multiplicative hash to
+  // spread small ids across the palette without obvious clustering.
+  function peerSlot(userId) {
+    return ((userId * 2654435761) >>> 0) % PEER_PALETTE.length;
+  }
+  function peerColor(userId) {
+    return PEER_PALETTE[peerSlot(userId)];
+  }
+  function peerLabel(v) {
+    return v.display_name || v.email || ("utente #" + v.user_id);
+  }
+
+  // Render the overlay for peers' selections. Called on every presence DTO
+  // update and after each renderDiagram (DOM is rebuilt from scratch there).
+  function renderPeerSelections() {
+    const svgEl = diagramEl.querySelector("svg");
+    if (!svgEl) return;
+    // Clear: top-level overlay group + any cloned edge rings parented next
+    // to the original paths (we tag them with class .peer-edge-ring).
+    const oldOverlay = svgEl.querySelector(":scope > g.peer-selections");
+    if (oldOverlay) oldOverlay.remove();
+    for (const el of svgEl.querySelectorAll(".peer-edge-ring")) el.remove();
+
+    const viewers = presenceState.viewers || [];
+    const peers = viewers
+      .filter(v => v.user_id !== me.id && v.selection)
+      .sort((a, b) => a.user_id - b.user_id);
+    if (peers.length === 0) return;
+
+    const SVG_NS = "http://www.w3.org/2000/svg";
+    const overlay = document.createElementNS(SVG_NS, "g");
+    overlay.setAttribute("class", "peer-selections");
+    svgEl.appendChild(overlay);
+
+    // Stack offset per (element, peer) pair: rings are flush (offset 0) when a
+    // single peer highlights an element, and grow outward only when more than
+    // one peer is on the same one. Computed before draw so order is stable.
+    const elementStack = new Map(); // key → next slot index
+    function slotFor(key) {
+      const n = elementStack.get(key) || 0;
+      elementStack.set(key, n + 1);
+      return n;
+    }
+
+    for (const p of peers) {
+      const color = peerColor(p.user_id);
+      const sel = p.selection || {};
+      for (const nid of (sel.nodes || [])) {
+        drawNodeOrClusterRing(overlay, nodeMap[nid], color, slotFor("n:" + nid));
+      }
+      if (sel.cluster && clusterMap[sel.cluster]) {
+        drawNodeOrClusterRing(overlay, clusterMap[sel.cluster], color, slotFor("c:" + sel.cluster));
+      }
+      for (const ek of (sel.edges || [])) {
+        const e = findEdgeByKey(ek);
+        if (e) drawEdgeRing(e, color);
+      }
+    }
+  }
+
+  // Draw a single bbox ring in svg-user coords. Works for both
+  // `nodeMap[id]` (uses .g) and `clusterMap[id]` (uses .bg when available,
+  // falling back to .g). Computes the world box via getBoundingClientRect()
+  // converted back through svgEl.getScreenCTM().inverse() — this avoids any
+  // ambiguity around how getCTM() interacts with the outer g.root translate
+  // or with viewBox transforms.
+  function drawNodeOrClusterRing(overlay, ref, color, stack) {
+    if (!ref) return;
+    const target = ref.bg || ref.g;
+    if (!target || !target.getBoundingClientRect) return;
+    const svgEl = overlay.ownerSVGElement || overlay.parentNode;
+    if (!svgEl || !svgEl.getScreenCTM) return;
+    const screenCtm = svgEl.getScreenCTM();
+    if (!screenCtm) return;
+    const inv = screenCtm.inverse();
+    const cr = target.getBoundingClientRect();
+    if (cr.width === 0 || cr.height === 0) return;
+    const pt = svgEl.createSVGPoint();
+    pt.x = cr.left; pt.y = cr.top;
+    const tl = pt.matrixTransform(inv);
+    pt.x = cr.right; pt.y = cr.bottom;
+    const br = pt.matrixTransform(inv);
+    const pad = 4 + stack * 3;
+    const x = Math.min(tl.x, br.x) - pad;
+    const y = Math.min(tl.y, br.y) - pad;
+    const w = Math.abs(br.x - tl.x) + pad * 2;
+    const h = Math.abs(br.y - tl.y) + pad * 2;
+    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    rect.setAttribute("class", "peer-ring");
+    rect.setAttribute("x", x);
+    rect.setAttribute("y", y);
+    rect.setAttribute("width", w);
+    rect.setAttribute("height", h);
+    rect.setAttribute("rx", "6");
+    rect.setAttribute("ry", "6");
+    rect.setAttribute("stroke", color);
+    overlay.appendChild(rect);
+  }
+
+  // Edge ring: clone the path and place it as a sibling so it inherits the
+  // original's parent transforms (edges live in g.edgePaths at outer-root
+  // level — coords in their `d` attr are not viewport-relative).
+  function drawEdgeRing(edge, color) {
+    if (!edge.path || !edge.path.parentNode) return;
+    const clone = edge.path.cloneNode(false);
+    clone.removeAttribute("class");
+    clone.setAttribute("class", "peer-edge-ring peer-ring");
+    clone.setAttribute("stroke", color);
+    clone.setAttribute("fill", "none");
+    // Insert AFTER the original so it draws on top, but BEFORE any sibling
+    // .selected highlight that the local user might have on a different edge.
+    edge.path.parentNode.insertBefore(clone, edge.path.nextSibling);
+  }
+
+  // Render a compact viewer list in the lock banner: "● me", "● Alice", …
+  // The colored dot mirrors the peer's selection-ring color. The current
+  // user is shown without a color (their selection is the standard red).
+  function renderViewerList() {
+    if (!lockViewersEl) return;
+    const viewers = presenceState.viewers || [];
+    if (viewers.length <= 1) {
+      lockViewersEl.innerHTML = "";
+      return;
+    }
+    const frag = document.createDocumentFragment();
+    for (const v of viewers) {
+      const tag = document.createElement("span");
+      tag.className = "peer-tag" + (v.user_id === me.id ? " me" : "");
+      if (v.user_id !== me.id) {
+        const sw = document.createElement("span");
+        sw.className = "peer-swatch";
+        sw.style.background = peerColor(v.user_id);
+        tag.appendChild(sw);
+      }
+      tag.appendChild(document.createTextNode(peerLabel(v)));
+      frag.appendChild(tag);
+    }
+    lockViewersEl.innerHTML = "";
+    lockViewersEl.appendChild(frag);
   }
 
   async function presenceJoin() {
@@ -4302,9 +4631,22 @@
     }
     if (e.key === "+" || (e.key === "=" && e.shiftKey === false)) { e.preventDefault(); zoomStep(1.2); return; }
     if (e.key === "-" || e.key === "_") { e.preventDefault(); zoomStep(1 / 1.2); return; }
+    if ((e.key === "n" || e.key === "N") && !e.altKey) {
+      if (addNodeBtn && !addNodeBtn.disabled) { e.preventDefault(); openAddNodeModal(); }
+      return;
+    }
+    if ((e.key === "e" || e.key === "E") && !e.altKey) {
+      if (addEdgeBtn && !addEdgeBtn.disabled) { e.preventDefault(); startConnectMode(); }
+      return;
+    }
   });
 
   diagramEl.addEventListener("click", (e) => {
+    // One-shot: the click that just finalized a connect (target node click)
+    // bubbles here AFTER handleConnectClick set selectedEdgeKey on the new
+    // edge. Skipping this one click prevents the canvas listener from
+    // immediately deselecting that edge.
+    if (_skipNextDiagramClick) { _skipNextDiagramClick = false; return; }
     // Move-to-subgraph mode: click on empty canvas (no node/cluster/edge)
     // means "move to root". Cluster pointerdown intercepts the in-cluster
     // case before this fires.
@@ -4368,6 +4710,7 @@
     // the holder), so promotion stays current as people come and go.
     await presenceJoin();
     startHeartbeat();
+    startPeerSelectionPoll();
 
     // Becoming "active" in this tab: clicking, typing, focusing the window,
     // or hitting save all imply intent to edit here. Each event re-claims

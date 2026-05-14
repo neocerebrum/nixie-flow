@@ -49,6 +49,38 @@ final class PresenceController
     }
 
     /**
+     * Update the caller's current selection. Lightweight, high-frequency
+     * endpoint: a single UPDATE on diagram_viewers, no scepter logic. The
+     * `selection` body field is an opaque object — server just JSON-encodes
+     * and persists it after a size check. Returns the full presence state
+     * so the client can render peers' selections in the same round-trip.
+     */
+    public function selection(array $args): never
+    {
+        $user = Auth::requireLoginApi();
+        Csrf::requireValidApi();
+        $diagram = $this->loadAccessibleOr404($args['slug'], $user);
+
+        $body = Json::readBody();
+        $tabId = $this->requireTabId($body);
+
+        $sel = $body['selection'] ?? null;
+        $encoded = null;
+        if ($sel !== null) {
+            if (!is_array($sel)) {
+                Response::error('Field selection must be an object or null', 400);
+            }
+            $encoded = json_encode($sel, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            if ($encoded === false || strlen($encoded) > \App\Models\Presence::SELECTION_MAX) {
+                $encoded = null; // too large or unencodable → treat as cleared
+            }
+        }
+
+        $state = Presence::setSelection((int) $diagram['id'], (int) $user['id'], $tabId, $encoded);
+        Response::json($state);
+    }
+
+    /**
      * Leave: tolerant to missing CSRF token, since this is normally called
      * via navigator.sendBeacon during page unload (where some browsers do
      * not surface custom headers). Idempotent and safe — only marks the

@@ -15,22 +15,23 @@
     <script id="bootstrap-data" type="application/json"><?= json_encode($bootstrap, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?></script>
 </head>
 <body>
+<?php include __DIR__ . '/partials/icons.php'; ?>
 <header class="ed-header">
     <a href="/dashboard" class="ed-back" title="Torna alla dashboard">← Dashboard</a>
 
     <div class="ed-toolbar">
-        <button id="undoBtn" title="Undo (Ctrl+Z)">↶</button>
-        <button id="redoBtn" title="Redo (Ctrl+Shift+Z)">↷</button>
-        <button id="fitBtn" title="Fit view">Fit</button>
-        <button id="historyBtn" title="Cronologia revisioni">Storico</button>
-        <button id="renameBtn" title="Rinomina">Rinomina</button>
-        <button id="shareBtn" title="Condividi" class="hidden">Condividi</button>
-        <button id="exportBtn" title="Scarica .mmd">.mmd</button>
-        <button id="exportSvgBtn" title="Scarica SVG">SVG</button>
-        <button id="exportPngBtn" title="Scarica PNG">PNG</button>
-        <button id="resetBtn" title="Reset layout">Reset layout</button>
-        <button id="reloadBtn" title="Ricarica dal server (scarta modifiche locali)">Reload</button>
-        <button id="saveBtn" class="primary" title="Salva (Ctrl+S)">Save</button>
+        <button id="undoBtn" class="ed-tb-icon" title="Undo (Ctrl+Z)" aria-label="Undo"><svg class="icon"><use href="#icon-undo"/></svg></button>
+        <button id="redoBtn" class="ed-tb-icon" title="Redo (Ctrl+Shift+Z)" aria-label="Redo"><svg class="icon"><use href="#icon-redo"/></svg></button>
+        <button id="fitBtn" class="ed-tb-icon" title="Fit view" aria-label="Fit view"><svg class="icon"><use href="#icon-fit"/></svg></button>
+        <button id="historyBtn" class="ed-tb-icon" title="Cronologia revisioni" aria-label="Cronologia revisioni"><svg class="icon"><use href="#icon-history"/></svg></button>
+        <button id="renameBtn" class="ed-tb-icon" title="Rinomina" aria-label="Rinomina"><svg class="icon"><use href="#icon-rename"/></svg></button>
+        <button id="shareBtn" class="ed-tb-icon hidden" title="Condividi" aria-label="Condividi"><svg class="icon"><use href="#icon-share"/></svg></button>
+        <button id="exportBtn" class="ed-tb-iconlabel" title="Scarica .mmd" aria-label="Scarica .mmd"><svg class="icon"><use href="#icon-download"/></svg>.mmd</button>
+        <button id="exportSvgBtn" class="ed-tb-iconlabel" title="Scarica SVG" aria-label="Scarica SVG"><svg class="icon"><use href="#icon-download"/></svg>SVG</button>
+        <button id="exportPngBtn" class="ed-tb-iconlabel" title="Scarica PNG" aria-label="Scarica PNG"><svg class="icon"><use href="#icon-download"/></svg>PNG</button>
+        <button id="resetBtn" class="ed-tb-icon" title="Reset layout" aria-label="Reset layout"><svg class="icon"><use href="#icon-reset"/></svg></button>
+        <button id="reloadBtn" class="ed-tb-icon" title="Ricarica dal server (scarta modifiche locali)" aria-label="Ricarica"><svg class="icon"><use href="#icon-refresh"/></svg></button>
+        <button id="saveBtn" class="ed-tb-iconlabel primary" title="Salva (Ctrl+S)" aria-label="Salva"><svg class="icon"><use href="#icon-save"/></svg>Save</button>
     </div>
     <span id="status"></span>
 </header>
@@ -43,6 +44,7 @@
     <span class="lock-sep"></span>
     <span id="lockMessage"></span>
     <span id="lockActions"></span>
+    <span id="lockViewers" class="lock-viewers"></span>
 </div>
 
 <div id="palette">
@@ -75,8 +77,8 @@
     <div id="resizer" title="Trascina per ridimensionare"></div>
     <div id="canvas">
         <div id="canvasPad" class="canvas-pad">
-            <button id="addNodeBtn" title="Aggiungi nodo">+ Nodo</button>
-            <button id="addEdgeBtn" title="Collega: seleziona prima un nodo sorgente, poi clicca qui e infine il target" disabled>+ Edge</button>
+            <button id="addNodeBtn" title="Aggiungi nodo (N). Con un subgraph selezionato, il nuovo nodo viene creato al suo interno.">+ Node</button>
+            <button id="addEdgeBtn" title="Collega (E): seleziona prima un nodo sorgente, poi premi E (o clicca) e infine il target" disabled>+ Edge</button>
             <button id="addSubgraphBtn" title="Crea subgraph dai nodi selezionati (≥2, Shift+click per multiselezione)" disabled>+ Subgraph</button>
             <button id="moveToSubgraphBtn" title="Sposta selezione: clicca un subgraph come destinazione (o lo sfondo per la root)" disabled>&gt; Subgraph</button>
             <button id="deleteBtn" class="danger" title="Elimina la selezione (nodo, edge o subgraph)" disabled>Elimina</button>
@@ -118,6 +120,7 @@
             <span>Forma</span>
             <div id="shapeGrid"></div>
         </div>
+        <div id="addNodeSubgraphHint" class="modal-info hidden"></div>
         <div id="modalError"></div>
         <div class="modal-buttons">
             <button id="nodeCancelBtn">Annulla</button>

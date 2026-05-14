@@ -23,9 +23,11 @@ use PDO;
  */
 final class Presence
 {
-    public const TTL_SECONDS       = 60;
-    public const HEARTBEAT_SECONDS = 15;
-    private const TAB_ID_MAX       = 64;
+    public const TTL_SECONDS          = 60;
+    public const HEARTBEAT_SECONDS    = 15;
+    public const SELECTION_MAX        = 4096;
+    public const IDLE_TIMEOUT_SECONDS = 600; // 10 min — after this the holder can be evicted by a pending request
+    private const TAB_ID_MAX          = 64;
 
     /**
      * Upsert presence for the user. If `claim_active` is true (or no active
@@ -37,6 +39,13 @@ final class Presence
     public static function join(int $diagramId, int $userId, string $tabId, bool $claimActive = true): array
     {
         self::upsert($diagramId, $userId, $tabId, $claimActive);
+        // Reset any stale selection from a previous session — joining means
+        // starting fresh, even if the row was kept alive by a stray heartbeat.
+        $stmt = db()->prepare(
+            'UPDATE diagram_viewers SET selection_json = NULL, selection_at = NULL
+             WHERE diagram_id = ? AND user_id = ?'
+        );
+        $stmt->execute([$diagramId, $userId]);
         self::ensureHolder($diagramId);
         return self::stateFor($diagramId, $userId);
     }
@@ -80,6 +89,41 @@ final class Presence
     }
 
     /**
+     * Write this viewer's current selection (a JSON-encoded blob, opaque to
+     * the server: validated for size + parseability only). Returns the post-
+     * state DTO so the caller can refresh peers in one round-trip.
+     *
+     * Skips ensureHolder() — selection updates are high-frequency and must
+     * not contend with scepter promotion locks. The row is only updated if
+     * the viewer is already present (no insert).
+     */
+    public static function setSelection(int $diagramId, int $userId, string $tabId, ?string $selectionJson): array
+    {
+        if ($selectionJson !== null && strlen($selectionJson) > self::SELECTION_MAX) {
+            $selectionJson = null; // too large → drop, treat as cleared
+        }
+        $pdo = db();
+        // Note: deliberately does NOT bump last_activity_at. The client polls
+        // this endpoint every ~1.5s to fetch peer selections (force=true),
+        // even with no user interaction — counting it as activity would keep
+        // an AFK holder forever non-idle. Real selection changes already
+        // trigger claim_active=true via pointerdown, so true activity is
+        // captured through the heartbeat path. The explicit self-assign
+        // defeats MariaDB's implicit ON UPDATE CURRENT_TIMESTAMP (see upsert
+        // for context).
+        $stmt = $pdo->prepare(
+            'UPDATE diagram_viewers
+             SET selection_json = ?, selection_at = CURRENT_TIMESTAMP,
+                 last_seen_at = CURRENT_TIMESTAMP,
+                 last_activity_at = last_activity_at
+             WHERE diagram_id = ? AND user_id = ?'
+        );
+        $stmt->execute([$selectionJson, $diagramId, $userId]);
+        // No row → caller hasn't joined yet; quietly ignore.
+        return self::stateFor($diagramId, $userId);
+    }
+
+    /**
      * Insert or update the viewer row. With one row per (diagram, user),
      * heartbeats from any tab refresh `last_seen_at`. `active_tab_id` is
      * updated when the caller claims active (focus/keypress/etc), or when
@@ -92,17 +136,29 @@ final class Presence
         $isMysql = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql';
 
         // Try a "claim" update: refresh last_seen and possibly set active tab.
+        // Only `claim_active=true` is treated as real user activity — it's the
+        // signal the client sends on focus/typing/canvas-click. Passive
+        // background heartbeats (claim=false) must not refresh last_activity_at
+        // or the idle eviction (see ensureHolder) becomes a no-op.
         if ($claimActive) {
             $sqlUpdate = 'UPDATE diagram_viewers
-                          SET last_seen_at = CURRENT_TIMESTAMP, active_tab_id = ?
+                          SET last_seen_at = CURRENT_TIMESTAMP,
+                              last_activity_at = CURRENT_TIMESTAMP,
+                              active_tab_id = ?
                           WHERE diagram_id = ? AND user_id = ?';
             $params = [$tabId, $diagramId, $userId];
         } else {
             // Refresh seen-time, but only set active_tab_id if currently NULL or
-            // already this tab.
+            // already this tab. Explicit self-assignment of last_activity_at
+            // defeats MariaDB's implicit ON UPDATE CURRENT_TIMESTAMP that may
+            // be attached to the column when it was ADDed under
+            // explicit_defaults_for_timestamp=OFF — otherwise every passive
+            // heartbeat would silently bump last_activity_at to NOW and the
+            // idle eviction would never trigger.
             $sqlUpdate = 'UPDATE diagram_viewers
                           SET last_seen_at = CURRENT_TIMESTAMP,
-                              active_tab_id = COALESCE(active_tab_id, ?)
+                              active_tab_id = COALESCE(active_tab_id, ?),
+                              last_activity_at = last_activity_at
                           WHERE diagram_id = ? AND user_id = ?';
             $params = [$tabId, $diagramId, $userId];
         }
@@ -164,10 +220,33 @@ final class Presence
 
             $currentHolder = $diagram['edit_lock_user'] !== null
                 ? (int) $diagram['edit_lock_user'] : null;
-            $holderStillEligible = $currentHolder !== null
-                && isset($writers[$currentHolder]);
+            $holderPresent = $currentHolder !== null && isset($writers[$currentHolder]);
 
-            if ($holderStillEligible) {
+            // Idle eviction: if the holder is present but has been inactive
+            // beyond IDLE_TIMEOUT and another *present* writer has a pending
+            // request, treat the holder as ineligible so pickHolderInTxn can
+            // promote the requester. The presence guard matters because
+            // pickHolderInTxn skips non-present requesters and would then fall
+            // back to owner/oldest-joined — which could re-elect the idle
+            // holder, defeating the eviction.
+            $evictIdle = false;
+            if ($holderPresent && self::holderIsIdle($writers[$currentHolder])) {
+                foreach ($writers as $uid => $_) {
+                    if ($uid === $currentHolder) continue;
+                    $stmt = $pdo->prepare(
+                        "SELECT 1 FROM edit_requests
+                         WHERE diagram_id = ? AND requester_id = ? AND status = 'pending'
+                         LIMIT 1"
+                    );
+                    $stmt->execute([$diagramId, $uid]);
+                    if ($stmt->fetchColumn() !== false) {
+                        $evictIdle = true;
+                        break;
+                    }
+                }
+            }
+
+            if ($holderPresent && !$evictIdle) {
                 $pdo->commit();
                 return;
             }
@@ -186,6 +265,15 @@ final class Presence
                 $stmt = $pdo->prepare(
                     "UPDATE edit_requests SET status = 'granted', resolved_at = CURRENT_TIMESTAMP
                      WHERE diagram_id = ? AND requester_id = ? AND status = 'pending'"
+                );
+                $stmt->execute([$diagramId, $newHolder]);
+
+                // Give the new holder a fresh activity window. Without this, a
+                // user promoted from a stale (backdated/idle) row would be
+                // immediately re-evictable by the next pending request.
+                $stmt = $pdo->prepare(
+                    'UPDATE diagram_viewers SET last_activity_at = CURRENT_TIMESTAMP
+                     WHERE diagram_id = ? AND user_id = ?'
                 );
                 $stmt->execute([$diagramId, $newHolder]);
             }
@@ -209,7 +297,7 @@ final class Presence
     private static function eligibleWritersInTxn(PDO $pdo, int $diagramId): array
     {
         $stmt = $pdo->prepare(
-            "SELECT v.user_id, v.joined_at,
+            "SELECT v.user_id, v.joined_at, v.last_activity_at,
                     d.owner_id AS owner_id,
                     s.permission AS share_permission,
                     u.role AS user_role
@@ -231,12 +319,30 @@ final class Presence
                 continue;
             }
             $out[$uid] = [
-                'user_id'   => $uid,
-                'joined_at' => $row['joined_at'],
-                'is_owner'  => $isOwner,
+                'user_id'          => $uid,
+                'joined_at'        => $row['joined_at'],
+                'last_activity_at' => $row['last_activity_at'] ?? null,
+                'is_owner'         => $isOwner,
             ];
         }
         return $out;
+    }
+
+    /**
+     * @param array<string,mixed> $writerRow row from eligibleWritersInTxn
+     */
+    private static function holderIsIdle(array $writerRow): bool
+    {
+        $ts = $writerRow['last_activity_at'] ?? null;
+        if ($ts === null || $ts === '') {
+            // Legacy row with no activity timestamp: fall back to joined_at so
+            // we don't evict someone who just arrived on an upgraded DB.
+            $ts = $writerRow['joined_at'] ?? null;
+        }
+        if ($ts === null || $ts === '') return false;
+        $epoch = strtotime((string) $ts . ' UTC');
+        if ($epoch === false) return false;
+        return (time() - $epoch) >= self::IDLE_TIMEOUT_SECONDS;
     }
 
     /**
@@ -322,6 +428,7 @@ final class Presence
         $cutoff = gmdate('Y-m-d H:i:s', time() - self::TTL_SECONDS);
         $stmt = db()->prepare(
             'SELECT v.user_id, v.joined_at, v.last_seen_at, v.active_tab_id,
+                    v.selection_json, v.selection_at,
                     u.email, u.display_name
              FROM diagram_viewers v
              LEFT JOIN users u ON u.id = v.user_id
@@ -333,12 +440,20 @@ final class Presence
         $myActive = null;
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
             $uid = (int) $row['user_id'];
+            $sel = $row['selection_json'] ?? null;
+            $decoded = null;
+            if ($sel !== null && $sel !== '') {
+                $tmp = json_decode((string) $sel, true);
+                if (is_array($tmp)) $decoded = $tmp;
+            }
             $viewers[] = [
                 'user_id'      => $uid,
                 'email'        => $row['email'] ?? null,
                 'display_name' => $row['display_name'] ?? null,
                 'joined_at'    => $row['joined_at'],
                 'last_seen_at' => $row['last_seen_at'],
+                'selection'    => $decoded,
+                'selection_at' => $row['selection_at'] ?? null,
             ];
             if ($uid === $userId) {
                 $myActive = $row['active_tab_id'];

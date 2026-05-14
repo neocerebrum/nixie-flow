@@ -3946,7 +3946,7 @@
       lockMessageEl.textContent = "Sta modificando: " + lockHolderLabel() + " — sola lettura.";
       if (myEditRequest && myEditRequest.status === "pending") {
         const span = document.createElement("span");
-        span.textContent = "Richiesta inviata, in attesa…";
+        span.textContent = "Richiesta inviata, in attesa… (passa automaticamente dopo 10 min di inattività)";
         span.style.marginRight = "10px";
         const cancelBtn = document.createElement("button");
         cancelBtn.textContent = "Annulla richiesta";

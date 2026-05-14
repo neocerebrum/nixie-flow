@@ -76,7 +76,43 @@ final class PresenceController
             }
         }
 
-        $state = Presence::setSelection((int) $diagram['id'], (int) $user['id'], $tabId, $encoded);
+        // Optional viewport broadcast — only persisted if the caller currently
+        // holds the scepter. Non-holders sending `view` are silently ignored
+        // so a stale row never poisons holder_view in stateFor.
+        $viewJson = null;
+        if (array_key_exists('view', $body) && is_array($body['view'])) {
+            $v = $body['view'];
+            if (isset($v['x'], $v['y'], $v['w'], $v['h'])
+                && is_numeric($v['x']) && is_numeric($v['y'])
+                && is_numeric($v['w']) && is_numeric($v['h'])
+                && (float) $v['w'] > 0 && (float) $v['h'] > 0) {
+                $isHolder = Presence::heldByActiveTab(
+                    (int) $diagram['id'], (int) $user['id'], $tabId
+                );
+                if ($isHolder) {
+                    $viewJson = json_encode([
+                        'x' => (float) $v['x'],
+                        'y' => (float) $v['y'],
+                        'w' => (float) $v['w'],
+                        'h' => (float) $v['h'],
+                    ], JSON_UNESCAPED_SLASHES);
+                    if ($viewJson === false) {
+                        $viewJson = null;
+                    }
+                }
+            }
+        }
+
+        // Optional follow-flag toggle. Coerced to bool; null = leave column alone.
+        $isFollowing = null;
+        if (array_key_exists('is_following', $body)) {
+            $isFollowing = !empty($body['is_following']);
+        }
+
+        $state = Presence::setSelection(
+            (int) $diagram['id'], (int) $user['id'], $tabId,
+            $encoded, $viewJson, $isFollowing
+        );
         Response::json($state);
     }
 

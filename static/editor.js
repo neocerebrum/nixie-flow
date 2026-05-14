@@ -2910,11 +2910,25 @@
     svgEl.setAttribute("viewBox",
       `${viewState.x} ${viewState.y} ${viewState.width} ${viewState.height}`);
   }
+  // Apply a viewport pushed by the scepter holder (follow mode). Mutates
+  // viewState in place WITHOUT marking it dirty, so the snap doesn't bounce
+  // back to peers as if it were a local pan.
+  function applyHolderView(view) {
+    if (!view) return;
+    const x = +view.x, y = +view.y, w = +view.w, h = +view.h;
+    if (!Number.isFinite(x) || !Number.isFinite(y)
+        || !Number.isFinite(w) || !Number.isFinite(h)
+        || w <= 0 || h <= 0) return;
+    viewState = { x, y, width: w, height: h };
+    const svgEl = diagramEl.querySelector("svg");
+    if (svgEl) applyViewState(svgEl);
+  }
   function fitView() {
     if (!initialViewBox) return;
     viewState = { ...initialViewBox };
     const svgEl = diagramEl.querySelector("svg");
     if (svgEl) applyViewState(svgEl);
+    viewDirty = true;
   }
   function zoomStep(z) {
     if (!viewState) return;
@@ -2933,6 +2947,7 @@
     viewState.x = vx - cx * viewState.width / rect.width;
     viewState.y = vy - cy * viewState.height / rect.height;
     applyViewState(svgEl);
+    viewDirty = true;
   }
   function setupPanZoom(svgEl) {
     if (initialViewBox === null) {
@@ -3032,6 +3047,7 @@
         viewState.x = panStart.vx - dxView;
         viewState.y = panStart.vy - dyView;
         applyViewState(svgEl);
+        viewDirty = true;
         return;
       }
       if (mode === "pinch" && activePointers.size === 2) {
@@ -3055,6 +3071,7 @@
         viewState.x = pinchStart.anchorVX - mx * viewState.width / rect.width;
         viewState.y = pinchStart.anchorVY - my * viewState.height / rect.height;
         applyViewState(svgEl);
+        viewDirty = true;
       }
     }
 
@@ -3091,6 +3108,7 @@
       viewState.x = vx - mx * viewState.width / rect.width;
       viewState.y = vy - my * viewState.height / rect.height;
       applyViewState(svgEl);
+      viewDirty = true;
     }, { passive: false });
   }
 
@@ -3849,8 +3867,17 @@
   const REQUEST_POLL_MS = 4000;   // poll incoming/outgoing edit-requests every 4s
 
   // Last presence DTO returned by the server.
-  let presenceState = { viewers: [], holder_id: null, my_active_tab_id: null, lock: lockState };
+  let presenceState = { viewers: [], holder_id: null, holder_view: null, my_active_tab_id: null, lock: lockState };
   let claimNextHeartbeat = false;
+
+  // Follow-the-holder viewport sync. The local user toggles `followingHolder`
+  // via a button on the holder's peer-tag; while true, every presence DTO that
+  // carries a `holder_view` snaps the local viewport. `viewDirty` is set by
+  // any local pan/zoom and, when this client is the holder, drives broadcast
+  // of viewState in the next selection-poll round-trip.
+  let viewDirty = false;
+  let followingHolder = false;
+  let lastSentFollowing = false;
 
   function lockHeldByMe() {
     return presenceState.holder_id === me.id;
@@ -3869,6 +3896,7 @@
     presenceState = {
       viewers: s.viewers || [],
       holder_id: s.holder_id !== undefined ? s.holder_id : null,
+      holder_view: s.holder_view || null,
       my_active_tab_id: s.my_active_tab_id !== undefined ? s.my_active_tab_id : null,
       lock: s.lock || presenceState.lock,
     };
@@ -3880,10 +3908,36 @@
     } else if (!wasHolder && nowHolder) {
       showToast("Hai lo scettro: puoi modificare.");
       myEditRequest = null;
+      // First-broadcast: make sure followers can sync on our current viewport
+      // even if we don't pan/zoom right away.
+      viewDirty = true;
     }
     if (nowHolder && wasActive && !nowActive) {
       showToast("Modifica trasferita a un'altra tua scheda.", "warn");
     }
+
+    // Follow-the-holder bookkeeping. Cases that auto-disable follow:
+    //   - I just became the holder (can't follow myself);
+    //   - The room has no holder anymore.
+    // We deliberately do NOT touch lastSentFollowing on auto-disable, so the
+    // next sendSelection naturally observes the mismatch and pushes the
+    // new flag to the server (otherwise a stale is_following=1 would linger
+    // on our row and the new holder would see a phantom follower indicator).
+    let autoDisabled = false;
+    if (nowHolder && followingHolder) {
+      followingHolder = false;
+      autoDisabled = true;
+    } else if (presenceState.holder_id === null && followingHolder) {
+      followingHolder = false;
+      autoDisabled = true;
+    } else if (followingHolder && presenceState.holder_view) {
+      applyHolderView(presenceState.holder_view);
+    }
+    if (autoDisabled) {
+      // Out-of-band flush so peers see the indicator drop immediately.
+      sendSelection(true);
+    }
+
     renderLockBanner();
     renderViewerList();
     renderPeerSelections();
@@ -4028,13 +4082,30 @@
   async function sendSelection(force) {
     const sel = currentSelection();
     const key = sel ? JSON.stringify(sel) : "";
-    if (!force && key === lastSentSelectionKey) return;
+    // Piggybacks: viewport broadcast (when I'm the holder and just moved) and
+    // follow-flag toggle. These let the same round-trip serve all three
+    // presence side-channels without spawning extra endpoints.
+    const includeView = viewDirty && lockHeldByMe() && viewState;
+    const includeFollowFlag = followingHolder !== lastSentFollowing;
+    if (!force && key === lastSentSelectionKey && !includeView && !includeFollowFlag) return;
     lastSentSelectionKey = key;
+    const body = { tab_id: TAB_ID, selection: sel };
+    if (includeView) {
+      body.view = {
+        x: viewState.x, y: viewState.y,
+        w: viewState.width, h: viewState.height,
+      };
+      viewDirty = false;
+    }
+    if (includeFollowFlag) {
+      body.is_following = followingHolder;
+      lastSentFollowing = followingHolder;
+    }
     try {
       const { status, json } = await api(
         "POST",
         `/api/diagrams/${encodeURIComponent(slug)}/presence/selection`,
-        { tab_id: TAB_ID, selection: sel }
+        body
       );
       if (status === 200 && json) updatePresenceState(json);
     } catch (_) { /* ignore */ }
@@ -4192,6 +4263,12 @@
   // Render a compact viewer list in the lock banner: "● me", "● Alice", …
   // The colored dot mirrors the peer's selection-ring color. The current
   // user is shown without a color (their selection is the standard red).
+  //
+  // Extras:
+  //   - On the holder's tag, non-holders see a Follow toggle button that
+  //     syncs their pan/zoom to the holder's at every presence update.
+  //   - When I am the holder, viewers who are currently following me show a
+  //     small eye glyph on their tag.
   function renderViewerList() {
     if (!lockViewersEl) return;
     const viewers = presenceState.viewers || [];
@@ -4199,21 +4276,65 @@
       lockViewersEl.innerHTML = "";
       return;
     }
+    const holderId = presenceState.holder_id;
+    const iHoldScepter = lockHeldByMe();
     const frag = document.createDocumentFragment();
     for (const v of viewers) {
+      const isMe = v.user_id === me.id;
+      const isHolder = v.user_id === holderId;
       const tag = document.createElement("span");
-      tag.className = "peer-tag" + (v.user_id === me.id ? " me" : "");
-      if (v.user_id !== me.id) {
+      tag.className = "peer-tag"
+        + (isMe ? " me" : "")
+        + (isHolder ? " holder" : "");
+      if (!isMe) {
         const sw = document.createElement("span");
         sw.className = "peer-swatch";
         sw.style.background = peerColor(v.user_id);
         tag.appendChild(sw);
       }
       tag.appendChild(document.createTextNode(peerLabel(v)));
+
+      // Follow toggle (only on the holder's tag, only for non-holder viewers).
+      if (isHolder && !isMe) {
+        const btn = document.createElement("button");
+        btn.className = "peer-follow-btn" + (followingHolder ? " active" : "");
+        btn.type = "button";
+        btn.title = followingHolder
+          ? "Stai seguendo pan/zoom — clicca per smettere"
+          : "Sincronizza pan/zoom con chi ha lo scettro";
+        btn.setAttribute("aria-pressed", followingHolder ? "true" : "false");
+        btn.innerHTML = '<svg class="icon"><use href="#icon-eye' + (followingHolder ? '' : '-closed') + '"/></svg>';
+        btn.addEventListener("click", toggleFollowHolder);
+        tag.appendChild(btn);
+      }
+      // "Following me" indicator (only visible to the holder, on followers).
+      if (iHoldScepter && !isMe && v.is_following) {
+        const ind = document.createElement("span");
+        ind.className = "peer-follow-ind";
+        ind.title = "Sta seguendo il tuo pan/zoom";
+        ind.innerHTML = '<svg class="icon"><use href="#icon-eye"/></svg>';
+        tag.appendChild(ind);
+      }
       frag.appendChild(tag);
     }
     lockViewersEl.innerHTML = "";
     lockViewersEl.appendChild(frag);
+  }
+
+  function toggleFollowHolder() {
+    if (lockHeldByMe()) return; // safety: I can't follow myself
+    if (presenceState.holder_id === null) return;
+    followingHolder = !followingHolder;
+    // Re-render immediately so the button reflects state without waiting for
+    // the next presence tick. If we just enabled follow, snap right now to
+    // the last-known holder_view so the user sees an instant effect.
+    if (followingHolder && presenceState.holder_view) {
+      applyHolderView(presenceState.holder_view);
+    }
+    renderViewerList();
+    // Flush the new flag to the server out-of-band: peers (especially the
+    // holder) should see the indicator without the ~1.5s polling delay.
+    sendSelection(true);
   }
 
   async function presenceJoin() {

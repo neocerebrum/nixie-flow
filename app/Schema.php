@@ -8,7 +8,7 @@ use RuntimeException;
 
 final class Schema
 {
-    private const BASELINE_VERSION = 12;
+    private const BASELINE_VERSION = 13;
 
     private const BASELINE_SQL = <<<'SQL'
 CREATE TABLE users (
@@ -145,6 +145,8 @@ CREATE TABLE diagram_viewers (
   active_tab_id    VARCHAR(64),
   selection_json   TEXT,
   selection_at     TIMESTAMP NULL,
+  view_state       TEXT,
+  is_following     INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (diagram_id, user_id),
   FOREIGN KEY (diagram_id) REFERENCES diagrams(id),
   FOREIGN KEY (user_id)    REFERENCES users(id)
@@ -155,15 +157,13 @@ SQL;
     // BRIDGE: one-shot upgrade from previous baseline to current. Set both
     // constants when a schema change ships, then delete after every running
     // instance is on BASELINE_VERSION.
-    private const BRIDGE_FROM = 11;
-    // Re-backdate after fixing the suspected MariaDB implicit-ON-UPDATE leak:
-    // v11 backdated last_activity_at but the next passive heartbeat refreshed
-    // it to NOW via the implicit ON UPDATE CURRENT_TIMESTAMP behaviour, so the
-    // eviction never fired. v12 = same backdate + Presence::upsert/setSelection
-    // now do an explicit `last_activity_at = last_activity_at` self-assign that
-    // overrides the implicit refresh.
+    private const BRIDGE_FROM = 12;
+    // v13: per-viewer viewport sync for the "follow holder" feature.
+    // `view_state` stores the holder's last broadcast {x,y,w,h}; `is_following`
+    // marks viewers who are currently mirroring the holder's pan/zoom.
     private const BRIDGE_SQL  = <<<'SQL'
-UPDATE diagram_viewers SET last_activity_at = '2000-01-01 00:00:00';
+ALTER TABLE diagram_viewers ADD COLUMN view_state TEXT;
+ALTER TABLE diagram_viewers ADD COLUMN is_following INTEGER NOT NULL DEFAULT 0;
 SQL;
 
     private static bool $checked = false;

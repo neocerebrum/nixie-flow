@@ -26,6 +26,7 @@ final class Presence
     public const TTL_SECONDS          = 60;
     public const HEARTBEAT_SECONDS    = 15;
     public const SELECTION_MAX        = 4096;
+    public const VIEW_STATE_MAX       = 256;
     public const IDLE_TIMEOUT_SECONDS = 600; // 10 min — after this the holder can be evicted by a pending request
     private const TAB_ID_MAX          = 64;
 
@@ -97,10 +98,19 @@ final class Presence
      * not contend with scepter promotion locks. The row is only updated if
      * the viewer is already present (no insert).
      */
-    public static function setSelection(int $diagramId, int $userId, string $tabId, ?string $selectionJson): array
-    {
+    public static function setSelection(
+        int $diagramId,
+        int $userId,
+        string $tabId,
+        ?string $selectionJson,
+        ?string $viewJson = null,
+        ?bool $isFollowing = null
+    ): array {
         if ($selectionJson !== null && strlen($selectionJson) > self::SELECTION_MAX) {
             $selectionJson = null; // too large → drop, treat as cleared
+        }
+        if ($viewJson !== null && strlen($viewJson) > self::VIEW_STATE_MAX) {
+            $viewJson = null;
         }
         $pdo = db();
         // Note: deliberately does NOT bump last_activity_at. The client polls
@@ -111,14 +121,28 @@ final class Presence
         // captured through the heartbeat path. The explicit self-assign
         // defeats MariaDB's implicit ON UPDATE CURRENT_TIMESTAMP (see upsert
         // for context).
+        $setClauses = [
+            'selection_json = ?',
+            'selection_at = CURRENT_TIMESTAMP',
+            'last_seen_at = CURRENT_TIMESTAMP',
+            'last_activity_at = last_activity_at',
+        ];
+        $params = [$selectionJson];
+        if ($viewJson !== null) {
+            $setClauses[] = 'view_state = ?';
+            $params[] = $viewJson;
+        }
+        if ($isFollowing !== null) {
+            $setClauses[] = 'is_following = ?';
+            $params[] = $isFollowing ? 1 : 0;
+        }
+        $params[] = $diagramId;
+        $params[] = $userId;
         $stmt = $pdo->prepare(
-            'UPDATE diagram_viewers
-             SET selection_json = ?, selection_at = CURRENT_TIMESTAMP,
-                 last_seen_at = CURRENT_TIMESTAMP,
-                 last_activity_at = last_activity_at
-             WHERE diagram_id = ? AND user_id = ?'
+            'UPDATE diagram_viewers SET ' . implode(', ', $setClauses)
+            . ' WHERE diagram_id = ? AND user_id = ?'
         );
-        $stmt->execute([$selectionJson, $diagramId, $userId]);
+        $stmt->execute($params);
         // No row → caller hasn't joined yet; quietly ignore.
         return self::stateFor($diagramId, $userId);
     }
@@ -425,10 +449,15 @@ final class Presence
      */
     public static function stateFor(int $diagramId, int $userId): array
     {
+        $diagram = Diagram::byId($diagramId) ?? [];
+        $holder = isset($diagram['edit_lock_user']) && $diagram['edit_lock_user'] !== null
+            ? (int) $diagram['edit_lock_user'] : null;
+
         $cutoff = gmdate('Y-m-d H:i:s', time() - self::TTL_SECONDS);
         $stmt = db()->prepare(
             'SELECT v.user_id, v.joined_at, v.last_seen_at, v.active_tab_id,
                     v.selection_json, v.selection_at,
+                    v.view_state, v.is_following,
                     u.email, u.display_name
              FROM diagram_viewers v
              LEFT JOIN users u ON u.id = v.user_id
@@ -438,6 +467,7 @@ final class Presence
         $stmt->execute([$diagramId, $cutoff]);
         $viewers = [];
         $myActive = null;
+        $holderView = null;
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
             $uid = (int) $row['user_id'];
             $sel = $row['selection_json'] ?? null;
@@ -446,6 +476,7 @@ final class Presence
                 $tmp = json_decode((string) $sel, true);
                 if (is_array($tmp)) $decoded = $tmp;
             }
+            $isFollowing = (int) ($row['is_following'] ?? 0) === 1;
             $viewers[] = [
                 'user_id'      => $uid,
                 'email'        => $row['email'] ?? null,
@@ -454,18 +485,32 @@ final class Presence
                 'last_seen_at' => $row['last_seen_at'],
                 'selection'    => $decoded,
                 'selection_at' => $row['selection_at'] ?? null,
+                'is_following' => $isFollowing,
             ];
             if ($uid === $userId) {
                 $myActive = $row['active_tab_id'];
             }
+            if ($holder !== null && $uid === $holder) {
+                $vs = $row['view_state'] ?? null;
+                if ($vs !== null && $vs !== '') {
+                    $tmp = json_decode((string) $vs, true);
+                    if (is_array($tmp)
+                        && isset($tmp['x'], $tmp['y'], $tmp['w'], $tmp['h'])) {
+                        $holderView = [
+                            'x' => (float) $tmp['x'],
+                            'y' => (float) $tmp['y'],
+                            'w' => (float) $tmp['w'],
+                            'h' => (float) $tmp['h'],
+                        ];
+                    }
+                }
+            }
         }
-
-        $diagram = Diagram::byId($diagramId) ?? [];
-        $holder = $diagram['edit_lock_user'] ?? null;
 
         return [
             'viewers'           => $viewers,
-            'holder_id'         => $holder !== null ? (int) $holder : null,
+            'holder_id'         => $holder,
+            'holder_view'       => $holderView,
             'my_active_tab_id'  => $myActive,
             'lock'              => Lock::state($diagram),
         ];

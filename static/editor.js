@@ -4128,7 +4128,13 @@
   // contending with promotion. It also doubles as a presence touch — keeps
   // last_seen_at fresh between the slower 15s heartbeats.
 
-  const PEER_SELECTION_POLL_MS = 1500;
+  // Adaptive polling: the room is FAST (snappy) when there's actual peer
+  // collaboration to mirror; SLOW (~3x cheaper) when the room is quiet or I'm
+  // alone. The transition is reactive — each tick picks the next interval
+  // from the freshest presence DTO. Worst-case lag for a peer to become
+  // visible after they wake up is one SLOW tick.
+  const PEER_SELECTION_POLL_FAST_MS = 1500;
+  const PEER_SELECTION_POLL_SLOW_MS = 5000;
   let peerSelectionTimer = null;
   let selectionDebTimer = null;
   let lastSentSelectionKey = "__unset__";
@@ -4180,17 +4186,40 @@
     selectionDebTimer = setTimeout(() => sendSelection(false), 250);
   }
 
+  // Pick the next poll cadence from the latest presence DTO. FAST when there
+  // is mutual collaboration to mirror; SLOW when the room is quiet.
+  function nextSelectionPollMs() {
+    const viewers = presenceState.viewers || [];
+    if (viewers.length <= 1) return PEER_SELECTION_POLL_SLOW_MS;
+    const peerActive = viewers.some(
+      v => v.user_id !== me.id && (v.selection || v.is_following)
+    );
+    const meActive = !!currentSelection() || followingHolder;
+    return (peerActive || meActive)
+      ? PEER_SELECTION_POLL_FAST_MS
+      : PEER_SELECTION_POLL_SLOW_MS;
+  }
+  function scheduleNextSelectionPoll() {
+    peerSelectionTimer = setTimeout(async () => {
+      peerSelectionTimer = null;
+      if (!document.hidden) {
+        // Force-fetch so we receive peers' updates even when our own selection
+        // hasn't changed. The server UPDATE is a single indexed row — cheap.
+        await sendSelection(true);
+      }
+      // sendSelection() updates presenceState; nextSelectionPollMs reads it.
+      scheduleNextSelectionPoll();
+    }, nextSelectionPollMs());
+  }
   function startPeerSelectionPoll() {
     stopPeerSelectionPoll();
-    peerSelectionTimer = setInterval(() => {
-      if (document.hidden) return;
-      // Force-fetch so we receive peers' updates even when our own selection
-      // hasn't changed. The server UPDATE is a single indexed row — cheap.
-      sendSelection(true);
-    }, PEER_SELECTION_POLL_MS);
+    scheduleNextSelectionPoll();
   }
   function stopPeerSelectionPoll() {
-    if (peerSelectionTimer) { clearInterval(peerSelectionTimer); peerSelectionTimer = null; }
+    if (peerSelectionTimer !== null) {
+      clearTimeout(peerSelectionTimer);
+      peerSelectionTimer = null;
+    }
   }
 
   // Palette for peer selection highlights. Nord-muted tones; red is reserved

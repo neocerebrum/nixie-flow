@@ -352,11 +352,13 @@ body.deleting g.cluster:hover > path:first-of-type {
     stroke-dasharray: none;
     opacity: 0.9;
 }
-#diagram g.peer-selections path.peer-ring {
-    fill: none;
-    stroke-width: 4.5px;
+#diagram g.peer-selections path.peer-ring,
+#diagram path.peer-edge-ring {
+    fill: none !important;
+    stroke-width: 6px !important;
     stroke-linecap: round;
     opacity: 0.55;
+    pointer-events: none;
 }
 #diagram g.peer-selections text.peer-label {
     font: 600 10px/1 -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif;

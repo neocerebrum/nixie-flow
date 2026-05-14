@@ -2936,6 +2936,62 @@
     if (svgEl) applyViewState(svgEl);
     viewDirty = true;
   }
+
+  // Compute the world-space bbox of the current selection (nodes + cluster +
+  // edge if any). Returns {minX, minY, maxX, maxY} or null if nothing useful.
+  function selectionWorldBbox() {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let found = false;
+    const include = (x1, y1, x2, y2) => {
+      if (!Number.isFinite(x1) || !Number.isFinite(y1)) return;
+      if (x1 < minX) minX = x1;
+      if (y1 < minY) minY = y1;
+      if (x2 > maxX) maxX = x2;
+      if (y2 > maxY) maxY = y2;
+      found = true;
+    };
+    for (const id of selectedNodeIds) {
+      const n = nodeMap[id];
+      if (!n) continue;
+      let bb; try { bb = n.g.getBBox(); } catch (_) { continue; }
+      const t = getWorldTranslate(n.g);
+      include(t.x + bb.x, t.y + bb.y, t.x + bb.x + bb.width, t.y + bb.y + bb.height);
+    }
+    if (selectedClusterId) {
+      const c = clusterMap[selectedClusterId];
+      if (c) {
+        const bb = getClusterRectWorldBbox(c);
+        if (bb) include(bb.minX, bb.minY, bb.maxX, bb.maxY);
+      }
+    }
+    if (selectedEdgeKey) {
+      const edge = findEdgeByKey(selectedEdgeKey);
+      if (edge && edge.path) {
+        let bb; try { bb = edge.path.getBBox(); } catch (_) { bb = null; }
+        if (bb) {
+          const t = getElementParentTranslate(edge.path);
+          include(t.x + bb.x, t.y + bb.y, t.x + bb.x + bb.width, t.y + bb.y + bb.height);
+        }
+      }
+    }
+    return found ? { minX, minY, maxX, maxY } : null;
+  }
+
+  // Pan (no zoom change) the current view so the selection's bbox sits
+  // centered in the viewport. No-op if nothing is selected.
+  function centerOnSelection() {
+    if (!viewState) return false;
+    const bb = selectionWorldBbox();
+    if (!bb) { setStatus("Niente da centrare — seleziona prima un elemento.", true); return false; }
+    const cx = (bb.minX + bb.maxX) / 2;
+    const cy = (bb.minY + bb.maxY) / 2;
+    viewState.x = cx - viewState.width / 2;
+    viewState.y = cy - viewState.height / 2;
+    const svgEl = diagramEl.querySelector("svg");
+    if (svgEl) applyViewState(svgEl);
+    viewDirty = true;
+    return true;
+  }
   function zoomStep(z) {
     if (!viewState) return;
     const svgEl = diagramEl.querySelector("svg");
@@ -4257,7 +4313,13 @@
   function drawEdgeRing(edge, color) {
     if (!edge.path || !edge.path.parentNode) return;
     const clone = edge.path.cloneNode(false);
-    clone.removeAttribute("class");
+    // Strip Mermaid's inline styling (style="stroke:...;stroke-width:...;
+    // marker-end:url(#...)") so our peer-ring CSS actually wins — and so the
+    // clone doesn't paint a duplicate arrowhead on top of the original.
+    clone.removeAttribute("style");
+    clone.removeAttribute("marker-end");
+    clone.removeAttribute("marker-start");
+    clone.removeAttribute("stroke-dasharray");
     clone.setAttribute("class", "peer-edge-ring peer-ring");
     clone.setAttribute("stroke", color);
     clone.setAttribute("fill", "none");
@@ -4800,6 +4862,13 @@
       return;
     }
     if (e.key === "0" || e.key === "Home") { e.preventDefault(); fitView(); return; }
+    // Center the view on the current selection. "." also covers Numpad Decimal
+    // when NumLock is on; with NumLock off the same key fires "Delete" which
+    // is already bound to applyDelete — both behaviors are intentional.
+    if (e.key === "." || e.key === "c" || e.key === "C") {
+      if (selectionKind() !== null) { e.preventDefault(); centerOnSelection(); }
+      return;
+    }
     if ((e.key === "Delete" || e.key === "Backspace")) {
       if (selectionKind() !== null) { e.preventDefault(); applyDelete(); }
       return;

@@ -612,7 +612,7 @@
         g, bg, label, members,
         directNodes: direct.nodes,
         directSubgraphs: direct.subgraphs,
-        padding: null, labelOffset: null,
+        padding: null,
         incomingEdges: [], outgoingEdges: [],
       };
     }
@@ -631,17 +631,18 @@
       const wx2 = wx1 + rw, wy2 = wy1 + rh;
       const mb = computeClusterDirectChildrenBbox(id);
       if (mb) {
-        c.padding = {
-          left:   mb.minX - wx1,
-          top:    mb.minY - wy1,
-          right:  wx2 - mb.maxX,
-          bottom: wy2 - mb.maxY,
-          rx, ry,
-        };
-      }
-      if (c.label) {
-        const lt = getNodeTranslate(c.label);
-        c.labelOffset = { dx: lt.x - rx - rw / 2, dy: lt.y - ry };
+        // Normalize padding instead of inheriting Mermaid's auto-layout values
+        // — those vary with title length and content layout, producing
+        // asymmetric and unpredictable margins that shift around when nodes
+        // are added/removed. Fixed values give the cluster a stable look.
+        // The top band is widened to make room for the subgraph title.
+        let labelH = 0;
+        if (c.label) {
+          try { labelH = c.label.getBBox().height || 0; } catch (_) { labelH = 0; }
+        }
+        const SIDE = 16;
+        const TOP = labelH > 0 ? Math.round(labelH + 14) : SIDE;
+        c.padding = { left: SIDE, top: TOP, right: SIDE, bottom: SIDE, rx, ry };
       }
     }
     const paths = svgEl.querySelectorAll("g.edgePaths path, g.edges path");
@@ -1105,8 +1106,19 @@
     setNodeTranslate(c.g, newCx, newCy);
     c.bg.setAttribute("width", newW);
     c.bg.setAttribute("height", newH);
-    if (c.label && c.labelOffset) {
-      setNodeTranslate(c.label, pad.rx + newW / 2 + c.labelOffset.dx, pad.ry + c.labelOffset.dy);
+    // Center the title horizontally in the bg, vertically in the top band.
+    // Using the live label bbox rather than a captured offset means the title
+    // always sits at the visual center of our (normalized) top margin, even
+    // when the bg width/height change as nodes are added or moved.
+    if (c.label) {
+      let lbb;
+      try { lbb = c.label.getBBox(); } catch (_) { lbb = null; }
+      if (lbb) {
+        setNodeTranslate(c.label,
+          pad.rx + newW / 2 - (lbb.x + lbb.width / 2),
+          pad.ry + pad.top / 2 - (lbb.y + lbb.height / 2)
+        );
+      }
     }
     // Cluster geometry changed → edges connecting to/from this cluster need reroute.
     if (c.incomingEdges) for (const e of c.incomingEdges) rerouteEdge(e);

@@ -500,6 +500,7 @@
     svgEl.setAttribute("preserveAspectRatio", "xMidYMid meet");
 
     indexNodesAndEdges(svgEl);
+    reorderClustersByContainment(svgEl);
     applySavedPositions();
     updateAllClusterBounds();
     rerouteAllEdges();
@@ -664,6 +665,44 @@
       if (clusterMap[source]) clusterMap[source].outgoingEdges.push(edge);
       if (clusterMap[target]) clusterMap[target].incomingEdges.push(edge);
       edgeIdx++;
+    }
+  }
+
+  // Reorder sibling `g.cluster` elements so outer subgraphs paint first and
+  // inner ones paint on top. Mermaid sometimes emits nested clusters in the
+  // wrong source-derived order — when a child appears earlier than its parent
+  // among shared siblings, the parent's bg ends up covering the child.
+  //
+  // "Outer" = bigger transitive `members` set (findSubgraphMembers walks the
+  // body and collects nodeMap-known ids regardless of nesting). Siblings
+  // sharing a parent get sorted in place; if clusters live under different
+  // parents (e.g. a child cluster physically nested inside its parent's `g`),
+  // their DOM containment already handles z-order so we don't touch them.
+  function reorderClustersByContainment(svgEl) {
+    const clusterGs = [...svgEl.querySelectorAll("g.cluster")];
+    if (clusterGs.length < 2) return;
+    const byParent = new Map();
+    for (const g of clusterGs) {
+      if (!byParent.has(g.parentNode)) byParent.set(g.parentNode, []);
+      byParent.get(g.parentNode).push(g);
+    }
+    for (const [parent, gs] of byParent) {
+      if (gs.length < 2) continue;
+      const setGs = new Set(gs);
+      // Anchor: first child after the contiguous run of our clusters, so we
+      // reinsert in-place rather than push to the very end of the parent.
+      const children = [...parent.childNodes];
+      const firstIdx = children.findIndex(c => setGs.has(c));
+      let i = firstIdx;
+      while (i < children.length && setGs.has(children[i])) i++;
+      const anchor = children[i] || null;
+      gs.sort((a, b) => {
+        const ida = extractNodeId(a), idb = extractNodeId(b);
+        const ma = clusterMap[ida] ? clusterMap[ida].members.size : 0;
+        const mb = clusterMap[idb] ? clusterMap[idb].members.size : 0;
+        return mb - ma; // descending: larger (outer) first
+      });
+      for (const g of gs) parent.insertBefore(g, anchor);
     }
   }
 

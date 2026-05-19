@@ -1434,27 +1434,132 @@
     return null;
   }
 
-  function rewriteNodeLabelInSource(source, nodeId, newLabel) {
+  // Detect the SHAPES entry actually used in `nodeId`'s declaration. Tries
+  // shapes longest-open-first so `((` wins over `(` etc. Returns null if the
+  // node has no declaration in source (shouldn't happen for known nodes).
+  function detectNodeShapeInSource(source, nodeId) {
     const idEsc = regexEscape(nodeId);
     const shapesByLen = [...SHAPES].sort((a, b) => b.open.length - a.open.length);
-    let winner = null, winnerMatch = null, winnerCount = 0;
+    for (const shape of shapesByLen) {
+      const openEsc = regexEscape(shape.open);
+      const closeEsc = regexEscape(shape.close);
+      const re = new RegExp(`\\b${idEsc}\\s*${openEsc}([^]*?)${closeEsc}`);
+      if (re.test(source)) return shape;
+    }
+    return null;
+  }
+
+  // Extract the current label of `nodeId` from its declaration. Returns the
+  // raw label text (empty string if none) or null if the node isn't declared.
+  function getNodeLabelInSource(source, nodeId) {
+    const shape = detectNodeShapeInSource(source, nodeId);
+    if (!shape) return null;
+    const idEsc = regexEscape(nodeId);
+    const openEsc = regexEscape(shape.open);
+    const closeEsc = regexEscape(shape.close);
+    const re = new RegExp(`\\b${idEsc}\\s*${openEsc}([^]*?)${closeEsc}`);
+    const m = source.match(re);
+    return m ? m[1] : null;
+  }
+
+  // Extract the current bracketed title of `subgraphId`. Returns "" if the
+  // header has no `[title]`, or null if the subgraph isn't declared.
+  function getSubgraphTitleInSource(source, subgraphId) {
+    const idEsc = regexEscape(subgraphId);
+    const re = new RegExp(`^\\s*subgraph\\s+${idEsc}(?:\\s*\\[([^\\]\\n]*)\\])?\\s*$`, "im");
+    const m = source.match(re);
+    if (!m) return null;
+    return m[1] || "";
+  }
+
+  // Rewrite a node declaration's label *and* shape in one shot. Same single-
+  // match guarantee as rewriteNodeLabelInSource: refuses if the id has zero
+  // or multiple declarations.
+  function rewriteNodeDeclInSource(source, nodeId, newLabel, newShape) {
+    const idEsc = regexEscape(nodeId);
+    const shapesByLen = [...SHAPES].sort((a, b) => b.open.length - a.open.length);
+    let winnerMatch = null, winnerCount = 0;
     for (const shape of shapesByLen) {
       const openEsc = regexEscape(shape.open);
       const closeEsc = regexEscape(shape.close);
       const re = new RegExp(`\\b${idEsc}(\\s*)${openEsc}([^]*?)${closeEsc}`, "g");
       const matches = [...source.matchAll(re)];
       if (matches.length === 0) continue;
-      if (!winner) { winner = shape; winnerMatch = matches[0]; winnerCount = matches.length; }
+      if (!winnerMatch) { winnerMatch = matches[0]; winnerCount = matches.length; }
     }
-    if (!winner) return { ok: false, error: `nodo ${nodeId}: dichiarazione non trovata` };
+    if (!winnerMatch) return { ok: false, error: `nodo ${nodeId}: dichiarazione non trovata` };
     if (winnerCount > 1) return { ok: false, error: `nodo ${nodeId}: ambigua (${winnerCount} match)` };
-    const err = validateLabelForShape(newLabel, winner);
+    const err = validateLabelForShape(newLabel, newShape);
     if (err) return { ok: false, error: err };
     const m = winnerMatch;
     const before = source.slice(0, m.index);
     const after = source.slice(m.index + m[0].length);
-    const newDecl = `${nodeId}${m[1]}${winner.open}${newLabel}${winner.close}`;
+    const newDecl = `${nodeId}${m[1]}${newShape.open}${newLabel}${newShape.close}`;
     return { ok: true, source: before + newDecl + after };
+  }
+
+  // Whole-word replace of `oldId` with `newId` in a single source line,
+  // skipping anything that lives inside a label container (`[...]`, `(...)`,
+  // `{...}`, `|...|`). Brackets nest naturally for `(([...]))` etc. — depth
+  // counts every opener regardless of kind. Used by renameIdInSource to swap
+  // ids in edge operands and bare subgraph-member lines without touching
+  // label text that happens to contain the same word.
+  function replaceIdOutsideLabels(line, oldId, newId) {
+    let out = "";
+    let depth = 0;
+    let inPipe = false;
+    let i = 0;
+    while (i < line.length) {
+      const ch = line[i];
+      if (inPipe) {
+        if (ch === "|") inPipe = false;
+        out += ch; i++; continue;
+      }
+      if (ch === "|") { inPipe = true; out += ch; i++; continue; }
+      if (ch === "[" || ch === "(" || ch === "{") { depth++; out += ch; i++; continue; }
+      if (ch === "]" || ch === ")" || ch === "}") { if (depth > 0) depth--; out += ch; i++; continue; }
+      if (depth === 0 && /[A-Za-z_]/.test(ch)) {
+        let j = i + 1;
+        while (j < line.length && /\w/.test(line[j])) j++;
+        const word = line.slice(i, j);
+        out += (word === oldId) ? newId : word;
+        i = j; continue;
+      }
+      out += ch; i++;
+    }
+    return out;
+  }
+
+  // Rename `oldId` → `newId` everywhere it can appear in the Mermaid source:
+  //   - node declaration line (`oldId[label]`, `oldId((label))`, …)
+  //   - subgraph header (`subgraph oldId [title]`)
+  //   - subgraph member line (bare `oldId` on its own line)
+  //   - edge operands (both sides, including chains like `A --> oldId --> B`)
+  //   - per-element style line (`style oldId fill:…`)
+  //   - note line (`%% oldId free text`)
+  //
+  // Lines that start with reserved tokens (`flowchart`/`graph`/`direction`)
+  // are passed through untouched, so a `flowchart TD` header isn't smashed
+  // if a node happens to be called `TD`.
+  function renameIdInSource(source, oldId, newId) {
+    if (oldId === newId) return { ok: true, source };
+    if (!/^[A-Za-z_][\w]*$/.test(newId)) return { ok: false, error: `ID non valido: '${newId}'` };
+    if (nodeMap[newId] || clusterMap[newId]) return { ok: false, error: `'${newId}' esiste gia'` };
+
+    const oldEsc = regexEscape(oldId);
+    const noteRe = new RegExp(`^(\\s*%%\\s+)${oldEsc}(\\s.*|\\s*)$`);
+    const styleRe = new RegExp(`^(\\s*style\\s+)${oldEsc}(\\b.*)$`);
+    const headerKeywordRe = /^\s*(flowchart|graph|direction)\b/i;
+
+    const lines = source.split("\n").map(line => {
+      if (headerKeywordRe.test(line)) return line;
+      let m = line.match(noteRe);
+      if (m) return `${m[1]}${newId}${m[2]}`;
+      m = line.match(styleRe);
+      if (m) return `${m[1]}${newId}${m[2]}`;
+      return replaceIdOutsideLabels(line, oldId, newId);
+    });
+    return { ok: true, source: lines.join("\n") };
   }
 
   function rewriteSubgraphLabelInSource(source, id, newLabel) {
@@ -1869,85 +1974,29 @@
     setStatus(`distribuiti ${items.length} nodi su ${axis === "h" ? "X" : "Y"}`);
   }
 
-  function startLabelEdit(el, kind, meta) {
-    const rect = el.getBoundingClientRect();
-    const input = document.createElement("input");
-    input.type = "text";
-    input.value = getLabelText(el);
-    Object.assign(input.style, {
-      position: "fixed", left: `${rect.left - 4}px`, top: `${rect.top - 4}px`,
-      minWidth: `${Math.max(rect.width + 40, 140)}px`,
-      height: `${Math.max(rect.height + 8, 28)}px`,
-      fontSize: "14px", padding: "2px 6px",
-      border: "2px solid #5e81ac", background: "#1c242e",
-      color: "#eceff4", zIndex: "1000", borderRadius: "3px", fontFamily: "inherit",
-    });
-    document.body.appendChild(input);
-    input.focus(); input.select();
-
-    let done = false;
-    function cleanup() {
-      input.removeEventListener("keydown", onKey);
-      input.removeEventListener("blur", onBlur);
-      if (input.parentNode) input.parentNode.removeChild(input);
-    }
-    function cancel() { if (done) return; done = true; cleanup(); }
-    async function commit() {
-      if (done) return;
-      done = true;
-      const newText = input.value;
-      const oldText = getLabelText(el);
-      cleanup();
-      if (newText === oldText) return;
-      if (kind !== "subgraph" && newText === "") return;
-      if (!requireValidSource("edit label")) return;
-      let result;
-      let who;
-      if (kind === "node") {
-        result = rewriteNodeLabelInSource(currentSource, meta.nodeId, newText);
-        who = meta.nodeId;
-      } else if (kind === "subgraph") {
-        result = rewriteSubgraphLabelInSource(currentSource, meta.subgraphId, newText);
-        who = `subgraph ${meta.subgraphId}`;
-      } else {
-        // Edge editing goes through startEdgeLabelEdit; this branch shouldn't fire.
-        return;
-      }
-      if (!result.ok) { setStatus(`edit rifiutato: ${result.error}`, true); return; }
-      currentSource = result.source;
-      markDirtySource();
-      await renderDiagram();
-      pushHistory();
-      setStatus(`${who}: "${oldText}" → "${newText}"`);
-    }
-    function onKey(e) {
-      if (e.key === "Enter") { e.preventDefault(); commit(); }
-      else if (e.key === "Escape") { e.preventDefault(); cancel(); }
-    }
-    function onBlur() { commit(); }
-    input.addEventListener("keydown", onKey);
-    input.addEventListener("blur", onBlur);
-  }
-
   function attachLabelEditors() {
+    // Double-click on a node/subgraph label opens the same modal used for
+    // creation, pre-filled with the current id/label/shape. This lets the
+    // user rename the id (with propagation across edges/notes/style/positions)
+    // and change shape/title — capabilities the in-place inline editor lacked.
     for (const [id, n] of Object.entries(nodeMap)) {
       const labelEl = findLabelTextElement(n.g);
       if (!labelEl) continue;
-      labelEl.style.cursor = "text";
+      labelEl.style.cursor = "pointer";
       labelEl.addEventListener("dblclick", (ev) => {
-        if (isReadOnly) return; // spectator: no label edit
+        if (isReadOnly) return; // spectator: no edit
         ev.stopPropagation(); ev.preventDefault();
-        startLabelEdit(labelEl, "node", { nodeId: id });
+        openEditNodeModal(id);
       });
     }
     for (const [id, c] of Object.entries(clusterMap)) {
       const labelEl = findLabelTextElement(c.g);
       if (!labelEl) continue;
-      labelEl.style.cursor = "text";
+      labelEl.style.cursor = "pointer";
       labelEl.addEventListener("dblclick", (ev) => {
-        if (isReadOnly) return; // spectator: no label edit
+        if (isReadOnly) return; // spectator: no edit
         ev.stopPropagation(); ev.preventDefault();
-        startLabelEdit(labelEl, "subgraph", { subgraphId: id });
+        openEditSubgraphModal(id);
       });
     }
     // Edge labels are handled by startEdgeLabelEdit (wired through
@@ -2364,14 +2413,23 @@
     return owners;
   }
 
+  // Mermaid node-shape body (after the id). Ordered longest-first so
+  // double-bracket variants match before their single-bracket prefixes.
+  const NODE_SHAPE_BODY = String.raw`(?:\[\[[^\]\n]*\]\]|\[\([^)\n]*\)\]|\(\[[^\]\n]*\]\)|\[\/[^\\\n]*\\\]|\[\\[^\/\n]*\/\]|\[\/[^\/\n]*\/\]|\[\\[^\\\n]*\\\]|\[[^\]\n]*\]|\(\(\([^)\n]*\)\)\)|\(\([^)\n]*\)\)|\([^)\n]*\)|\{\{[^}\n]*\}\}|\{[^}\n]*\}|>[^\]\n]*\])`;
+
   // Reparent a list of nodes and/or subgraph blocks to a target subgraph,
-  // or to the root level if targetId is null. Pure-identifier member lines
-  // are removed from inside any subgraph block; for moved subgraphs, the
-  // entire `subgraph X ... end` block is cut and reinserted at the target.
-  // Validates against cycles (target inside a moved subgraph).
+  // or to the root level if targetId is null. For each moved node we pull
+  // out its standalone declaration line (with shape/label) wherever it
+  // lives and re-emit it at the target — so the node is actually MOVED
+  // rather than left in place with only a bare-id reference added in the
+  // destination. Nodes that only appear inline in edges (no standalone
+  // decl line) fall back to a bare-id member line. For moved subgraphs,
+  // the entire `subgraph X ... end` block is cut and reinserted at the
+  // target. Validates against cycles (target inside a moved subgraph).
   function moveToSubgraphInSource(source, ids, targetId) {
     const subgraphHeaderRe = /^\s*subgraph\b/i;
     const endRe = /^\s*end\s*$/i;
+    const SHAPE_BODY = NODE_SHAPE_BODY;
 
     function findSubgraphRange(lines, sgId) {
       const idEsc = regexEscape(sgId);
@@ -2426,21 +2484,51 @@
       cutBlocks.push({ id, blockLines });
     }
 
-    // Phase B: remove pure-identifier member lines for moved nodes from
-    // inside any subgraph block. Leaves root-level decl lines intact.
+    // Phase B: for each moved node, pull out its standalone declaration
+    // line (id + shape/label, optional `:::class`) — at any depth — and
+    // capture it for re-insertion at the target. Also drop bare-identifier
+    // member lines inside subgraphs. A node whose declaration sits inside
+    // a moved subgraph (already cut in Phase A) won't be found here; we
+    // remember which nodes originally had a decl in the source so we can
+    // skip the bare-id fallback for them (they travel with their subgraph).
     const movedNodeIds = ids.filter(id => nodeMap[id]);
+    const movedNodeLines = {}; // id -> captured decl line (left-trimmed) or null
+    const declOnlyInsideMovedSg = {}; // id -> true when decl existed pre-cut but got cut with a subgraph
     if (movedNodeIds.length > 0) {
       const escIds = movedNodeIds.map(regexEscape).join("|");
-      const memberLineRe = new RegExp(`^\\s*(?:${escIds})\\s*$`);
+      const declRe = new RegExp(`^(\\s*)(${escIds})\\s*${SHAPE_BODY}(\\s*:::\\s*\\w+)?\\s*$`);
+      const bareRe = new RegExp(`^\\s*(?:${escIds})\\s*$`);
+
+      // Pre-scan the ORIGINAL source (before Phase A's cuts) to know which
+      // moved nodes had a standalone decl somewhere — used to decide the
+      // fallback in Phase C when no decl survives in `lines`.
+      const origHadDecl = {};
+      for (const line of source.split("\n")) {
+        const m = declRe.exec(line);
+        if (m) origHadDecl[m[2]] = true;
+      }
+
+      for (const id of movedNodeIds) movedNodeLines[id] = null;
       const cleaned = [];
       let depth = 0;
       for (const line of lines) {
         if (subgraphHeaderRe.test(line)) { cleaned.push(line); depth++; continue; }
         if (endRe.test(line)) { cleaned.push(line); depth = Math.max(0, depth - 1); continue; }
-        if (depth > 0 && memberLineRe.test(line)) continue;
+        const dm = declRe.exec(line);
+        if (dm) {
+          const nid = dm[2];
+          if (movedNodeLines[nid] == null) movedNodeLines[nid] = line.replace(/^\s+/, "");
+          continue; // drop the decl from its current location
+        }
+        if (depth > 0 && bareRe.test(line)) continue;
         cleaned.push(line);
       }
       lines = cleaned;
+
+      // Mark nodes whose decl was eaten by a moved subgraph in Phase A.
+      for (const id of movedNodeIds) {
+        if (movedNodeLines[id] == null && origHadDecl[id]) declOnlyInsideMovedSg[id] = true;
+      }
     }
 
     // Phase C: insert at target. For root, append node-id member lines and
@@ -2454,7 +2542,12 @@
     }
 
     const insertPieces = [];
-    for (const id of movedNodeIds) insertPieces.push(`    ${id}`);
+    for (const id of movedNodeIds) {
+      const decl = movedNodeLines[id];
+      if (decl) insertPieces.push(`    ${decl}`);
+      else if (declOnlyInsideMovedSg[id]) continue; // decl travels with its subgraph
+      else insertPieces.push(`    ${id}`); // edges-only node: bare-id fallback
+    }
     for (const { blockLines } of cutBlocks) insertPieces.push(...blockLines);
 
     if (insertPieces.length === 0) {
@@ -2473,6 +2566,111 @@
     }
 
     return { ok: true, source: lines.join("\n") };
+  }
+
+  // Detect "legacy" sources where a node's standalone declaration sits at
+  // root (or in a different subgraph) while a bare-identifier member line
+  // for it appears inside a subgraph S. The new editor moves the decl
+  // itself into the target; legacy sources keep the decl outside and only
+  // use a bare ref to mark membership. Returns one entry per legacy node:
+  //   { id, subgraphId }    (the subgraph that holds the bare ref)
+  function findLegacyBareRefs(source) {
+    const lines = source.split("\n");
+    const headerRe = /^\s*subgraph\s+([A-Za-z_]\w*)/i;
+    const endRe = /^\s*end\s*$/i;
+    const declRe = new RegExp(`^\\s*([A-Za-z_]\\w*)\\s*${NODE_SHAPE_BODY}(\\s*:::\\s*\\w+)?\\s*$`);
+    const bareRe = /^\s*([A-Za-z_]\w*)\s*$/;
+
+    // First pass: collect each node's decl line and its subgraph path.
+    const declAt = {}; // id -> { sgPath: [...] }
+    const bareRefs = []; // { id, sgPath, lineIdx }
+    const stack = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const sg = line.match(headerRe);
+      if (sg) { stack.push(sg[1]); continue; }
+      if (endRe.test(line)) { stack.pop(); continue; }
+      const dm = declRe.exec(line);
+      if (dm) {
+        const id = dm[1];
+        if (!declAt[id]) declAt[id] = { sgPath: [...stack] };
+        continue;
+      }
+      const br = bareRe.exec(line);
+      if (br) {
+        const id = br[1];
+        if (id === "end" || id === "subgraph") continue;
+        bareRefs.push({ id, sgPath: [...stack], lineIdx: i });
+      }
+    }
+
+    const legacy = [];
+    const seen = new Set();
+    for (const br of bareRefs) {
+      if (br.sgPath.length === 0) continue; // bare ref at root — not a legacy pattern we fix
+      const decl = declAt[br.id];
+      if (!decl) continue; // edges-only node, nothing to move
+      const directParent = br.sgPath[br.sgPath.length - 1];
+      // If decl is already inside `directParent` (same subgraph or a nested
+      // child of it), the bare ref is redundant noise but not a legacy
+      // miss-placement. Skip — we don't want to touch already-good sources.
+      if (decl.sgPath.includes(directParent)) continue;
+      const key = br.id + "→" + directParent;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      legacy.push({ id: br.id, subgraphId: directParent });
+    }
+    return legacy;
+  }
+
+  // Rewrite a legacy source so every node's decl line sits inside the
+  // subgraph that currently holds only its bare ref. Reuses
+  // moveToSubgraphInSource, grouping moves by target subgraph.
+  function normalizeLegacyBareRefs(source) {
+    const legacy = findLegacyBareRefs(source);
+    if (legacy.length === 0) return { ok: true, source, changed: 0 };
+    // Group node ids by target subgraph.
+    const byTarget = {};
+    for (const { id, subgraphId } of legacy) {
+      if (!byTarget[subgraphId]) byTarget[subgraphId] = [];
+      byTarget[subgraphId].push(id);
+    }
+    let next = source;
+    let changed = 0;
+    for (const sgId of Object.keys(byTarget)) {
+      const r = moveToSubgraphInSource(next, byTarget[sgId], sgId);
+      if (!r.ok) return { ok: false, error: r.error };
+      next = r.source;
+      changed += byTarget[sgId].length;
+    }
+    return { ok: true, source: next, changed };
+  }
+
+  // Per-session flag: once the user has accepted OR declined the legacy
+  // normalize prompt for this load, don't ask again until the page is
+  // reloaded — even if subsequent edits create new bare-ref patterns.
+  let _legacyPromptHandled = false;
+
+  async function maybePromptLegacyNormalize() {
+    if (_legacyPromptHandled) return;
+    const legacy = findLegacyBareRefs(currentSource);
+    if (legacy.length === 0) return;
+    _legacyPromptHandled = true;
+    const msg = `Trovati ${legacy.length} nodi in formato legacy (dichiarazione fuori dal subgraph + bare-ref dentro). Vuoi normalizzare il sorgente spostando le dichiarazioni dentro il subgraph?`;
+    const ok = await confirmDialog(msg, {
+      title: "Normalizza formato legacy",
+      confirmLabel: "Normalizza",
+      cancelLabel: "Lascia com'è",
+    });
+    if (!ok) return;
+    const r = normalizeLegacyBareRefs(currentSource);
+    if (!r.ok) { setStatus(`normalizza: ${r.error}`, true); return; }
+    if (r.changed === 0) return;
+    currentSource = r.source;
+    markDirtySource();
+    await renderDiagram();
+    pushHistory();
+    setStatus(`normalizzati ${r.changed} nodi (salva per persistere)`);
   }
 
   function addSubgraphToSource(source, id, title, memberIds, parentId) {
@@ -2557,7 +2755,22 @@
     openAddSubgraphModal(ids, parent);
   }
 
+  // Edit mode: when non-null, the subgraph modal edits this existing subgraph.
+  let _editSubgraphOriginalId = null;
+  function setSubgraphModalMode(isEdit) {
+    const title = document.querySelector("#addSubgraphModal h2");
+    const okBtn = document.getElementById("subgraphOkBtn");
+    if (isEdit) {
+      if (title) title.textContent = "Modifica subgraph";
+      if (okBtn) okBtn.textContent = "Salva";
+    } else {
+      if (title) title.textContent = "Nuovo subgraph";
+      if (okBtn) okBtn.textContent = "Crea";
+    }
+  }
   function openAddSubgraphModal(ids, parentId) {
+    _editSubgraphOriginalId = null;
+    setSubgraphModalMode(false);
     _subgraphPendingIds = ids;
     _subgraphPendingParent = parentId || null;
     document.getElementById("addSubgraphModal").classList.remove("hidden");
@@ -2569,13 +2782,35 @@
       `${ids.length} nodi${where}: ${ids.join(", ")}`;
     setTimeout(() => document.getElementById("subgraphIdInput").focus(), 0);
   }
+  function openEditSubgraphModal(subgraphId) {
+    if (!requireValidSource("modifica subgraph")) return;
+    if (!clusterMap[subgraphId]) { setStatus(`subgraph '${subgraphId}' non trovato`, true); return; }
+    const title = getSubgraphTitleInSource(currentSource, subgraphId);
+    if (title === null) { setStatus(`subgraph '${subgraphId}': header non trovato`, true); return; }
+    _editSubgraphOriginalId = subgraphId;
+    _subgraphPendingIds = null;
+    _subgraphPendingParent = null;
+    setSubgraphModalMode(true);
+    document.getElementById("addSubgraphModal").classList.remove("hidden");
+    document.getElementById("subgraphModalError").textContent = "";
+    document.getElementById("subgraphIdInput").value = subgraphId;
+    document.getElementById("subgraphTitleInput").value = title;
+    document.getElementById("subgraphMembersInfo").textContent = "";
+    setTimeout(() => {
+      const inp = document.getElementById("subgraphIdInput");
+      inp.focus(); inp.select();
+    }, 0);
+  }
   function closeAddSubgraphModal() {
     document.getElementById("addSubgraphModal").classList.add("hidden");
     _subgraphPendingIds = null;
     _subgraphPendingParent = null;
+    _editSubgraphOriginalId = null;
+    setSubgraphModalMode(false);
   }
 
   async function submitAddSubgraphModal() {
+    if (_editSubgraphOriginalId) { await submitEditSubgraphModal(); return; }
     const ids = _subgraphPendingIds;
     const parent = _subgraphPendingParent;
     if (!ids) { closeAddSubgraphModal(); return; }
@@ -2597,6 +2832,43 @@
     pushHistory();
     const where = parent ? ` (in ${parent})` : "";
     setStatus(`+ subgraph ${idRaw} con ${ids.length} nodi${where}`);
+  }
+
+  async function submitEditSubgraphModal() {
+    const oldId = _editSubgraphOriginalId;
+    const newId = document.getElementById("subgraphIdInput").value.trim();
+    const newTitle = document.getElementById("subgraphTitleInput").value.trim();
+    const errorEl = document.getElementById("subgraphModalError");
+    errorEl.textContent = "";
+    if (!newId) { errorEl.textContent = "ID obbligatorio"; return; }
+    if (!/^[A-Za-z_][\w]*$/.test(newId)) { errorEl.textContent = `ID non valido: '${newId}'`; return; }
+    if (newId !== oldId && (nodeMap[newId] || clusterMap[newId])) {
+      errorEl.textContent = `'${newId}' esiste gia'`; return;
+    }
+
+    let next = currentSource;
+    if (newId !== oldId) {
+      const r = renameIdInSource(next, oldId, newId);
+      if (!r.ok) { errorEl.textContent = r.error; return; }
+      next = r.source;
+    }
+    const r2 = rewriteSubgraphLabelInSource(next, newId, newTitle);
+    if (!r2.ok) { errorEl.textContent = r2.error; return; }
+    next = r2.source;
+
+    if (newId !== oldId && positions[oldId] !== undefined) {
+      positions[newId] = positions[oldId];
+      delete positions[oldId];
+      markDirtyLayout();
+    }
+    if (selectedClusterId === oldId) selectedClusterId = newId;
+    currentSource = next;
+    markDirtySource();
+    closeAddSubgraphModal();
+    await renderDiagram();
+    pushHistory();
+    const renamed = newId !== oldId ? `${oldId} → ${newId}` : newId;
+    setStatus(`✎ subgraph ${renamed}`);
   }
 
   async function handleDeleteSubgraphClick(id) {
@@ -3449,8 +3721,24 @@
   }
 
   let _addNodeTargetSubgraph = null;
+  // Edit mode: when non-null, the node modal edits this existing node instead
+  // of creating a new one. Submit dispatches accordingly.
+  let _editNodeOriginalId = null;
+  function setNodeModalMode(isEdit) {
+    const title = document.querySelector("#addNodeModal h2");
+    const okBtn = document.getElementById("nodeOkBtn");
+    if (isEdit) {
+      if (title) title.textContent = "Modifica nodo";
+      if (okBtn) okBtn.textContent = "Salva";
+    } else {
+      if (title) title.textContent = "Nuovo nodo";
+      if (okBtn) okBtn.textContent = "Crea";
+    }
+  }
   function openAddNodeModal() {
     if (!requireValidSource("aggiungi nodo")) return;
+    _editNodeOriginalId = null;
+    setNodeModalMode(false);
     _addNodeTargetSubgraph = selectedClusterId || null;
     document.getElementById("addNodeModal").classList.remove("hidden");
     document.getElementById("modalError").textContent = "";
@@ -3469,12 +3757,35 @@
     selectShape(SHAPES[0]);
     setTimeout(() => document.getElementById("nodeIdInput").focus(), 0);
   }
+  function openEditNodeModal(nodeId) {
+    if (!requireValidSource("modifica nodo")) return;
+    if (!nodeMap[nodeId]) { setStatus(`nodo '${nodeId}' non trovato`, true); return; }
+    const shape = detectNodeShapeInSource(currentSource, nodeId) || SHAPES[0];
+    const label = getNodeLabelInSource(currentSource, nodeId) ?? "";
+    _editNodeOriginalId = nodeId;
+    _addNodeTargetSubgraph = null;
+    setNodeModalMode(true);
+    document.getElementById("addNodeModal").classList.remove("hidden");
+    document.getElementById("modalError").textContent = "";
+    const hint = document.getElementById("addNodeSubgraphHint");
+    if (hint) { hint.textContent = ""; hint.classList.add("hidden"); }
+    document.getElementById("nodeIdInput").value = nodeId;
+    document.getElementById("nodeLabelInput").value = label;
+    selectShape(shape);
+    setTimeout(() => {
+      const inp = document.getElementById("nodeIdInput");
+      inp.focus(); inp.select();
+    }, 0);
+  }
   function closeAddNodeModal() {
     document.getElementById("addNodeModal").classList.add("hidden");
     _addNodeTargetSubgraph = null;
+    _editNodeOriginalId = null;
+    setNodeModalMode(false);
   }
 
   async function submitAddNodeModal() {
+    if (_editNodeOriginalId) { await submitEditNodeModal(); return; }
     const id = document.getElementById("nodeIdInput").value.trim();
     const label = document.getElementById("nodeLabelInput").value.trim();
     const errorEl = document.getElementById("modalError");
@@ -3492,6 +3803,49 @@
     setStatus(targetSg
       ? `+ node ${id} in ${targetSg} (${modalSelectedShape.name})`
       : `+ node ${id} (${modalSelectedShape.name})`);
+  }
+
+  // Edit-mode submit: rename id (propagating to edges/subgraph members/notes/
+  // style lines/positions), then rewrite the declaration's label+shape.
+  async function submitEditNodeModal() {
+    const oldId = _editNodeOriginalId;
+    const newId = document.getElementById("nodeIdInput").value.trim();
+    const newLabel = document.getElementById("nodeLabelInput").value.trim();
+    const errorEl = document.getElementById("modalError");
+    errorEl.textContent = "";
+    if (!newId) { errorEl.textContent = "ID obbligatorio"; return; }
+    if (!/^[A-Za-z_][\w]*$/.test(newId)) { errorEl.textContent = `ID non valido: '${newId}'`; return; }
+    if (newId !== oldId && (nodeMap[newId] || clusterMap[newId])) {
+      errorEl.textContent = `'${newId}' esiste gia'`; return;
+    }
+
+    let next = currentSource;
+    if (newId !== oldId) {
+      const r = renameIdInSource(next, oldId, newId);
+      if (!r.ok) { errorEl.textContent = r.error; return; }
+      next = r.source;
+    }
+    const r2 = rewriteNodeDeclInSource(next, newId, newLabel, modalSelectedShape);
+    if (!r2.ok) { errorEl.textContent = r2.error; return; }
+    next = r2.source;
+
+    if (newId !== oldId && positions[oldId] !== undefined) {
+      positions[newId] = positions[oldId];
+      delete positions[oldId];
+      markDirtyLayout();
+    }
+    // Selection follows the renamed node.
+    if (selectedNodeIds.has(oldId)) {
+      selectedNodeIds.delete(oldId);
+      selectedNodeIds.add(newId);
+    }
+    currentSource = next;
+    markDirtySource();
+    closeAddNodeModal();
+    await renderDiagram();
+    pushHistory();
+    const renamed = newId !== oldId ? `${oldId} → ${newId}` : newId;
+    setStatus(`✎ node ${renamed} (${modalSelectedShape.name})`);
   }
 
   // Move a freshly-added node so its visual center sits at the current
@@ -4960,6 +5314,7 @@
       await renderDiagram();
       pushHistory();
       setStatus("pronto");
+      await maybePromptLegacyNormalize();
     } catch (e) {
       setSourceValidity(false, e.message || String(e));
       setSourceValue(currentSource);

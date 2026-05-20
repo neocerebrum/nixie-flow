@@ -2064,7 +2064,7 @@
   //   - literal \  → \\
   // One %%-line per id; an empty/whitespace-only note removes the line.
 
-  const NOTE_RE = /^%%\s+([A-Za-z_][\w]*)\s+(.*)$/;
+  const NOTE_RE = /^(\s*)%%\s+([A-Za-z_][\w]*)\s+(.*)$/;
   let _notesAutosaveTimer = null;
   let _notesCurrentId = null;     // id of the element currently bound to the panel
   let _notesCurrentKind = null;   // 'node' | 'subgraph'
@@ -2094,7 +2094,7 @@
     const lines = source.split("\n");
     for (const line of lines) {
       const m = line.match(NOTE_RE);
-      if (m && m[1] === id) return m[2];
+      if (m && m[2] === id) return m[3];
     }
     return null;
   }
@@ -2105,9 +2105,10 @@
   function upsertNoteInSource(source, id, encoded) {
     const lines = source.split("\n");
     let foundIdx = -1;
+    let foundIndent = "";
     for (let i = 0; i < lines.length; i++) {
       const m = lines[i].match(NOTE_RE);
-      if (m && m[1] === id) { foundIdx = i; break; }
+      if (m && m[2] === id) { foundIdx = i; foundIndent = m[1]; break; }
     }
     const isEmpty = !encoded || encoded.length === 0;
     if (foundIdx === -1) {
@@ -2120,7 +2121,7 @@
       lines.splice(foundIdx, 1);
       return lines.join("\n");
     }
-    lines[foundIdx] = `%% ${id} ${encoded}`;
+    lines[foundIdx] = `${foundIndent}%% ${id} ${encoded}`;
     return lines.join("\n");
   }
 

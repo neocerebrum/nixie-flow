@@ -508,6 +508,7 @@
 
     indexNodesAndEdges(svgEl);
     reorderClustersByContainment(svgEl);
+    offsetArrowMarkers(svgEl);
     applySavedPositions();
     updateAllClusterBounds();
     rerouteAllEdges();
@@ -1139,6 +1140,28 @@
     const ry = n.halfH > 0 ? Math.abs(ly) / n.halfH : 0;
     if (rx >= ry) return { x: Math.sign(lx) || 1, y: 0 };
     return { x: 0, y: Math.sign(ly) || 1 };
+  }
+
+  // Pull Mermaid's arrowhead markers backward along the line direction so the
+  // arrow visibly sits past the node fill instead of being half-covered by it.
+  // We bump `refX` of every end-marker (`*-pointEnd`, `*-circleEnd`, …): the
+  // marker is anchored at the line endpoint, so a larger refX shifts the whole
+  // marker drawing in the −X direction = backward along the line at the target,
+  // i.e. toward the source. The line itself still terminates at the boundary,
+  // producing a tiny segment between the arrow tip and the boundary that reads
+  // visually as the arrow's stem.
+  const ARROW_MARKER_REFX_BUMP = 4;
+  function offsetArrowMarkers(svgEl) {
+    // Mermaid v10 IDs vary across releases (e.g. `flowchart-pointEnd`,
+    // `flowchart-pointEnd_1`, `…-End-XYZ`). Match any marker whose id contains
+    // "end" (case-insensitive) so we cover all flowchart end-marker variants.
+    for (const m of svgEl.querySelectorAll('marker')) {
+      const id = m.getAttribute('id') || '';
+      if (!/end/i.test(id)) continue;
+      const cur = parseFloat(m.getAttribute('refX') || '0');
+      if (Number.isNaN(cur)) continue;
+      m.setAttribute('refX', String(cur + ARROW_MARKER_REFX_BUMP));
+    }
   }
 
   function rerouteEdge(edge) {

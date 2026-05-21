@@ -3240,6 +3240,34 @@
     svgEl.setAttribute("viewBox",
       `${viewState.x} ${viewState.y} ${viewState.width} ${viewState.height}`);
   }
+  // preserveAspectRatio="xMidYMid meet" scales the viewBox uniformly to fit
+  // the rect: scale = min(rect.w/vb.w, rect.h/vb.h), then centers it. The
+  // axis with the looser ratio gets letterboxed (an offset on that side).
+  // Pan/zoom math must account for this or one axis pans slower than the other.
+  function clientToView(mx, my, rect) {
+    const scale = Math.min(rect.width / viewState.width, rect.height / viewState.height);
+    const ox = (rect.width  - viewState.width  * scale) / 2;
+    const oy = (rect.height - viewState.height * scale) / 2;
+    return {
+      x: viewState.x + (mx - ox) / scale,
+      y: viewState.y + (my - oy) / scale,
+    };
+  }
+  // Solve for viewState.{x,y} so that (mx,my) maps to the given view-space
+  // anchor under the *current* viewState.{width,height}. Inverse of clientToView.
+  function viewOriginForAnchor(anchorVX, anchorVY, mx, my, rect) {
+    const scale = Math.min(rect.width / viewState.width, rect.height / viewState.height);
+    const ox = (rect.width  - viewState.width  * scale) / 2;
+    const oy = (rect.height - viewState.height * scale) / 2;
+    return {
+      x: anchorVX - (mx - ox) / scale,
+      y: anchorVY - (my - oy) / scale,
+    };
+  }
+  // View-space units per displayed pixel (same on both axes under meet).
+  function viewUnitsPerPixel(rect) {
+    return Math.max(viewState.width / rect.width, viewState.height / rect.height);
+  }
   // Apply a viewport pushed by the scepter holder (follow mode). Mutates
   // viewState in place WITHOUT marking it dirty, so the snap doesn't bounce
   // back to peers as if it were a local pan.
@@ -3322,16 +3350,16 @@
     if (!svgEl) return;
     const rect = svgEl.getBoundingClientRect();
     const cx = rect.width / 2, cy = rect.height / 2;
-    const vx = viewState.x + cx * viewState.width / rect.width;
-    const vy = viewState.y + cy * viewState.height / rect.height;
+    const anchor = clientToView(cx, cy, rect);
     const minW = initialViewBox.width / 10;
     const maxW = initialViewBox.width * 10;
     const newW = viewState.width / z;
     if (newW < minW || newW > maxW) return;
     viewState.width = newW;
     viewState.height = viewState.height / z;
-    viewState.x = vx - cx * viewState.width / rect.width;
-    viewState.y = vy - cy * viewState.height / rect.height;
+    const origin = viewOriginForAnchor(anchor.x, anchor.y, cx, cy, rect);
+    viewState.x = origin.x;
+    viewState.y = origin.y;
     applyViewState(svgEl);
     viewDirty = true;
   }
@@ -3378,13 +3406,14 @@
       const cy = (pts[0].clientY + pts[1].clientY) / 2;
       const rect = svgEl.getBoundingClientRect();
       const mx = cx - rect.left, my = cy - rect.top;
+      const anchor = clientToView(mx, my, rect);
       pinchStart = {
         dist: dist > 1 ? dist : 1, rect,
         vw: viewState.width, vh: viewState.height,
         // Anchor: the view-space coord under the midpoint when pinch began;
         // we keep this point pinned under the fingers' midpoint as they move.
-        anchorVX: viewState.x + mx * viewState.width / rect.width,
-        anchorVY: viewState.y + my * viewState.height / rect.height,
+        anchorVX: anchor.x,
+        anchorVY: anchor.y,
       };
     }
     function startPanFromPointer(p) {
@@ -3428,10 +3457,9 @@
       activePointers.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
       if (mode === "pan" && activePointers.size === 1) {
         const rect = panStart.rect;
-        const dxView = (e.clientX - panStart.x) * viewState.width / rect.width;
-        const dyView = (e.clientY - panStart.y) * viewState.height / rect.height;
-        viewState.x = panStart.vx - dxView;
-        viewState.y = panStart.vy - dyView;
+        const k = viewUnitsPerPixel(rect);
+        viewState.x = panStart.vx - (e.clientX - panStart.x) * k;
+        viewState.y = panStart.vy - (e.clientY - panStart.y) * k;
         applyViewState(svgEl);
         viewDirty = true;
         return;
@@ -3454,8 +3482,9 @@
         const cy = (pts[0].clientY + pts[1].clientY) / 2;
         const rect = pinchStart.rect;
         const mx = cx - rect.left, my = cy - rect.top;
-        viewState.x = pinchStart.anchorVX - mx * viewState.width / rect.width;
-        viewState.y = pinchStart.anchorVY - my * viewState.height / rect.height;
+        const origin = viewOriginForAnchor(pinchStart.anchorVX, pinchStart.anchorVY, mx, my, rect);
+        viewState.x = origin.x;
+        viewState.y = origin.y;
         applyViewState(svgEl);
         viewDirty = true;
       }
@@ -3481,8 +3510,7 @@
       const rect = svgEl.getBoundingClientRect();
       const mx = e.clientX - rect.left;
       const my = e.clientY - rect.top;
-      const vx = viewState.x + mx * viewState.width / rect.width;
-      const vy = viewState.y + my * viewState.height / rect.height;
+      const anchor = clientToView(mx, my, rect);
       const z = e.deltaY < 0 ? 1.12 : 1 / 1.12;
       let newW = viewState.width / z;
       let newH = viewState.height / z;
@@ -3491,8 +3519,9 @@
       if (newW < minW || newW > maxW) return;
       viewState.width = newW;
       viewState.height = newH;
-      viewState.x = vx - mx * viewState.width / rect.width;
-      viewState.y = vy - my * viewState.height / rect.height;
+      const origin = viewOriginForAnchor(anchor.x, anchor.y, mx, my, rect);
+      viewState.x = origin.x;
+      viewState.y = origin.y;
       applyViewState(svgEl);
       viewDirty = true;
     }, { passive: false });

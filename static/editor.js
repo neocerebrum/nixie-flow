@@ -130,6 +130,11 @@
   // JSON.stringify silently strips when we add custom keys to it.
   let positions = (bootstrap.layout && bootstrap.layout.positions) || {};
   if (Array.isArray(positions)) positions = {};
+  // edgeAnchors: { "src|tgt|ord": { source?: "n"|"ne"|..., target?: ... } }
+  // Purely cosmetic — pins which compass hotspot an edge endpoint uses
+  // instead of the auto ray-intersection. Lives only in the layout layer.
+  let edgeAnchors = (bootstrap.layout && bootstrap.layout.edgeAnchors) || {};
+  if (Array.isArray(edgeAnchors)) edgeAnchors = {};
   let currentRevisionId = bootstrap.revision_id;
   let currentTitle = bootstrap.title;
   const slug = bootstrap.slug;
@@ -388,6 +393,7 @@
     history.push({
       source: currentSource,
       positions: JSON.parse(JSON.stringify(positions)),
+      edgeAnchors: JSON.parse(JSON.stringify(edgeAnchors)),
     });
     if (history.length > HISTORY_CAP) {
       history = history.slice(history.length - HISTORY_CAP);
@@ -406,6 +412,7 @@
     if (!snap) return;
     currentSource = snap.source;
     positions = JSON.parse(JSON.stringify(snap.positions));
+    edgeAnchors = JSON.parse(JSON.stringify(snap.edgeAnchors || {}));
     markDirtySource(); markDirtyLayout();
     try {
       await renderDiagram();
@@ -780,6 +787,43 @@
       for (const id of orphans) delete positions[id];
       markDirtyLayout();
     }
+    pruneOrphanEdgeAnchors();
+  }
+
+  // Drop edgeAnchors entries that no longer correspond to any current edge.
+  // Edges are keyed by `src|tgt|ord`; the triple changes when ids are renamed
+  // outside the editor's rename flow or when edges are reordered/deleted.
+  function pruneOrphanEdgeAnchors() {
+    const live = new Set();
+    for (const e of edges) live.add(edgeKey(e));
+    let changed = false;
+    for (const k of Object.keys(edgeAnchors)) {
+      if (!live.has(k)) { delete edgeAnchors[k]; changed = true; }
+    }
+    if (changed) markDirtyLayout();
+  }
+
+  // Re-key edgeAnchors entries whose source or target matched oldId.
+  // Called from the rename flows that already migrate positions[oldId].
+  function renameIdInEdgeAnchors(oldId, newId) {
+    if (oldId === newId) return;
+    const updated = {};
+    let changed = false;
+    for (const [k, v] of Object.entries(edgeAnchors)) {
+      const parts = k.split("|");
+      if (parts.length !== 3) { updated[k] = v; continue; }
+      let [s, t, o] = parts;
+      let touched = false;
+      if (s === oldId) { s = newId; touched = true; }
+      if (t === oldId) { t = newId; touched = true; }
+      const nk = touched ? `${s}|${t}|${o}` : k;
+      updated[nk] = v;
+      if (touched) changed = true;
+    }
+    if (changed) {
+      edgeAnchors = updated;
+      markDirtyLayout();
+    }
   }
 
   function nodeCenter(id) {
@@ -803,13 +847,36 @@
   }
 
   function detectSvgShape(g) {
+    // Mermaid can emit multiple polygons inside a single node. Composite shapes
+    // like subroutine [[...]] are drawn as a main inner rectangle plus two side
+    // bars (each a separate polygon/rect): the largest polygon by area is the
+    // main rect, but it sits INSIDE the full node bbox — so its outline isn't
+    // where edges should clip and isn't where hotspots should sit. Below we
+    // pick the largest polygon, then verify its bbox matches g.getBBox(); if
+    // not, the polygon is a sub-piece of a composite, and we fall back to rect
+    // (which uses g.getBBox() union as the outer extent).
+    let bestPoly = null;
+    let bestArea = -Infinity;
+    let bestBbox = null;
     for (const child of g.children) {
       const tag = child.tagName.toLowerCase();
       if (tag === "polygon") {
         const tr = getElementLocalTranslate(child);
         const raw = parsePolygonPoints(child.getAttribute("points") || "");
         const points = raw.map(p => ({ x: p.x + tr.x, y: p.y + tr.y }));
-        return { type: "polygon", points };
+        if (points.length === 0) continue;
+        let minX =  Infinity, minY =  Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const p of points) {
+          if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+          if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+        }
+        const area = (maxX - minX) * (maxY - minY);
+        if (area > bestArea) {
+          bestArea = area;
+          bestPoly = { type: "polygon", points };
+          bestBbox = { width: maxX - minX, height: maxY - minY };
+        }
+        continue;
       }
       if (tag === "circle") {
         const tr = getElementLocalTranslate(child);
@@ -830,6 +897,23 @@
           ry: parseFloat(child.getAttribute("ry")) || 0,
         };
       }
+    }
+    if (bestPoly) {
+      // Composite shapes like subroutine [[...]] are sometimes a SINGLE polygon
+      // whose outline traces both the outer rect AND the two inner side bars
+      // (10+ vertices). Its bbox matches g.getBBox(), but a ray-cast from the
+      // center hits the inner bar before the outer edge — wrong for both edge
+      // clipping and hotspots. Heuristic: only trust polygons with ≤6 vertices
+      // (diamond=4, hexagon=6, trapezoid/parallelogram=4). Anything more
+      // complex → treat as rect using g.getBBox() as the outer extent.
+      if (bestPoly.points.length > 6) return { type: "rect" };
+      try {
+        const gb = g.getBBox();
+        if (Math.abs(bestBbox.width - gb.width) <= 2 && Math.abs(bestBbox.height - gb.height) <= 2) {
+          return bestPoly;
+        }
+      } catch (_) { return bestPoly; }
+      // Composite shape — outer extent ≠ best polygon.
     }
     return { type: "rect" };
   }
@@ -892,6 +976,126 @@
     return { x: c.x + dx * scale, y: c.y + dy * scale };
   }
 
+  // Hotspot anchors: pin an edge endpoint to a fixed point on the shape outline.
+  // Compass naming: cardinals (n,e,s,w) at side midpoints, corners (ne,se,sw,nw),
+  // and side intermediates (nnw,nne,ene,ese,sse,ssw,wsw,wnw) at quarter-points.
+  // Rect/cluster expose all 16; circle/ellipse expose 8 cardinals only.
+  const SQRT2_2 = Math.SQRT1_2;
+  // dx/dy: radial direction from center (SVG y-down). nx/ny: outward unit normal
+  // used as bezier control direction for cluster-incident edges.
+  const ANCHOR_DIRS = {
+    n:   { dx:  0,        dy: -1,        nx:  0,        ny: -1 },
+    nne: { dx:  0.5,      dy: -1,        nx:  0,        ny: -1 },
+    ne:  { dx:  1,        dy: -1,        nx:  SQRT2_2,  ny: -SQRT2_2 },
+    ene: { dx:  1,        dy: -0.5,      nx:  1,        ny:  0 },
+    e:   { dx:  1,        dy:  0,        nx:  1,        ny:  0 },
+    ese: { dx:  1,        dy:  0.5,      nx:  1,        ny:  0 },
+    se:  { dx:  1,        dy:  1,        nx:  SQRT2_2,  ny:  SQRT2_2 },
+    sse: { dx:  0.5,      dy:  1,        nx:  0,        ny:  1 },
+    s:   { dx:  0,        dy:  1,        nx:  0,        ny:  1 },
+    ssw: { dx: -0.5,      dy:  1,        nx:  0,        ny:  1 },
+    sw:  { dx: -1,        dy:  1,        nx: -SQRT2_2,  ny:  SQRT2_2 },
+    wsw: { dx: -1,        dy:  0.5,      nx: -1,        ny:  0 },
+    w:   { dx: -1,        dy:  0,        nx: -1,        ny:  0 },
+    wnw: { dx: -1,        dy: -0.5,      nx: -1,        ny:  0 },
+    nw:  { dx: -1,        dy: -1,        nx: -SQRT2_2,  ny: -SQRT2_2 },
+    nnw: { dx: -0.5,      dy: -1,        nx:  0,        ny: -1 },
+  };
+  // Rect anchors (nodes): 4 corners + 3 along top/bottom + 1 (the cardinal) on
+  // each vertical side. Vertical sides are typically short relative to labels,
+  // so 3-per-side felt cluttered for nodes.
+  const RECT_ANCHORS = ["n","nne","ne","e","se","sse","s","ssw","sw","w","nw","nnw"];
+  // Cluster anchors: subgraphs are usually large enough on both axes that 3
+  // anchors per side stay comfortably spaced — full 16-point grid.
+  const CLUSTER_ANCHORS = ["n","nne","ne","ene","e","ese","se","sse","s","ssw","sw","wsw","w","wnw","nw","nnw"];
+  const CARDINAL_ANCHORS = ["n","ne","e","se","s","sw","w","nw"];
+
+  // Flat-top hexagon (Mermaid's `{{...}}`): 6 vertices forming a <=> outline.
+  // Returns the local-frame point for a compass anchor:
+  //   nw/ne = top edge corners, n = top edge midpoint
+  //   sw/se = bottom edge corners, s = bottom edge midpoint
+  //   e     = right point vertex, w = left point vertex
+  // Returns null if `points` doesn't look like a flat-top hexagon.
+  function hexagonAnchorPoint(points, name) {
+    const EPS = 0.5;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const p of points) {
+      if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+    }
+    const topPts   = points.filter(p => Math.abs(p.y - minY) < EPS).sort((a, b) => a.x - b.x);
+    const botPts   = points.filter(p => Math.abs(p.y - maxY) < EPS).sort((a, b) => a.x - b.x);
+    const leftPt   = points.find(p => Math.abs(p.x - minX) < EPS);
+    const rightPt  = points.find(p => Math.abs(p.x - maxX) < EPS);
+    if (topPts.length !== 2 || botPts.length !== 2 || !leftPt || !rightPt) return null;
+    switch (name) {
+      case "nw": return topPts[0];
+      case "n":  return { x: (topPts[0].x + topPts[1].x) / 2, y: minY };
+      case "ne": return topPts[1];
+      case "e":  return rightPt;
+      case "se": return botPts[1];
+      case "s":  return { x: (botPts[0].x + botPts[1].x) / 2, y: maxY };
+      case "sw": return botPts[0];
+      case "w":  return leftPt;
+      default:   return null;
+    }
+  }
+
+  // List of anchors valid for this shape (in render order).
+  // Polygons (diamond, hexagon, subroutine in Mermaid v10) expose 8 cardinals
+  // computed via ray-cast on the actual outline — the rect 16-anchor scheme
+  // would place corner anchors outside non-rectangular shapes.
+  function anchorsForShape(n) {
+    const sh = n && n.shape;
+    if (!sh) return [];
+    if (sh.type === "circle" || sh.type === "ellipse") return CARDINAL_ANCHORS;
+    if (sh.type === "polygon" && sh.points && sh.points.length >= 3) return CARDINAL_ANCHORS;
+    // rect: clusters get the denser 16-point grid; plain nodes get the 12-point one.
+    if (n.isCluster) return CLUSTER_ANCHORS;
+    return RECT_ANCHORS;
+  }
+
+  // Local-frame point and outward unit normal for a given anchor on a shape.
+  // Returns null if the name isn't valid for this shape.
+  function anchorPoint(n, name) {
+    if (!name) return null;
+    const dir = ANCHOR_DIRS[name];
+    if (!dir) return null;
+    const sh = n.shape;
+    const list = anchorsForShape(n);
+    if (list.indexOf(name) === -1) return null;
+    if (sh.type === "circle" && sh.r > 0) {
+      // Use the unit normal (nx, ny) so diagonals land on the circumference,
+      // not on the bbox corner (dir.dx/dy for diagonals are ±1, ±1 — length √2).
+      return { x: sh.cx + sh.r * dir.nx, y: sh.cy + sh.r * dir.ny, nx: dir.nx, ny: dir.ny };
+    }
+    if (sh.type === "ellipse" && sh.rx > 0 && sh.ry > 0) {
+      return { x: sh.cx + sh.rx * dir.nx, y: sh.cy + sh.ry * dir.ny, nx: dir.nx, ny: dir.ny };
+    }
+    if (sh.type === "polygon" && sh.points.length >= 3) {
+      // Hexagon (flat-top, 6 vertices): map compass to actual vertices instead
+      // of ray-casting at 45° (which would land on the slanted edges, between
+      // a corner and the side midpoint). The visual <=> shape has 4 "corner"
+      // vertices on the top/bottom edges plus 2 "point" vertices on the sides.
+      if (sh.points.length === 6) {
+        const hp = hexagonAnchorPoint(sh.points, name);
+        if (hp) return { x: hp.x, y: hp.y, nx: dir.nx, ny: dir.ny };
+      }
+      // Ray from polygon centroid (approx via bbox center) hits the outline
+      // exactly; corner cardinals land on edge midpoints or vertices depending
+      // on the polygon's geometry, which is what we want visually.
+      const hit = rayPolygonHit(n.centerLocal, { x: dir.dx, y: dir.dy }, sh.points);
+      if (hit) return { x: hit.x, y: hit.y, nx: dir.nx, ny: dir.ny };
+      return null;
+    }
+    // rect (and cluster bg rect): dir.dx/dy already use ±1 / ±0.5 along bbox.
+    return {
+      x: n.centerLocal.x + n.halfW * dir.dx,
+      y: n.centerLocal.y + n.halfH * dir.dy,
+      nx: dir.nx, ny: dir.ny,
+    };
+  }
+
   function endpointInfo(id) {
     if (nodeMap[id]) return nodeMap[id];
     const c = clusterMap[id];
@@ -909,6 +1113,7 @@
         halfW: rw / 2,
         halfH: rh / 2,
         shape: { type: "rect" },
+        isCluster: true,
       };
     }
     // Polygon/path bg fallback — getBBox is in g-local coords.
@@ -920,6 +1125,7 @@
       halfW: bb.width / 2,
       halfH: bb.height / 2,
       shape: { type: "rect" },
+      isCluster: true,
     };
   }
 
@@ -944,8 +1150,13 @@
     const scx = sT.x + sn.centerLocal.x, scy = sT.y + sn.centerLocal.y;
     const tcx = tT.x + tn.centerLocal.x, tcy = tT.y + tn.centerLocal.y;
     const dx = tcx - scx, dy = tcy - scy;
-    const sBoundary = findShapeBoundary(sn, dx, dy);
-    const tBoundary = findShapeBoundary(tn, -dx, -dy);
+    // Explicit hotspot anchors (cosmetic layout layer) take precedence over
+    // the auto center-to-center ray intersection. Each endpoint is independent.
+    const anchors = edgeAnchors[edgeKey(edge)] || {};
+    const sAnchor = anchors.source ? anchorPoint(sn, anchors.source) : null;
+    const tAnchor = anchors.target ? anchorPoint(tn, anchors.target) : null;
+    const sBoundary = sAnchor || findShapeBoundary(sn, dx, dy);
+    const tBoundary = tAnchor || findShapeBoundary(tn, -dx, -dy);
     // Endpoints in WORLD coords first…
     const sxW = sT.x + sBoundary.x, syW = sT.y + sBoundary.y;
     const txW = tT.x + tBoundary.x, tyW = tT.y + tBoundary.y;
@@ -956,19 +1167,26 @@
     const tx = txW - eFrame.x, ty = tyW - eFrame.y;
     const sIsCluster = !!clusterMap[edge.source];
     const tIsCluster = !!clusterMap[edge.target];
+    // Use bezier when either endpoint needs a pinned tangent (cluster border
+    // or explicit anchor); otherwise straight line.
+    const useBezier = sIsCluster || tIsCluster || !!sAnchor || !!tAnchor;
     let labelX, labelY;
-    if (sIsCluster || tIsCluster) {
+    if (useBezier) {
       const dist = Math.hypot(tx - sx, ty - sy) || 1;
       const cl = Math.max(40, Math.min(200, dist * 0.3));
       let snx, sny;
-      if (sIsCluster) {
+      if (sAnchor) {
+        snx = sAnchor.nx; sny = sAnchor.ny;
+      } else if (sIsCluster) {
         const nrm = clusterOutwardNormal(sn, sBoundary);
         snx = nrm.x; sny = nrm.y;
       } else {
         snx = (tx - sx) / dist; sny = (ty - sy) / dist;
       }
       let tnx, tny;
-      if (tIsCluster) {
+      if (tAnchor) {
+        tnx = tAnchor.nx; tny = tAnchor.ny;
+      } else if (tIsCluster) {
         const nrm = clusterOutwardNormal(tn, tBoundary);
         tnx = nrm.x; tny = nrm.y;
       } else {
@@ -993,9 +1211,104 @@
       const lFrame = getElementParentTranslate(edge.label);
       edge.label.setAttribute("transform", `translate(${labelXW - lFrame.x}, ${labelYW - lFrame.y})`);
     }
+    // Keep hotspot dots glued to the source/target shapes during drag.
+    if (selectedEdgeKey === edgeKey(edge)) renderEdgeHotspots();
   }
 
-  function rerouteAllEdges() { for (const e of edges) rerouteEdge(e); }
+  function rerouteAllEdges() {
+    for (const e of edges) rerouteEdge(e);
+    renderEdgeHotspots();
+  }
+
+  // Render the hotspot overlay for the currently selected edge. No-op when
+  // nothing is selected or the source/target shapes don't support anchors.
+  // World coords live in the svg's top-level user space, so we append at the
+  // <svg> root (same trick as g.peer-selections).
+  function renderEdgeHotspots() {
+    const svgEl = diagramEl && diagramEl.querySelector("svg");
+    if (!svgEl) return;
+    const old = svgEl.querySelector(":scope > g.edge-hotspots");
+    if (old) old.remove();
+    if (!selectedEdgeKey) return;
+    // Spectator mode: no writes possible, so hide the affordance.
+    if (!canWrite) return;
+    const edge = findEdgeByKey(selectedEdgeKey);
+    if (!edge) return;
+    const sn = endpointInfo(edge.source);
+    const tn = endpointInfo(edge.target);
+    if (!sn || !tn) return;
+    const sAnchors = anchorsForShape(sn);
+    const tAnchors = anchorsForShape(tn);
+    if (sAnchors.length === 0 && tAnchors.length === 0) return;
+    const SVG_NS = "http://www.w3.org/2000/svg";
+    const overlay = document.createElementNS(SVG_NS, "g");
+    overlay.setAttribute("class", "edge-hotspots");
+    svgEl.appendChild(overlay);
+    const anchors = edgeAnchors[selectedEdgeKey] || {};
+    const sT = getWorldTranslate(sn.g);
+    const tT = getWorldTranslate(tn.g);
+    drawHotspotSet(overlay, sn, sT, sAnchors, "source", anchors.source);
+    drawHotspotSet(overlay, tn, tT, tAnchors, "target", anchors.target);
+  }
+
+  function drawHotspotSet(overlay, n, T, list, endpoint, activeName) {
+    const SVG_NS = "http://www.w3.org/2000/svg";
+    for (const name of list) {
+      const pt = anchorPoint(n, name);
+      if (!pt) continue;
+      const cx = T.x + pt.x, cy = T.y + pt.y;
+      // Transparent larger hit target for easier clicking.
+      const hit = document.createElementNS(SVG_NS, "circle");
+      hit.setAttribute("class", "hotspot-hit");
+      hit.setAttribute("cx", cx);
+      hit.setAttribute("cy", cy);
+      hit.setAttribute("r", 9);
+      // Visible dot.
+      const dot = document.createElementNS(SVG_NS, "circle");
+      dot.setAttribute("class", "hotspot" + (name === activeName ? " active" : ""));
+      dot.setAttribute("cx", cx);
+      dot.setAttribute("cy", cy);
+      dot.setAttribute("r", name === activeName ? 5.5 : 4);
+      const onClick = (ev) => {
+        ev.stopPropagation();
+        ev.preventDefault();
+        toggleEdgeAnchor(endpoint, name);
+      };
+      hit.addEventListener("click", onClick);
+      dot.addEventListener("click", onClick);
+      overlay.appendChild(hit);
+      overlay.appendChild(dot);
+    }
+  }
+
+  // Click handler for a hotspot dot: pin/unpin the edge endpoint to the named
+  // anchor. Clicking the currently active anchor returns to auto routing.
+  function toggleEdgeAnchor(endpoint, name) {
+    if (connectingState) return;
+    if (!selectedEdgeKey) return;
+    if (!canWrite || !lockHeldByMe()) return;
+    const edge = findEdgeByKey(selectedEdgeKey);
+    if (!edge) return;
+    const key = selectedEdgeKey;
+    const cur = edgeAnchors[key] || {};
+    const next = { source: cur.source, target: cur.target };
+    if (next[endpoint] === name) {
+      delete next[endpoint];
+    } else {
+      next[endpoint] = name;
+    }
+    if (!next.source && !next.target) {
+      delete edgeAnchors[key];
+    } else {
+      if (!next.source) delete next.source;
+      if (!next.target) delete next.target;
+      edgeAnchors[key] = next;
+    }
+    markDirtyLayout();
+    rerouteEdge(edge);
+    renderEdgeHotspots();
+    pushHistory();
+  }
 
   function recomputeViewBoxFromNodes(svgEl) {
     const ids = Object.keys(nodeMap);
@@ -2913,6 +3226,7 @@
       delete positions[oldId];
       markDirtyLayout();
     }
+    if (newId !== oldId) renameIdInEdgeAnchors(oldId, newId);
     if (selectedClusterId === oldId) selectedClusterId = newId;
     currentSource = next;
     markDirtySource();
@@ -3655,6 +3969,7 @@
     const lbl = `${edge.source} → ${edge.target}` + (edge.ordinal > 0 ? ` (#${edge.ordinal + 1})` : "");
     setStatus(`selected edge: ${lbl}`);
     updateToolbarState();
+    renderEdgeHotspots();
     broadcastSelection();
   }
   function deselectEdge() {
@@ -3664,6 +3979,7 @@
     }
     selectedEdgeKey = null;
     updateToolbarState();
+    renderEdgeHotspots();
     broadcastSelection();
   }
 
@@ -3915,6 +4231,7 @@
       delete positions[oldId];
       markDirtyLayout();
     }
+    if (newId !== oldId) renameIdInEdgeAnchors(oldId, newId);
     // Selection follows the renamed node.
     if (selectedNodeIds.has(oldId)) {
       selectedNodeIds.delete(oldId);
@@ -3981,13 +4298,14 @@
 
     const snapSource = currentSource;
     const snapPositions = JSON.parse(JSON.stringify(positions));
+    const snapEdgeAnchors = JSON.parse(JSON.stringify(edgeAnchors));
     const expected = currentRevisionId;
     try {
       const { status, json } = await api("PATCH",
         `/api/diagrams/${encodeURIComponent(slug)}/draft`,
         {
           source: snapSource,
-          layout: { version: 1, positions: snapPositions },
+          layout: { version: 1, positions: snapPositions, edgeAnchors: snapEdgeAnchors },
           expected_revision_id: expected,
         });
       if (status === 200 && json) {
@@ -4023,7 +4341,7 @@
         headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
         body: JSON.stringify({
           source: currentSource,
-          layout: { version: 1, positions },
+          layout: { version: 1, positions, edgeAnchors },
           expected_revision_id: currentRevisionId,
         }),
       });
@@ -4048,7 +4366,7 @@
     try {
       const { status, json } = await api("POST", `/api/diagrams/${encodeURIComponent(slug)}`, {
         source: currentSource,
-        layout: { version: 1, positions },
+        layout: { version: 1, positions, edgeAnchors },
         expected_revision_id: currentRevisionId,
       });
       if (status === 200 && json) {

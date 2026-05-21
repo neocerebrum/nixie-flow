@@ -78,6 +78,11 @@ final class Json
                 $v['positions'] = new \stdClass();
             }
         }
+        if (is_array($v) && array_key_exists('edgeAnchors', $v)) {
+            if (is_array($v['edgeAnchors']) && $v['edgeAnchors'] === []) {
+                $v['edgeAnchors'] = new \stdClass();
+            }
+        }
         $encoded = json_encode($v, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         if ($encoded === false) {
             Response::error("Field $key is not JSON-encodable", 400);

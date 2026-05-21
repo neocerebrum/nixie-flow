@@ -341,6 +341,33 @@ body.deleting g.cluster:hover > path:first-of-type {
     stroke-width: 3.5px !important;
 }
 
+/* Edge hotspot anchors: dots overlaid on source/target shapes when an edge
+   is selected. Click pins the edge endpoint to that point on the outline.
+   The active (pinned) anchor is filled red; idle anchors are hollow. */
+#diagram g.edge-hotspots { pointer-events: none; }
+#diagram g.edge-hotspots .hotspot {
+    pointer-events: all;
+    cursor: pointer;
+    fill: rgba(46, 52, 64, 0.85);
+    stroke: #88c0d0;
+    stroke-width: 1.5px;
+    transition: r 80ms ease-out, fill 80ms ease-out, stroke 80ms ease-out;
+}
+#diagram g.edge-hotspots .hotspot:hover {
+    fill: #88c0d0;
+    stroke: #c0392b;
+}
+#diagram g.edge-hotspots .hotspot.active {
+    fill: #c0392b;
+    stroke: #c0392b;
+}
+#diagram g.edge-hotspots .hotspot-hit {
+    pointer-events: all;
+    cursor: pointer;
+    fill: transparent;
+    stroke: none;
+}
+
 /* Peer selections (other viewers' current selection, shared via presence).
    Rendered as an overlay <g class="peer-selections"> with sibling rects/paths
    above the diagram. Pointer-inert so it never steals clicks. Colors come

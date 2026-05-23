@@ -18,9 +18,18 @@ body { margin: 0; overflow: hidden; display: flex; flex-direction: column; }
     padding: 4px 8px; border-radius: 4px;
 }
 .ed-back:hover { background: #1c242e; text-decoration: none; }
-.lock-banner h1#diagramTitle {
-    font-size: 14px; margin: 0; font-weight: 600; color: #88c0d0;
-    max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+/* Document title overlay: centered top of canvas, non-interactive */
+.canvas-title {
+    position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+    z-index: 5; margin: 0;
+    font-size: 14px; font-weight: 600; color: #88c0d0;
+    background: rgba(21, 27, 35, 0.85);
+    border: 1px solid #2a3441; border-radius: 4px;
+    padding: 5px 14px;
+    backdrop-filter: blur(2px);
+    max-width: min(60%, 520px);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    pointer-events: none;
 }
 .lock-banner .lock-sep {
     width: 1px; height: 18px; background: #3a4551; margin: 0 4px;
@@ -366,6 +375,42 @@ body.deleting g.cluster:hover > path:first-of-type {
     cursor: pointer;
     fill: transparent;
     stroke: none;
+}
+
+/* Edge bend: two cubic-Bezier control-point handles on the selected edge,
+   each linked to its endpoint by a thin tangent guide line (Illustrator-style).
+   "straight" = that handle's perpendicular offset is 0 (flat tangent at that
+   endpoint); "snapping" = user is holding Ctrl/Cmd and within the snap zone. */
+#diagram g.edge-bend .edge-bend-tangent {
+    pointer-events: none;
+    fill: none;
+    stroke: #4c566a;
+    stroke-width: 1px;
+    stroke-dasharray: 3 3;
+    opacity: 0.7;
+}
+#diagram g.edge-bend .edge-bend-hit {
+    pointer-events: all;
+    cursor: grab;
+    fill: transparent;
+    stroke: none;
+}
+#diagram g.edge-bend .edge-bend-dot {
+    pointer-events: all;
+    cursor: grab;
+    fill: rgba(46, 52, 64, 0.85);
+    stroke: #88c0d0;
+    stroke-width: 1.5px;
+    transition: fill 80ms ease-out, stroke 80ms ease-out;
+}
+#diagram g.edge-bend .edge-bend-dot:hover { fill: #88c0d0; }
+#diagram g.edge-bend .edge-bend-dot.straight {
+    fill: rgba(46, 52, 64, 0.85);
+    stroke: #4c566a;
+}
+#diagram g.edge-bend .edge-bend-dot.snapping {
+    fill: #c0392b;
+    stroke: #c0392b;
 }
 
 /* Peer selections (other viewers' current selection, shared via presence).

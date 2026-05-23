@@ -135,6 +135,15 @@
   // instead of the auto ray-intersection. Lives only in the layout layer.
   let edgeAnchors = (bootstrap.layout && bootstrap.layout.edgeAnchors) || {};
   if (Array.isArray(edgeAnchors)) edgeAnchors = {};
+  // edgeBend: { "src|tgt|ord": { t, n } } — single user-defined control point.
+  // Stored in chord-relative coords so the curve "follows" the endpoints when
+  // nodes move: t∈[0,1] is the parameter along the src→tgt chord, n is the
+  // signed perpendicular offset in SVG world units. n=0 ⇒ straight line.
+  let edgeBend = (bootstrap.layout && bootstrap.layout.edgeBend) || {};
+  if (Array.isArray(edgeBend)) edgeBend = {};
+  // Promote legacy quadratic bends to cubic on initial load (idempotent).
+  // `migrateAllBends` is a function declaration so it's hoisted within this IIFE.
+  migrateAllBends();
   let currentRevisionId = bootstrap.revision_id;
   let currentTitle = bootstrap.title;
   const slug = bootstrap.slug;
@@ -394,6 +403,7 @@
       source: currentSource,
       positions: JSON.parse(JSON.stringify(positions)),
       edgeAnchors: JSON.parse(JSON.stringify(edgeAnchors)),
+      edgeBend: JSON.parse(JSON.stringify(edgeBend)),
     });
     if (history.length > HISTORY_CAP) {
       history = history.slice(history.length - HISTORY_CAP);
@@ -413,6 +423,8 @@
     currentSource = snap.source;
     positions = JSON.parse(JSON.stringify(snap.positions));
     edgeAnchors = JSON.parse(JSON.stringify(snap.edgeAnchors || {}));
+    edgeBend = JSON.parse(JSON.stringify(snap.edgeBend || {}));
+    migrateAllBends();
     markDirtySource(); markDirtyLayout();
     try {
       await renderDiagram();
@@ -801,30 +813,38 @@
     for (const k of Object.keys(edgeAnchors)) {
       if (!live.has(k)) { delete edgeAnchors[k]; changed = true; }
     }
+    for (const k of Object.keys(edgeBend)) {
+      if (!live.has(k)) { delete edgeBend[k]; changed = true; }
+    }
     if (changed) markDirtyLayout();
   }
 
-  // Re-key edgeAnchors entries whose source or target matched oldId.
+  // Re-key edgeAnchors/edgeBend entries whose source or target matched oldId.
   // Called from the rename flows that already migrate positions[oldId].
   function renameIdInEdgeAnchors(oldId, newId) {
     if (oldId === newId) return;
-    const updated = {};
     let changed = false;
-    for (const [k, v] of Object.entries(edgeAnchors)) {
-      const parts = k.split("|");
-      if (parts.length !== 3) { updated[k] = v; continue; }
-      let [s, t, o] = parts;
-      let touched = false;
-      if (s === oldId) { s = newId; touched = true; }
-      if (t === oldId) { t = newId; touched = true; }
-      const nk = touched ? `${s}|${t}|${o}` : k;
-      updated[nk] = v;
-      if (touched) changed = true;
-    }
-    if (changed) {
-      edgeAnchors = updated;
-      markDirtyLayout();
-    }
+    const rekey = (obj) => {
+      const updated = {};
+      let touchedAny = false;
+      for (const [k, v] of Object.entries(obj)) {
+        const parts = k.split("|");
+        if (parts.length !== 3) { updated[k] = v; continue; }
+        let [s, t, o] = parts;
+        let touched = false;
+        if (s === oldId) { s = newId; touched = true; }
+        if (t === oldId) { t = newId; touched = true; }
+        const nk = touched ? `${s}|${t}|${o}` : k;
+        updated[nk] = v;
+        if (touched) touchedAny = true;
+      }
+      return { updated, touchedAny };
+    };
+    const a = rekey(edgeAnchors);
+    if (a.touchedAny) { edgeAnchors = a.updated; changed = true; }
+    const b = rekey(edgeBend);
+    if (b.touchedAny) { edgeBend = b.updated; changed = true; }
+    if (changed) markDirtyLayout();
   }
 
   function nodeCenter(id) {
@@ -1164,6 +1184,58 @@
     }
   }
 
+  // Chord-relative bend storage helpers.
+  //
+  // Schema: cubic Bezier with TWO control points per edge, stored as
+  // `{t1, n1, t2, n2}` — each (t,n) is a chord-relative position (t along
+  // src→tgt, n perpendicular signed offset in SVG world units). The two
+  // handles ARE the cubic's cp1/cp2 (Illustrator-style "magnet" model).
+  //
+  // Default neutral shape (straight line) = {t1: 1/3, n1: 0, t2: 2/3, n2: 0}.
+  const BEND_DEFAULT = Object.freeze({ t1: 1/3, n1: 0, t2: 2/3, n2: 0 });
+
+  // Legacy quadratic bends `{t, n}` (from the single-cp prototype) are
+  // promoted on read to mathematically equivalent cubics via degree elevation:
+  //   cp1 = P0 + 2/3·(cp − P0)  ⇒  chord-relative (2t/3, 2n/3)
+  //   cp2 = P2 + 2/3·(cp − P2)  ⇒  chord-relative ((1+2t)/3, 2n/3)
+  function migrateBend(b) {
+    if (!b || typeof b !== 'object') return null;
+    if (typeof b.t1 === 'number' && typeof b.t2 === 'number') return b;
+    if (typeof b.t === 'number' && typeof b.n === 'number') {
+      const t = b.t, n = b.n;
+      return { t1: 2*t/3, n1: 2*n/3, t2: (1+2*t)/3, n2: 2*n/3 };
+    }
+    return null;
+  }
+  function migrateAllBends() {
+    for (const k of Object.keys(edgeBend)) {
+      const m = migrateBend(edgeBend[k]);
+      if (m) edgeBend[k] = m;
+      else delete edgeBend[k];
+    }
+  }
+
+  // World coords of one of the two cubic control points (which = 1 | 2).
+  function bendCpWorld(sxW, syW, txW, tyW, bend, which) {
+    const dx = txW - sxW, dy = tyW - syW;
+    const L = Math.hypot(dx, dy) || 1;
+    const t = which === 1 ? bend.t1 : bend.t2;
+    const n = which === 1 ? bend.n1 : bend.n2;
+    const ax = sxW + dx * t, ay = syW + dy * t;
+    const px = -dy / L, py = dx / L;
+    return { x: ax + px * n, y: ay + py * n };
+  }
+  // Inverse: given a world point, return its chord-relative {t, n}.
+  function worldToBend(sxW, syW, txW, tyW, hx, hy) {
+    const dx = txW - sxW, dy = tyW - syW;
+    const L2 = dx * dx + dy * dy || 1;
+    const L = Math.sqrt(L2);
+    const vx = hx - sxW, vy = hy - syW;
+    const t = (vx * dx + vy * dy) / L2;
+    const n = (-dy * vx + dx * vy) / L;
+    return { t, n };
+  }
+
   function rerouteEdge(edge) {
     const sn = endpointInfo(edge.source);
     const tn = endpointInfo(edge.target);
@@ -1190,11 +1262,20 @@
     const tx = txW - eFrame.x, ty = tyW - eFrame.y;
     const sIsCluster = !!clusterMap[edge.source];
     const tIsCluster = !!clusterMap[edge.target];
-    // Use bezier when either endpoint needs a pinned tangent (cluster border
-    // or explicit anchor); otherwise straight line.
-    const useBezier = sIsCluster || tIsCluster || !!sAnchor || !!tAnchor;
+    const bend = edgeBend[edgeKey(edge)] || null;
     let labelX, labelY;
-    if (useBezier) {
+    if (bend) {
+      // User-defined cubic bend overrides auto routing. The two handles ARE
+      // cp1/cp2 (Illustrator-style "magnet" model): drag each independently
+      // for tangent control at each endpoint, S-curves, etc.
+      const c1 = bendCpWorld(sxW, syW, txW, tyW, bend, 1);
+      const c2 = bendCpWorld(sxW, syW, txW, tyW, bend, 2);
+      const c1x = c1.x - eFrame.x, c1y = c1.y - eFrame.y;
+      const c2x = c2.x - eFrame.x, c2y = c2.y - eFrame.y;
+      edge.path.setAttribute("d", `M ${sx},${sy} C ${c1x},${c1y} ${c2x},${c2y} ${tx},${ty}`);
+      labelX = (sx + 3 * c1x + 3 * c2x + tx) / 8;
+      labelY = (sy + 3 * c1y + 3 * c2y + ty) / 8;
+    } else if (sIsCluster || tIsCluster || sAnchor || tAnchor) {
       const dist = Math.hypot(tx - sx, ty - sy) || 1;
       const cl = Math.max(40, Math.min(200, dist * 0.3));
       let snx, sny;
@@ -1252,6 +1333,7 @@
     if (!svgEl) return;
     const old = svgEl.querySelector(":scope > g.edge-hotspots");
     if (old) old.remove();
+    renderEdgeBendHandle();
     if (!selectedEdgeKey) return;
     // Spectator mode: no writes possible, so hide the affordance.
     if (!canWrite) return;
@@ -1272,6 +1354,191 @@
     const tT = getWorldTranslate(tn.g);
     drawHotspotSet(overlay, sn, sT, sAnchors, "source", anchors.source);
     drawHotspotSet(overlay, tn, tT, tAnchors, "target", anchors.target);
+  }
+
+  // Compute the world endpoints used by rerouteEdge — shared by the bend
+  // handle render + drag init so the handles sit exactly where the path does.
+  function edgeWorldEndpoints(edge) {
+    const sn = endpointInfo(edge.source);
+    const tn = endpointInfo(edge.target);
+    if (!sn || !tn) return null;
+    const sT = getWorldTranslate(sn.g);
+    const tT = getWorldTranslate(tn.g);
+    const scx = sT.x + sn.centerLocal.x, scy = sT.y + sn.centerLocal.y;
+    const tcx = tT.x + tn.centerLocal.x, tcy = tT.y + tn.centerLocal.y;
+    const dx = tcx - scx, dy = tcy - scy;
+    const anchors = edgeAnchors[edgeKey(edge)] || {};
+    const sAnchor = anchors.source ? anchorPoint(sn, anchors.source) : null;
+    const tAnchor = anchors.target ? anchorPoint(tn, anchors.target) : null;
+    const sBoundary = sAnchor || findShapeBoundary(sn, dx, dy);
+    const tBoundary = tAnchor || findShapeBoundary(tn, -dx, -dy);
+    return {
+      sxW: sT.x + sBoundary.x, syW: sT.y + sBoundary.y,
+      txW: tT.x + tBoundary.x, tyW: tT.y + tBoundary.y,
+    };
+  }
+
+  // Render the two cubic-bend handles + their tangent guide lines for the
+  // selected edge. When no edgeBend entry exists yet, handles sit at the
+  // neutral defaults (t1=1/3, n1=0, t2=2/3, n2=0): grabbing one promotes it
+  // into a real entry. Ctrl/Cmd while dragging snaps the dragged handle's
+  // perpendicular offset to 0 (8px-screen threshold) ⇒ that endpoint's
+  // tangent goes flat.
+  function renderEdgeBendHandle() {
+    const svgEl = diagramEl && diagramEl.querySelector("svg");
+    if (!svgEl) return;
+    const old = svgEl.querySelector(":scope > g.edge-bend");
+    if (old) old.remove();
+    if (!selectedEdgeKey) return;
+    if (!canWrite) return;
+    const edge = findEdgeByKey(selectedEdgeKey);
+    if (!edge) return;
+    const ep = edgeWorldEndpoints(edge);
+    if (!ep) return;
+    const { sxW, syW, txW, tyW } = ep;
+    const bend = edgeBend[selectedEdgeKey] || BEND_DEFAULT;
+    const c1 = bendCpWorld(sxW, syW, txW, tyW, bend, 1);
+    const c2 = bendCpWorld(sxW, syW, txW, tyW, bend, 2);
+    const hasEntry = !!edgeBend[selectedEdgeKey];
+    const isStraight1 = !hasEntry || Math.abs(bend.n1) < 0.01;
+    const isStraight2 = !hasEntry || Math.abs(bend.n2) < 0.01;
+
+    const SVG_NS = "http://www.w3.org/2000/svg";
+    const overlay = document.createElementNS(SVG_NS, "g");
+    overlay.setAttribute("class", "edge-bend");
+    svgEl.appendChild(overlay);
+
+    // Tangent guide lines: source→cp1 and target→cp2. Pointer-inert so they
+    // don't intercept clicks on the dots or the edge path beneath them.
+    const mkTangent = (x1, y1, x2, y2) => {
+      const ln = document.createElementNS(SVG_NS, "line");
+      ln.setAttribute("class", "edge-bend-tangent");
+      ln.setAttribute("x1", x1); ln.setAttribute("y1", y1);
+      ln.setAttribute("x2", x2); ln.setAttribute("y2", y2);
+      return ln;
+    };
+    overlay.appendChild(mkTangent(sxW, syW, c1.x, c1.y));
+    overlay.appendChild(mkTangent(txW, tyW, c2.x, c2.y));
+
+    const mkHandle = (which, cp, isStraight) => {
+      const hit = document.createElementNS(SVG_NS, "circle");
+      hit.setAttribute("class", "edge-bend-hit");
+      hit.setAttribute("data-cp", String(which));
+      hit.setAttribute("cx", cp.x); hit.setAttribute("cy", cp.y);
+      hit.setAttribute("r", 10);
+      const dot = document.createElementNS(SVG_NS, "circle");
+      dot.setAttribute("class", "edge-bend-dot" + (isStraight ? " straight" : ""));
+      dot.setAttribute("data-cp", String(which));
+      dot.setAttribute("cx", cp.x); dot.setAttribute("cy", cp.y);
+      dot.setAttribute("r", 5);
+      overlay.appendChild(hit);
+      overlay.appendChild(dot);
+      const start = (ev) => {
+        if (connectingState) return;
+        if (!lockHeldByMe()) return;
+        if (ev.pointerType === "mouse" && ev.button !== 0) return;
+        ev.stopPropagation();
+        ev.preventDefault();
+        beginBendDrag(ev, selectedEdgeKey, which);
+      };
+      hit.addEventListener("pointerdown", start);
+      dot.addEventListener("pointerdown", start);
+    };
+    mkHandle(1, c1, isStraight1);
+    mkHandle(2, c2, isStraight2);
+  }
+
+  // Screen-space snap threshold (px) for n→0 when Ctrl/Cmd is held — mirrors
+  // the modifier convention used by node-drag snap (editor.js:1715).
+  const BEND_SNAP_SCREEN_PX = 8;
+
+  function beginBendDrag(downEv, key, which) {
+    const svgEl = diagramEl && diagramEl.querySelector("svg");
+    if (!svgEl) return;
+    const edge = findEdgeByKey(key);
+    if (!edge) return;
+    const ep = edgeWorldEndpoints(edge);
+    if (!ep) return;
+    // World endpoints captured up-front; we hold them constant during the
+    // drag (nodes can't move while we're dragging a bend handle).
+    const { sxW, syW, txW, tyW } = ep;
+    let touched = false;
+
+    const onMove = (ev) => {
+      ev.preventDefault();
+      const p = screenToSvg(svgEl, ev.clientX, ev.clientY);
+      const { t, n } = worldToBend(sxW, syW, txW, tyW, p.x, p.y);
+      let finalN = n;
+      let snapping = false;
+      if (ev.ctrlKey || ev.metaKey) {
+        const ctm = svgEl.getScreenCTM();
+        const scale = ctm ? Math.hypot(ctm.a, ctm.b) : 1;
+        if (Math.abs(n) * scale < BEND_SNAP_SCREEN_PX) {
+          finalN = 0;
+          snapping = true;
+        }
+      }
+      // Start from current bend (or defaults) and update only the dragged pair.
+      const cur = edgeBend[key] || { ...BEND_DEFAULT };
+      const next = { ...cur };
+      if (which === 1) { next.t1 = t; next.n1 = finalN; }
+      else { next.t2 = t; next.n2 = finalN; }
+      edgeBend[key] = next;
+      touched = true;
+      rerouteEdge(edge);
+      // Live-update overlay positions/classes without rebuilding it.
+      const overlay = svgEl.querySelector(":scope > g.edge-bend");
+      if (overlay) {
+        const c1 = bendCpWorld(sxW, syW, txW, tyW, next, 1);
+        const c2 = bendCpWorld(sxW, syW, txW, tyW, next, 2);
+        const tans = overlay.querySelectorAll(".edge-bend-tangent");
+        if (tans[0]) { tans[0].setAttribute("x2", c1.x); tans[0].setAttribute("y2", c1.y); }
+        if (tans[1]) { tans[1].setAttribute("x2", c2.x); tans[1].setAttribute("y2", c2.y); }
+        for (const el of overlay.querySelectorAll(`[data-cp="1"]`)) {
+          el.setAttribute("cx", c1.x); el.setAttribute("cy", c1.y);
+        }
+        for (const el of overlay.querySelectorAll(`[data-cp="2"]`)) {
+          el.setAttribute("cx", c2.x); el.setAttribute("cy", c2.y);
+        }
+        const dot1 = overlay.querySelector(`.edge-bend-dot[data-cp="1"]`);
+        const dot2 = overlay.querySelector(`.edge-bend-dot[data-cp="2"]`);
+        if (dot1) {
+          dot1.classList.toggle("straight", Math.abs(next.n1) < 0.01);
+          dot1.classList.toggle("snapping", snapping && which === 1);
+        }
+        if (dot2) {
+          dot2.classList.toggle("straight", Math.abs(next.n2) < 0.01);
+          dot2.classList.toggle("snapping", snapping && which === 2);
+        }
+      }
+      setStatus(snapping
+        ? `bend snap: tangente ${which === 1 ? "sorgente" : "destinazione"} flat (Ctrl)`
+        : `bend cp${which}: t=${t.toFixed(2)} n=${finalN.toFixed(1)}`, false);
+    };
+    const onUp = () => {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      document.removeEventListener("pointercancel", onUp);
+      if (touched) {
+        // Collapse to "no entry" when both handles are back at their neutral
+        // defaults — keeps storage clean and lets the edge fall through to
+        // auto-routing on next load.
+        const cur = edgeBend[key];
+        if (cur
+          && Math.abs(cur.n1) < 0.01 && Math.abs(cur.n2) < 0.01
+          && Math.abs(cur.t1 - BEND_DEFAULT.t1) < 0.01
+          && Math.abs(cur.t2 - BEND_DEFAULT.t2) < 0.01) {
+          delete edgeBend[key];
+          rerouteEdge(edge);
+        }
+        markDirtyLayout();
+        pushHistory();
+        renderEdgeBendHandle();
+      }
+    };
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+    document.addEventListener("pointercancel", onUp);
   }
 
   function drawHotspotSet(overlay, n, T, list, endpoint, activeName) {
@@ -4322,13 +4589,14 @@
     const snapSource = currentSource;
     const snapPositions = JSON.parse(JSON.stringify(positions));
     const snapEdgeAnchors = JSON.parse(JSON.stringify(edgeAnchors));
+    const snapEdgeBend = JSON.parse(JSON.stringify(edgeBend));
     const expected = currentRevisionId;
     try {
       const { status, json } = await api("PATCH",
         `/api/diagrams/${encodeURIComponent(slug)}/draft`,
         {
           source: snapSource,
-          layout: { version: 1, positions: snapPositions, edgeAnchors: snapEdgeAnchors },
+          layout: { version: 1, positions: snapPositions, edgeAnchors: snapEdgeAnchors, edgeBend: snapEdgeBend },
           expected_revision_id: expected,
         });
       if (status === 200 && json) {
@@ -4364,7 +4632,7 @@
         headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
         body: JSON.stringify({
           source: currentSource,
-          layout: { version: 1, positions, edgeAnchors },
+          layout: { version: 1, positions, edgeAnchors, edgeBend },
           expected_revision_id: currentRevisionId,
         }),
       });
@@ -4389,7 +4657,7 @@
     try {
       const { status, json } = await api("POST", `/api/diagrams/${encodeURIComponent(slug)}`, {
         source: currentSource,
-        layout: { version: 1, positions, edgeAnchors },
+        layout: { version: 1, positions, edgeAnchors, edgeBend },
         expected_revision_id: currentRevisionId,
       });
       if (status === 200 && json) {
@@ -4441,6 +4709,9 @@
     currentSource = dto.source || "";
     positions = (dto.layout && dto.layout.positions) || {};
     if (Array.isArray(positions)) positions = {};
+    edgeBend = (dto.layout && dto.layout.edgeBend) || {};
+    if (Array.isArray(edgeBend)) edgeBend = {};
+    migrateAllBends();
     currentRevisionId = dto.revision_id;
     if (dto.updated_at) lastUpdatedAt = dto.updated_at;
     if (dto.title && dto.title !== currentTitle) {

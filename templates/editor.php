@@ -37,7 +37,6 @@
 
 <!-- Lock state banner (view-only / lock free / lock mine / lock other) -->
 <div id="lockBanner" class="lock-banner">
-    <h1 id="diagramTitle"><?= e($diagram['title']) ?></h1>
     <span id="dirtyBadge" class="ed-badge hidden">modificato</span>
     <span id="autosaveBadge" class="ed-badge ed-badge-auto hidden"></span>
     <span class="lock-sep"></span>
@@ -75,6 +74,7 @@
     </aside>
     <div id="resizer" title="Trascina per ridimensionare"></div>
     <div id="canvas">
+        <h1 id="diagramTitle" class="canvas-title"><?= e($diagram['title']) ?></h1>
         <button id="fitBtn" class="canvas-fit-btn" title="Fit view (0 / Home)" aria-label="Fit view"><svg class="icon"><use href="#icon-fit"/></svg></button>
         <div id="canvasPad" class="canvas-pad">
             <button id="addNodeBtn" title="Aggiungi nodo (N). Con un subgraph selezionato, il nuovo nodo viene creato al suo interno." aria-label="Aggiungi nodo"><svg class="icon"><use href="#icon-square-plus"/></svg></button>

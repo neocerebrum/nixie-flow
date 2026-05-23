@@ -603,6 +603,10 @@ final class McpController
             && is_array($layout['edgeAnchors']) && $layout['edgeAnchors'] === []) {
             $layout['edgeAnchors'] = new \stdClass();
         }
+        if (array_key_exists('edgeBend', $layout)
+            && is_array($layout['edgeBend']) && $layout['edgeBend'] === []) {
+            $layout['edgeBend'] = new \stdClass();
+        }
         $enc = json_encode($layout, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         if ($enc === false || strlen($enc) > 262144) {
             throw new McpToolException('layout is invalid or too large');

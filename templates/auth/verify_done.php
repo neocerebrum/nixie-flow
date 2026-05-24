@@ -1,5 +1,5 @@
 <div class="auth-card">
-    <h1>Email verificata</h1>
-    <p>Il tuo account è ora attivo.</p>
-    <p><a href="/login" class="btn btn-primary">Accedi</a></p>
+    <h1><?= __('verify.done.heading') ?></h1>
+    <p><?= __('verify.done.body') ?></p>
+    <p><a href="/login" class="btn btn-primary"><?= __('verify.done.login') ?></a></p>
 </div>

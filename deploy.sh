@@ -1,15 +1,15 @@
 #!/bin/bash
-# Deploy file su server web via FTP
+# Deploy files to web server via FTP
 #
-# Configurazione: crea un file .deploy-config nella root del progetto con:
+# Configuration: create a .deploy-config file in project root with:
 #   FTP_HOST=ftp.example.com
-#   FTP_USER=utente
+#   FTP_USER=username
 #   FTP_PASS=password
 #   FTP_REMOTE_DIR=/public_html/bot
 #
-# Uso:
+# Usage:
 #   ./deploy.sh include/QBertClient.php include/ai.php
-#   ./deploy.sh --all   (carica tutto il progetto)
+#   ./deploy.sh --all   (upload entire project)
 
 set -euo pipefail
 
@@ -17,10 +17,10 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONFIG_FILE="$SCRIPT_DIR/.deploy-config"
 
 if [[ ! -f "$CONFIG_FILE" ]]; then
-    echo "Errore: file $CONFIG_FILE non trovato."
-    echo "Crea il file con:"
+    echo "Error: file $CONFIG_FILE not found."
+    echo "Create the file with:"
     echo "  FTP_HOST=ftp.example.com"
-    echo "  FTP_USER=utente"
+    echo "  FTP_USER=username"
     echo "  FTP_PASS=password"
     echo "  FTP_REMOTE_DIR=/public_html/bot"
     exit 1
@@ -28,26 +28,26 @@ fi
 
 source "$CONFIG_FILE"
 
-# Rimuovi trailing slash da FTP_REMOTE_DIR, gestisci "/" come vuoto
+# Remove trailing slash from FTP_REMOTE_DIR, treat "/" as empty
 FTP_REMOTE_DIR="${FTP_REMOTE_DIR%/}"
 
 for var in FTP_HOST FTP_USER FTP_PASS; do
     if [[ -z "${!var:-}" ]]; then
-        echo "Errore: $var non definito in $CONFIG_FILE"
+        echo "Error: $var not defined in $CONFIG_FILE"
         exit 1
     fi
 done
 
 if [[ $# -eq 0 ]]; then
-    echo "Uso: $0 file1 [file2 ...]"
+    echo "Usage: $0 file1 [file2 ...]"
     echo "      $0 --all"
     exit 1
 fi
 
-# File protetti: non vengono mai caricati (contengono credenziali o dati locali)
+# Protected files: never uploaded (contain credentials or local data)
 PROTECTED_FILES=(".env" ".env.example" ".deploy-config" ".deploy-config.example" "deploy.sh" "lint.sh" "test_api.sh" "aquata.sqlite" "debug.log" ".gitignore")
 
-# Costruisci lista file
+# Build file list
 FILES=()
 if [[ "$1" == "--all" ]]; then
     while IFS= read -r -d '' f; do
@@ -77,7 +77,7 @@ else
         skip=false
         for p in "${PROTECTED_FILES[@]}"; do
             if [[ "$basename" == "$p" ]]; then
-                echo "BLOCCATO: '$f' è un file protetto, salto."
+                echo "BLOCKED: '$f' is a protected file, skipping."
                 skip=true
                 break
             fi
@@ -89,22 +89,22 @@ else
         elif [[ -f "$f" ]]; then
             FILES+=("$f")
         else
-            echo "Attenzione: file '$f' non trovato, salto."
+            echo "Warning: file '$f' not found, skipping."
         fi
     done
 fi
 
 if [[ ${#FILES[@]} -eq 0 ]]; then
-    echo "Nessun file da caricare."
+    echo "No files to upload."
     exit 1
 fi
 
-echo "Caricamento di ${#FILES[@]} file su $FTP_HOST:$FTP_REMOTE_DIR ..."
+echo "Uploading ${#FILES[@]} files to $FTP_HOST:$FTP_REMOTE_DIR ..."
 
-# Genera comandi FTP
+# Generate FTP commands
 FTP_COMMANDS=""
 for filepath in "${FILES[@]}"; do
-    # Calcola path relativo al progetto
+    # Compute path relative to project
     rel="${filepath#$SCRIPT_DIR/}"
     remote_dir="$FTP_REMOTE_DIR/$(dirname "$rel")"
     FTP_COMMANDS+="mkdir $remote_dir
@@ -118,7 +118,7 @@ curl --ftp-create-dirs -s -S \
     "ftp://$FTP_HOST" \
     -Q "dummy" 2>/dev/null || true
 
-# Carica ogni file con curl
+# Upload each file with curl
 ERRORS=0
 for filepath in "${FILES[@]}"; do
     rel="${filepath#$SCRIPT_DIR/}"
@@ -130,14 +130,14 @@ for filepath in "${FILES[@]}"; do
         "ftp://$FTP_HOST$remote_path"; then
         echo "OK"
     else
-        echo "ERRORE"
+        echo "ERROR"
         ERRORS=$((ERRORS + 1))
     fi
 done
 
 if [[ $ERRORS -eq 0 ]]; then
-    echo "Deploy completato: ${#FILES[@]} file caricati."
+    echo "Deploy completed: ${#FILES[@]} files uploaded."
 else
-    echo "Deploy completato con $ERRORS errori su ${#FILES[@]} file."
+    echo "Deploy completed with $ERRORS errors on ${#FILES[@]} files."
     exit 1
 fi

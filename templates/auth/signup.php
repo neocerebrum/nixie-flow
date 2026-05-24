@@ -5,39 +5,39 @@ $form = $_SESSION['_signup_form'] ?? ['email' => '', 'display_name' => ''];
 unset($_SESSION['_signup_form']);
 ?>
 <div class="auth-card">
-    <h1>Crea il tuo account</h1>
-    <p class="muted">Registrati per usare l'editor Aquata.</p>
+    <h1><?= __('signup.heading') ?></h1>
+    <p class="muted"><?= __('signup.subtitle') ?></p>
     <?php if ($flash): ?>
         <div class="flash flash-<?= e($flash['type']) ?>"><?= e($flash['message']) ?></div>
     <?php endif; ?>
     <form method="post" action="/signup" class="form" autocomplete="on">
         <input type="hidden" name="_csrf" value="<?= e($csrfToken) ?>">
         <label>
-            Email
+            <?= __('signup.email') ?>
             <input type="email" name="email" required autofocus
                    value="<?= e($form['email']) ?>" autocomplete="email">
         </label>
         <label>
-            Nome visualizzato
+            <?= __('signup.display_name') ?>
             <input type="text" name="display_name" required maxlength="100"
                    value="<?= e($form['display_name']) ?>" autocomplete="name">
         </label>
         <label>
-            Password
+            <?= __('signup.password') ?>
             <input type="password" name="password" required minlength="8"
                    autocomplete="new-password">
         </label>
         <label class="hp-field" aria-hidden="true" tabindex="-1">
-            Lascia vuoto questo campo
+            <?= __('signup.honeypot') ?>
             <input type="text" name="website" tabindex="-1" autocomplete="off">
         </label>
         <label class="checkbox">
             <input type="checkbox" name="accept_tos" required>
-            Accetto i termini di servizio
+            <?= __('signup.accept_tos') ?>
         </label>
-        <button type="submit" class="btn btn-primary">Registrati</button>
+        <button type="submit" class="btn btn-primary"><?= __('signup.submit') ?></button>
     </form>
     <p class="muted">
-        Hai già un account? <a href="/login">Accedi</a>
+        <?= __('signup.has_account') ?> <a href="/login"><?= __('signup.login_link') ?></a>
     </p>
 </div>

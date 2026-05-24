@@ -21,7 +21,7 @@ final class AuthController
             'next'      => $next,
             'csrfToken' => Csrf::token(),
             'error'     => $_SESSION['flash']['msg'] ?? null,
-        ], ['title' => 'Login — Aquata', 'noNav' => true]);
+        ], ['title' => __('login.title'), 'noNav' => true]);
         unset($_SESSION['flash']);
     }
 
@@ -34,7 +34,7 @@ final class AuthController
         $next     = self::safeNext((string) ($_POST['next'] ?? '/dashboard'));
 
         if ($email === '' || $password === '') {
-            self::flash('error', 'Inserisci email e password.');
+            self::flash('error', __('error.empty_credentials'));
             Response::redirect('/login' . ($next !== '/dashboard' ? '?next=' . urlencode($next) : ''));
         }
 
@@ -43,20 +43,17 @@ final class AuthController
             case 'ok':
                 Response::redirect($next);
             case 'rate_limited':
-                self::flash('error', sprintf(
-                    'Troppi tentativi falliti. Riprova tra %d minuti.',
-                    Auth::failureWindowMinutes()
-                ));
+                self::flash('error', __('error.rate_limited', Auth::failureWindowMinutes()));
                 Response::redirect('/login');
             case 'disabled':
-                self::flash('error', 'Account disabilitato. Contatta un amministratore.');
+                self::flash('error', __('error.account_disabled'));
                 Response::redirect('/login');
             case 'unverified':
-                self::flash('error', 'Email non verificata. Controlla la tua casella o richiedi un nuovo link.');
+                self::flash('error', __('error.email_unverified'));
                 Response::redirect('/signup/check-email');
             case 'invalid':
             default:
-                self::flash('error', 'Email o password non corretti.');
+                self::flash('error', __('error.invalid_credentials'));
                 Response::redirect('/login');
         }
     }

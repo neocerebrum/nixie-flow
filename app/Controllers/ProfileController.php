@@ -21,7 +21,7 @@ final class ProfileController
             'user'      => $user,
             'csrfToken' => Csrf::token(),
             'flash'     => $flash,
-        ], ['title' => 'Profilo — Aquata', 'active' => 'profile']);
+        ], ['title' => __('profile.title'), 'active' => 'profile']);
     }
 
     public function save(array $args): never
@@ -42,15 +42,15 @@ final class ProfileController
 
         if ($wantsPasswordChange) {
             if (!password_verify($currentPass, $user['password_hash'])) {
-                $this->flash('error', 'Password attuale errata.');
+                $this->flash('error', __('error.current_password'));
                 Response::redirect('/profile');
             }
             if (strlen($newPass) < 8) {
-                $this->flash('error', 'La nuova password deve avere almeno 8 caratteri.');
+                $this->flash('error', __('error.new_password_min'));
                 Response::redirect('/profile');
             }
             if ($newPass !== $confirmPass) {
-                $this->flash('error', 'Le due password non coincidono.');
+                $this->flash('error', __('error.passwords_no_match'));
                 Response::redirect('/profile');
             }
             User::updatePassword((int) $user['id'], password_hash($newPass, PASSWORD_BCRYPT));
@@ -60,7 +60,7 @@ final class ProfileController
             User::updateProfile((int) $user['id'], $displayName);
         }
 
-        $this->flash('success', 'Profilo aggiornato.');
+        $this->flash('success', __('error.profile_updated'));
         Response::redirect('/profile');
     }
 
@@ -81,7 +81,7 @@ final class ProfileController
             'flash'             => $flash,
             'newTokenPlaintext' => $newTokenPlaintext,
             'mcpEndpoint'       => 'https://' . $host . '/mcp',
-        ], ['title' => 'Token API — Aquata', 'active' => 'profile']);
+        ], ['title' => __('tokens.title'), 'active' => 'profile']);
     }
 
     public function createToken(array $args): never
@@ -95,7 +95,7 @@ final class ProfileController
 
         $plaintext = ApiToken::create((int) $user['id'], $label);
         $_SESSION['new_token_plaintext'] = $plaintext;
-        $this->flash('success', 'Token creato. Copialo subito: non sarà più mostrato.');
+        $this->flash('success', __('error.token_created'));
         Response::redirect('/profile/tokens');
     }
 
@@ -106,12 +106,12 @@ final class ProfileController
 
         $hash = (string) ($_POST['token_hash'] ?? '');
         if ($hash === '' || strlen($hash) !== 64 || !ctype_xdigit($hash)) {
-            $this->flash('error', 'Token non valido.');
+            $this->flash('error', __('error.token_invalid'));
             Response::redirect('/profile/tokens');
         }
 
         $ok = ApiToken::revokeByHash((int) $user['id'], $hash);
-        $this->flash($ok ? 'success' : 'error', $ok ? 'Token revocato.' : 'Token non trovato.');
+        $this->flash($ok ? 'success' : 'error', $ok ? __('error.token_revoked') : __('error.token_not_found'));
         Response::redirect('/profile/tokens');
     }
 

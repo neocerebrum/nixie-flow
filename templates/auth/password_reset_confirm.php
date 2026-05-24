@@ -4,7 +4,7 @@
 /** @var ?array $flash */
 ?>
 <div class="auth-card">
-    <h1>Imposta nuova password</h1>
+    <h1><?= __('pwreset.confirm.heading') ?></h1>
     <?php if ($flash): ?>
         <div class="flash flash-<?= e($flash['type']) ?>"><?= e($flash['message']) ?></div>
     <?php endif; ?>
@@ -12,13 +12,13 @@
         <input type="hidden" name="_csrf" value="<?= e($csrfToken) ?>">
         <input type="hidden" name="token" value="<?= e($token) ?>">
         <label>
-            Nuova password
+            <?= __('pwreset.confirm.password') ?>
             <input type="password" name="password" required minlength="8" autocomplete="new-password" autofocus>
         </label>
         <label>
-            Conferma password
+            <?= __('pwreset.confirm.confirm') ?>
             <input type="password" name="password_confirm" required minlength="8" autocomplete="new-password">
         </label>
-        <button type="submit" class="btn btn-primary">Aggiorna</button>
+        <button type="submit" class="btn btn-primary"><?= __('pwreset.confirm.submit') ?></button>
     </form>
 </div>

@@ -2,17 +2,24 @@
 (function () {
   "use strict";
 
+  const _t = window.__i18n || {};
+  function __(key, ...args) {
+    let s = _t[key] !== undefined ? _t[key] : key;
+    if (args.length) { let i = 0; s = s.replace(/%[sd]/g, () => args[i++] ?? ""); }
+    return s;
+  }
+
   const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
 
   // ── In-app dialogs (replace native confirm/alert which Firefox can block) ─
   let _confirmResolve = null;
   function confirmDialog(message, opts) {
     opts = opts || {};
-    document.getElementById("confirmDialogTitle").textContent = opts.title || "Conferma";
+    document.getElementById("confirmDialogTitle").textContent = opts.title || __("common.confirm");
     document.getElementById("confirmDialogMessage").textContent = message;
     const okBtn = document.getElementById("confirmDialogOkBtn");
-    okBtn.textContent = opts.confirmLabel || "Conferma";
-    document.getElementById("confirmDialogCancelBtn").textContent = opts.cancelLabel || "Annulla";
+    okBtn.textContent = opts.confirmLabel || __("common.confirm");
+    document.getElementById("confirmDialogCancelBtn").textContent = opts.cancelLabel || __("common.cancel");
     okBtn.classList.toggle("danger", !!opts.danger);
     okBtn.classList.toggle("primary", !opts.danger);
     document.getElementById("confirmDialogModal").classList.remove("hidden");
@@ -28,7 +35,7 @@
   let _infoResolve = null;
   function infoDialog(message, opts) {
     opts = opts || {};
-    document.getElementById("infoDialogTitle").textContent = opts.title || "Avviso";
+    document.getElementById("infoDialogTitle").textContent = opts.title || __("common.alert");
     document.getElementById("infoDialogMessage").textContent = message;
     const okBtn = document.getElementById("infoDialogOkBtn");
     okBtn.classList.toggle("danger", !!opts.danger);
@@ -90,7 +97,7 @@
     const title = titleInput.value.trim();
     const slug = slugInput.value.trim();
     errorEl.textContent = "";
-    if (!title) { errorEl.textContent = "Titolo obbligatorio"; return; }
+    if (!title) { errorEl.textContent = __("dashboard.title_required"); return; }
 
     const body = {
       title,
@@ -149,19 +156,19 @@
   async function reloadShareList() {
     if (!currentShareSlug) return;
     const list = document.getElementById("dashShareList");
-    list.innerHTML = "<p class='share-empty'>Caricando…</p>";
+    list.innerHTML = `<p class='share-empty'>${escapeHtml(__("dashboard.loading"))}</p>`;
     try {
       const { status, json } = await api("GET", `/api/diagrams/${encodeURIComponent(currentShareSlug)}/shares`);
       if (status !== 200 || !json) throw new Error("HTTP " + status);
       renderShareList(json.shares || []);
     } catch (e) {
-      list.innerHTML = `<p class='share-empty'>Errore: ${escapeHtml(e.message || "")}</p>`;
+      list.innerHTML = `<p class='share-empty'>${escapeHtml(__("common.error"))}: ${escapeHtml(e.message || "")}</p>`;
     }
   }
   function renderShareList(shares) {
     const list = document.getElementById("dashShareList");
     if (!shares.length) {
-      list.innerHTML = "<p class='share-empty'>Nessuna condivisione.</p>";
+      list.innerHTML = `<p class='share-empty'>${escapeHtml(__("dashboard.no_shares"))}</p>`;
       return;
     }
     list.innerHTML = "";
@@ -170,16 +177,16 @@
       row.className = "share-row" + (s.disabled ? " disabled" : "");
       const who = s.user_name
         ? `${escapeHtml(s.user_name)} <small>${escapeHtml(s.user_email || "")}</small>`
-        : escapeHtml(s.user_email || ("utente #" + s.user_id));
+        : escapeHtml(s.user_email || (__("dashboard.user_fallback") + s.user_id));
       row.innerHTML = `
         <span class="share-user">${who}</span>
         <span class="share-perm">${escapeHtml(s.permission)}</span>
       `;
       const removeBtn = document.createElement("button");
-      removeBtn.textContent = "Rimuovi";
+      removeBtn.textContent = __("common.remove");
       removeBtn.addEventListener("click", async () => {
-        if (!await confirmDialog("Rimuovere la condivisione con questo utente?",
-          { confirmLabel: "Rimuovi", danger: true })) return;
+        if (!await confirmDialog(__("dashboard.remove_share_confirm"),
+          { confirmLabel: __("common.remove"), danger: true })) return;
         try {
           await api("DELETE", `/api/diagrams/${encodeURIComponent(currentShareSlug)}/shares/${s.user_id}`);
           await reloadShareList();
@@ -196,7 +203,7 @@
     const perm  = document.getElementById("dashSharePermInput").value;
     const errEl = document.getElementById("dashShareError");
     errEl.textContent = "";
-    if (!email) { errEl.textContent = "Email obbligatoria"; return; }
+    if (!email) { errEl.textContent = __("dashboard.email_required"); return; }
     try {
       const { status, json } = await api("POST",
         `/api/diagrams/${encodeURIComponent(currentShareSlug)}/shares`,
@@ -246,7 +253,7 @@
     if (!renameCurrentSlug) return;
     const newTitle = renameInput.value.trim();
     renameError.textContent = "";
-    if (!newTitle) { renameError.textContent = "Titolo obbligatorio"; return; }
+    if (!newTitle) { renameError.textContent = __("dashboard.title_required"); return; }
     try {
       const { status, json } = await api("PATCH",
         `/api/diagrams/${encodeURIComponent(renameCurrentSlug)}`,
@@ -294,8 +301,8 @@
       const slug = btn.dataset.slug;
       const title = btn.dataset.title || slug;
       if (!await confirmDialog(
-        `Eliminare il diagramma "${title}"? Verrà spostato nel cestino, recuperabile da admin.`,
-        { confirmLabel: "Elimina", danger: true })) return;
+        __("dashboard.delete_confirm", title),
+        { confirmLabel: __("common.delete"), danger: true })) return;
       try {
         const { status } = await api("DELETE", `/api/diagrams/${encodeURIComponent(slug)}`);
         if (status === 204) {
@@ -307,10 +314,10 @@
             location.reload();
           }
         } else {
-          await infoDialog(`Eliminazione fallita: HTTP ${status}`, { title: "Errore", danger: true });
+          await infoDialog(__("dashboard.delete_failed", "HTTP " + status), { title: __("common.error"), danger: true });
         }
       } catch (err) {
-        await infoDialog(`Eliminazione fallita: ${err.message}`, { title: "Errore", danger: true });
+        await infoDialog(__("dashboard.delete_failed", err.message), { title: __("common.error"), danger: true });
       }
     });
   }

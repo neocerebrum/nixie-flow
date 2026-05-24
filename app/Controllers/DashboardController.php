@@ -31,6 +31,6 @@ final class DashboardController
             'diagrams'       => $owned,
             'sharedDiagrams' => $shared,
             'csrfToken'      => Csrf::token(),
-        ], ['title' => 'Dashboard — Aquata', 'active' => 'dashboard']);
+        ], ['title' => __('dashboard.title'), 'active' => 'dashboard']);
     }
 }

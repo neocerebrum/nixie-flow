@@ -70,6 +70,15 @@ small.muted { display: block; margin-top: 0.2rem; }
   gap: 1rem;
 }
 .topnav-name { color: var(--muted); font-size: 0.9em; }
+.lang-switch {
+  background: transparent; color: var(--muted); border: 1px solid var(--border);
+  border-radius: 4px; padding: 2px 4px; font-size: 0.8em; cursor: pointer;
+}
+.lang-footer {
+  text-align: center; padding: 1rem; font-size: 0.8em; color: var(--muted);
+}
+.lang-footer a { margin: 0 0.3em; }
+.lang-footer strong { margin: 0 0.3em; color: var(--fg); }
 
 main {
   max-width: 920px;

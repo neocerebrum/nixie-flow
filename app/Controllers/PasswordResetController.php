@@ -21,7 +21,7 @@ final class PasswordResetController
         View::render('auth/password_reset_request', [
             'csrfToken' => Csrf::token(),
             'flash'     => $this->popFlash(),
-        ], ['title' => 'Recupero password — Aquata']);
+        ], ['title' => __('pwreset.request.title')]);
     }
 
     public function requestSubmit(array $args): never
@@ -30,7 +30,7 @@ final class PasswordResetController
         $ip = RateLimit::clientIp();
         $r = RateLimit::hit("pwreset:ip:$ip", 60, Config::int('RATE_RESET_PER_IP_PER_MIN', 3));
         if (!$r['allowed']) {
-            $this->flash('error', 'Troppi tentativi. Riprova tra qualche minuto.');
+            $this->flash('error', __('error.too_many_attempts'));
             Response::redirect('/password-reset');
         }
         $email = strtolower(trim((string) ($_POST['email'] ?? '')));
@@ -40,7 +40,7 @@ final class PasswordResetController
                 $this->sendResetEmail((int) $user['id'], $user['email'], (string) $user['display_name']);
             }
         }
-        $this->flash('info', 'Se l\'email è registrata, riceverai un link per reimpostare la password.');
+        $this->flash('info', __('error.pwreset_sent'));
         Response::redirect('/password-reset');
     }
 
@@ -56,7 +56,7 @@ final class PasswordResetController
             'csrfToken' => Csrf::token(),
             'token'     => $token,
             'flash'     => $this->popFlash(),
-        ], ['title' => 'Nuova password — Aquata']);
+        ], ['title' => __('pwreset.confirm.title')]);
     }
 
     public function confirmSubmit(array $args): never
@@ -67,24 +67,24 @@ final class PasswordResetController
         $confirm  = (string) ($_POST['password_confirm'] ?? '');
 
         if (strlen($password) < self::MIN_PASSWORD) {
-            $this->flash('error', 'La password deve avere almeno ' . self::MIN_PASSWORD . ' caratteri.');
+            $this->flash('error', __('error.password_min', self::MIN_PASSWORD));
             Response::redirect('/password-reset/confirm?token=' . urlencode($token));
         }
         if ($password !== $confirm) {
-            $this->flash('error', 'Le password non coincidono.');
+            $this->flash('error', __('error.passwords_mismatch'));
             Response::redirect('/password-reset/confirm?token=' . urlencode($token));
         }
 
         $row = EmailToken::consume($token, EmailToken::KIND_RESET);
         if ($row === null) {
-            $this->flash('error', 'Link non valido o scaduto. Richiedi un nuovo link.');
+            $this->flash('error', __('error.link_invalid'));
             Response::redirect('/password-reset');
         }
 
         $hash = password_hash($password, PASSWORD_BCRYPT);
         User::updatePassword((int) $row['user_id'], $hash);
 
-        $this->flash('info', 'Password aggiornata. Ora puoi accedere.');
+        $this->flash('info', __('error.password_updated'));
         Response::redirect('/login');
     }
 
@@ -92,13 +92,8 @@ final class PasswordResetController
     {
         $token = EmailToken::issue($userId, EmailToken::KIND_RESET, EmailToken::TTL_RESET_SEC);
         $url = Mailer::appUrl() . '/password-reset/confirm?token=' . urlencode($token);
-        $body = "Ciao $name,\n\n"
-              . "abbiamo ricevuto una richiesta di reset password per il tuo account Aquata.\n"
-              . "Imposta una nuova password cliccando qui sotto:\n\n"
-              . "$url\n\n"
-              . "Il link è valido per 1 ora.\n\n"
-              . "Se non hai richiesto il reset, ignora questa email — la tua password attuale rimane valida.\n";
-        Mailer::send($email, 'Reimposta la tua password — Aquata', $body);
+        $body = __('email.reset.body', $name, $url);
+        Mailer::send($email, __('email.reset.subject'), $body);
     }
 
     private function flash(string $type, string $message): void

@@ -22,7 +22,7 @@ final class UserController
             'current'   => $current,
             'csrfToken' => Csrf::token(),
             'flash'     => $flash,
-        ], ['title' => 'Utenti — Aquata', 'active' => 'admin']);
+        ], ['title' => __('admin.users.title'), 'active' => 'admin']);
     }
 
     public function newForm(array $args): never
@@ -35,7 +35,7 @@ final class UserController
             'user'      => ['email' => '', 'display_name' => '', 'role' => 'user'],
             'csrfToken' => Csrf::token(),
             'flash'     => $flash,
-        ], ['title' => 'Nuovo utente — Aquata', 'active' => 'admin']);
+        ], ['title' => __('admin.user.new_title'), 'active' => 'admin']);
     }
 
     public function create(array $args): never
@@ -49,19 +49,19 @@ final class UserController
         $password    = (string) ($_POST['password'] ?? '');
 
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            $this->flash('error', 'Email non valida.');
+            $this->flash('error', __('error.email_invalid'));
             Response::redirect('/admin/users/new');
         }
         if (!in_array($role, ['admin', 'user'], true)) {
-            $this->flash('error', 'Ruolo non valido.');
+            $this->flash('error', __('error.role_invalid'));
             Response::redirect('/admin/users/new');
         }
         if (strlen($password) < 8) {
-            $this->flash('error', 'La password deve avere almeno 8 caratteri.');
+            $this->flash('error', __('error.password_min_8'));
             Response::redirect('/admin/users/new');
         }
         if (User::byEmail($email) !== null) {
-            $this->flash('error', 'Esiste già un utente con questa email.');
+            $this->flash('error', __('error.email_exists'));
             Response::redirect('/admin/users/new');
         }
         if ($displayName === '') {
@@ -73,7 +73,7 @@ final class UserController
         // Admin-provisioned accounts skip the email-verification round-trip.
         User::markEmailVerified($newId);
 
-        $this->flash('success', 'Utente creato.');
+        $this->flash('success', __('error.user_created'));
         Response::redirect('/admin/users');
     }
 
@@ -91,7 +91,7 @@ final class UserController
             'user'      => $user,
             'csrfToken' => Csrf::token(),
             'flash'     => $flash,
-        ], ['title' => 'Modifica utente — Aquata', 'active' => 'admin']);
+        ], ['title' => __('admin.user.edit_title'), 'active' => 'admin']);
     }
 
     public function update(array $args): never
@@ -110,7 +110,7 @@ final class UserController
         $newPassword = (string) ($_POST['new_password'] ?? '');
 
         if (!in_array($role, ['admin', 'user'], true)) {
-            $this->flash('error', 'Ruolo non valido.');
+            $this->flash('error', __('error.role_invalid'));
             Response::redirect('/admin/users/' . $id);
         }
         if ($displayName === '') {
@@ -118,11 +118,11 @@ final class UserController
         }
 
         if ((int) $current['id'] === $id && $role !== 'admin') {
-            $this->flash('error', 'Non puoi togliere a te stesso il ruolo admin.');
+            $this->flash('error', __('error.cannot_remove_self_admin'));
             Response::redirect('/admin/users/' . $id);
         }
         if ($user['role'] === 'admin' && $role !== 'admin' && User::countActiveAdmins() <= 1) {
-            $this->flash('error', 'Deve esistere almeno un admin attivo.');
+            $this->flash('error', __('error.need_one_admin'));
             Response::redirect('/admin/users/' . $id);
         }
 
@@ -132,13 +132,13 @@ final class UserController
         }
         if ($newPassword !== '') {
             if (strlen($newPassword) < 8) {
-                $this->flash('error', 'La password deve avere almeno 8 caratteri.');
+                $this->flash('error', __('error.password_min_8'));
                 Response::redirect('/admin/users/' . $id);
             }
             User::updatePassword($id, password_hash($newPassword, PASSWORD_BCRYPT));
         }
 
-        $this->flash('success', 'Utente aggiornato.');
+        $this->flash('success', __('error.user_updated'));
         Response::redirect('/admin/users');
     }
 
@@ -154,17 +154,17 @@ final class UserController
         }
 
         if ((int) $current['id'] === $id) {
-            $this->flash('error', 'Non puoi disabilitare il tuo account.');
+            $this->flash('error', __('error.cannot_disable_self'));
             Response::redirect('/admin/users');
         }
 
         if ($user['role'] === 'admin' && User::countActiveAdmins() <= 1 && empty($user['disabled_at'])) {
-            $this->flash('error', 'Deve esistere almeno un admin attivo.');
+            $this->flash('error', __('error.need_one_admin'));
             Response::redirect('/admin/users');
         }
 
         User::setDisabled($id);
-        $this->flash('success', 'Utente disabilitato.');
+        $this->flash('success', __('error.user_disabled'));
         Response::redirect('/admin/users');
     }
 
@@ -180,7 +180,7 @@ final class UserController
         }
 
         User::setEnabled($id);
-        $this->flash('success', 'Utente riattivato.');
+        $this->flash('success', __('error.user_restored'));
         Response::redirect('/admin/users');
     }
 

@@ -54,6 +54,7 @@ if (PHP_SAPI !== 'cli') {
     ]);
     session_start();
     App\Response::applySecurityHeaders();
+    App\I18n::init();
 }
 
 function db(): PDO
@@ -64,6 +65,11 @@ function db(): PDO
 function e(?string $s): string
 {
     return htmlspecialchars((string) $s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+
+function __(string $key, mixed ...$args): string
+{
+    return App\I18n::get($key, ...$args);
 }
 
 App\View::init(AQUATA_ROOT . '/templates');

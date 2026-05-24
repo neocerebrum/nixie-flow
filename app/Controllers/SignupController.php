@@ -33,7 +33,7 @@ final class SignupController
             'flash'     => $this->popFlash(),
             'email'     => '',
             'name'      => '',
-        ], ['title' => 'Crea account — Aquata', 'active' => '']);
+        ], ['title' => __('signup.title'), 'active' => '']);
     }
 
     public function submit(array $args): never
@@ -46,21 +46,21 @@ final class SignupController
         $ip = RateLimit::clientIp();
         $r = RateLimit::hit("signup:ip:$ip", 60, Config::int('RATE_SIGNUP_PER_IP_PER_MIN', 3));
         if (!$r['allowed']) {
-            $this->flash('error', 'Troppi tentativi. Riprova tra qualche minuto.');
+            $this->flash('error', __('error.too_many_attempts'));
             Response::redirect('/signup');
         }
 
         // Honeypot — must be empty. Bots usually fill it.
         if (trim((string) ($_POST['website'] ?? '')) !== '') {
             // Pretend success to not tip off the bot.
-            $this->flash('info', 'Se l\'email è valida, riceverai un link di conferma.');
+            $this->flash('info', __('error.email_confirm_sent'));
             Response::redirect('/signup/check-email');
         }
 
         // Time-on-form: bots usually submit instantly.
         $started = (int) ($_SESSION['_signup_started'] ?? 0);
         if ($started > 0 && (time() - $started) < self::MIN_FORM_SECONDS) {
-            $this->flash('error', 'Form inviato troppo velocemente, riprova.');
+            $this->flash('error', __('error.form_too_fast'));
             Response::redirect('/signup');
         }
 
@@ -70,22 +70,22 @@ final class SignupController
         $tos      = !empty($_POST['accept_tos']);
 
         if (!filter_var($email, FILTER_VALIDATE_EMAIL) || strlen($email) > 255) {
-            $this->flash('error', 'Email non valida.');
+            $this->flash('error', __('error.email_invalid'));
             $this->repopulate($email, $name);
             Response::redirect('/signup');
         }
         if ($name === '' || strlen($name) > self::MAX_DISPLAY_NAME) {
-            $this->flash('error', 'Nome obbligatorio (max ' . self::MAX_DISPLAY_NAME . ' caratteri).');
+            $this->flash('error', __('error.name_required', self::MAX_DISPLAY_NAME));
             $this->repopulate($email, $name);
             Response::redirect('/signup');
         }
         if (strlen($password) < self::MIN_PASSWORD) {
-            $this->flash('error', 'La password deve avere almeno ' . self::MIN_PASSWORD . ' caratteri.');
+            $this->flash('error', __('error.password_min', self::MIN_PASSWORD));
             $this->repopulate($email, $name);
             Response::redirect('/signup');
         }
         if (!$tos) {
-            $this->flash('error', 'Devi accettare i termini di servizio.');
+            $this->flash('error', __('error.tos_required'));
             $this->repopulate($email, $name);
             Response::redirect('/signup');
         }
@@ -104,7 +104,7 @@ final class SignupController
             // If already verified, silently do nothing (no enumeration).
         }
 
-        $this->flash('info', 'Se l\'email è valida, riceverai un link di conferma.');
+        $this->flash('info', __('error.email_confirm_sent'));
         Response::redirect('/signup/check-email');
     }
 
@@ -112,7 +112,7 @@ final class SignupController
     {
         View::render('auth/signup_check_email', [
             'flash' => $this->popFlash(),
-        ], ['title' => 'Controlla la tua email — Aquata']);
+        ], ['title' => __('signup.check_email.title')]);
     }
 
     public function verify(array $args): never
@@ -122,12 +122,12 @@ final class SignupController
         if ($row === null) {
             View::render('auth/verify_failed', [
                 'flash' => null,
-            ], ['title' => 'Verifica fallita — Aquata']);
+            ], ['title' => __('verify.failed.title')]);
         }
         User::markEmailVerified((int) $row['user_id']);
         View::render('auth/verify_done', [
             'flash' => null,
-        ], ['title' => 'Email verificata — Aquata']);
+        ], ['title' => __('verify.done.title')]);
     }
 
     public function resend(array $args): never
@@ -136,7 +136,7 @@ final class SignupController
         $ip = RateLimit::clientIp();
         $r = RateLimit::hit("signup-resend:ip:$ip", 60, Config::int('RATE_SIGNUP_PER_IP_PER_MIN', 3));
         if (!$r['allowed']) {
-            $this->flash('error', 'Troppi tentativi. Riprova tra qualche minuto.');
+            $this->flash('error', __('error.too_many_attempts'));
             Response::redirect('/signup/check-email');
         }
         $email = strtolower(trim((string) ($_POST['email'] ?? '')));
@@ -144,7 +144,7 @@ final class SignupController
         if ($user !== null && !User::isEmailVerified($user) && !User::isDisabled($user)) {
             $this->sendVerificationEmail((int) $user['id'], $user['email'], (string) $user['display_name']);
         }
-        $this->flash('info', 'Se l\'email è valida e non verificata, ti abbiamo rispedito il link.');
+        $this->flash('info', __('error.resend_confirm'));
         Response::redirect('/signup/check-email');
     }
 
@@ -152,12 +152,8 @@ final class SignupController
     {
         $token = EmailToken::issue($userId, EmailToken::KIND_VERIFY, EmailToken::TTL_VERIFY_SEC);
         $url = Mailer::appUrl() . '/signup/verify?token=' . urlencode($token);
-        $body = "Ciao $name,\n\n"
-              . "benvenuto su Aquata. Conferma la tua email cliccando qui sotto:\n\n"
-              . "$url\n\n"
-              . "Il link è valido per 24 ore.\n\n"
-              . "Se non hai richiesto la registrazione, ignora questa email.\n";
-        Mailer::send($email, 'Conferma la tua email — Aquata', $body);
+        $body = __('email.verify.body', $name, $url);
+        Mailer::send($email, __('email.verify.subject'), $body);
     }
 
     private function flash(string $type, string $message): void

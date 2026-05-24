@@ -13,6 +13,13 @@
 (function () {
   "use strict";
 
+  const _t = window.__i18n || {};
+  function __(key, ...args) {
+    let s = _t[key] !== undefined ? _t[key] : key;
+    if (args.length) { let i = 0; s = s.replace(/%[sd]/g, () => args[i++] ?? ""); }
+    return s;
+  }
+
   mermaid.initialize({
     startOnLoad: false,
     theme: "dark",
@@ -23,14 +30,14 @@
   // ── Constants ───────────────────────────────────────────────────────────
 
   const SHAPES = [
-    { key: "rect",       name: "Rettangolo",    open: "[",   close: "]"   },
-    { key: "rounded",    name: "Arrotondato",   open: "(",   close: ")"   },
-    { key: "stadium",    name: "Stadio",        open: "([",  close: "])"  },
-    { key: "subroutine", name: "Subroutine",    open: "[[",  close: "]]"  },
-    { key: "cylinder",   name: "Cilindro",      open: "[(",  close: ")]"  },
-    { key: "circle",     name: "Cerchio",       open: "((",  close: "))"  },
-    { key: "diamond",    name: "Rombo",         open: "{",   close: "}"   },
-    { key: "hexagon",    name: "Esagono",       open: "{{",  close: "}}"  },
+    { key: "rect",       name: __("editor.shape.rect"),      open: "[",   close: "]"   },
+    { key: "rounded",    name: __("editor.shape.rounded"),   open: "(",   close: ")"   },
+    { key: "stadium",    name: __("editor.shape.stadium"),   open: "([",  close: "])"  },
+    { key: "subroutine", name: "Subroutine",                 open: "[[",  close: "]]"  },
+    { key: "cylinder",   name: __("editor.shape.cylinder"),  open: "[(",  close: ")]"  },
+    { key: "circle",     name: __("editor.shape.circle"),    open: "((",  close: "))"  },
+    { key: "diamond",    name: __("editor.shape.diamond"),   open: "{",   close: "}"   },
+    { key: "hexagon",    name: __("editor.shape.hexagon"),   open: "{{",  close: "}}"  },
   ];
 
   const SHAPE_PREVIEWS = {
@@ -239,13 +246,13 @@
       setParseStatus("ok", null);
       if (wasInvalid && statusEl.className === "error") setStatus("");
     } else {
-      setParseStatus("error", errorMsg || "sorgente non valido");
+      setParseStatus("error", errorMsg || __("editor.err.source_invalid"));
     }
   }
 
   function requireValidSource(actionName) {
     if (!lastParseValid) {
-      setStatus(`sorgente invalido — correggi la textarea prima di '${actionName}'`, true);
+      setStatus(__("editor.status.invalid_source", actionName), true);
       return false;
     }
     return true;
@@ -254,7 +261,7 @@
   function setParseStatus(kind, message) {
     if (kind === "ok") {
       parseStatusEl.className = "ok";
-      parseStatusEl.textContent = "✓ valid";
+      parseStatusEl.textContent = __("editor.valid");
       parseStatusEl.title = "";
     } else if (kind === "error") {
       parseStatusEl.className = "error";
@@ -284,10 +291,10 @@
     const okBtn     = document.getElementById("confirmDialogOkBtn");
     const cancelBtn = document.getElementById("confirmDialogCancelBtn");
     const modal     = document.getElementById("confirmDialogModal");
-    titleEl.textContent   = opts.title || "Conferma";
+    titleEl.textContent   = opts.title || __("common.confirm");
     messageEl.textContent = message;
-    okBtn.textContent     = opts.confirmLabel || "Conferma";
-    cancelBtn.textContent = opts.cancelLabel || "Annulla";
+    okBtn.textContent     = opts.confirmLabel || __("common.confirm");
+    cancelBtn.textContent = opts.cancelLabel || __("common.cancel");
     okBtn.classList.toggle("danger", !!opts.danger);
     okBtn.classList.toggle("primary", !opts.danger);
     modal.classList.remove("hidden");
@@ -469,14 +476,14 @@
 
   function exportSvg() {
     const str = serializeSvg();
-    if (!str) { setStatus("nessun diagramma da esportare", true); return; }
+    if (!str) { setStatus(__("editor.status.no_diagram"), true); return; }
     downloadBlob(new Blob([str], { type: "image/svg+xml;charset=utf-8" }), `${slug}.svg`);
-    setStatus(`exported: ${slug}.svg`);
+    setStatus(__("editor.status.exported", `${slug}.svg`));
   }
 
   async function exportPng() {
     const str = serializeSvg();
-    if (!str) { setStatus("nessun diagramma da esportare", true); return; }
+    if (!str) { setStatus(__("editor.status.no_diagram"), true); return; }
     const svgEl = diagramEl.querySelector("svg");
     const vb = svgEl.viewBox.baseVal;
     const w = Math.max(1, Math.round(vb.width));
@@ -495,21 +502,21 @@
       await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url; });
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
     } finally { URL.revokeObjectURL(url); }
-    canvas.toBlob(b => { downloadBlob(b, `${slug}.png`); setStatus(`exported: ${slug}.png`); }, "image/png");
+    canvas.toBlob(b => { downloadBlob(b, `${slug}.png`); setStatus(__("editor.status.exported", `${slug}.png`)); }, "image/png");
   }
 
   function exportSource() {
     if (!currentSource) return;
     const blob = new Blob([currentSource], { type: "text/plain;charset=utf-8" });
     downloadBlob(blob, `${slug}.mmd`);
-    setStatus(`exported: ${slug}.mmd`);
+    setStatus(__("editor.status.exported", `${slug}.mmd`));
   }
 
   // ── Render ──────────────────────────────────────────────────────────────
 
   async function renderDiagram() {
     const parsed = await mermaid.parse(currentSource);
-    if (parsed === false) throw new Error("sorgente non valido");
+    if (parsed === false) throw new Error(__("editor.err.source_invalid"));
     const { svg } = await mermaid.render("mmd-out", currentSource);
     diagramEl.innerHTML = svg;
     const svgEl = diagramEl.querySelector("svg");
@@ -1601,7 +1608,7 @@
         }
       }
       setStatus(snapping
-        ? `bend snap: tangente ${which === 1 ? "sorgente" : "destinazione"} flat (Ctrl)`
+        ? `bend snap: tangent ${which === 1 ? "source" : "destination"} flat (Ctrl)`
         : `bend cp${which}: t=${t.toFixed(2)} n=${finalN.toFixed(1)}`, false);
     };
     const onUp = () => {
@@ -1945,7 +1952,7 @@
       if (changed > 0) {
         markDirtyLayout();
         pushHistory();
-        setStatus(`subgraph ${id}: spostati ${changed} nodi`, false);
+        setStatus(`subgraph ${id}: moved ${changed} nodes`, false);
       }
     }
     document.addEventListener("pointermove", onMove);
@@ -2136,7 +2143,7 @@
         markDirtyLayout();
         pushHistory();
         if (draggingGroup) {
-          setStatus(`${groupStates.length} nodi spostati`, false);
+          setStatus(`${groupStates.length} nodes moved`, false);
         } else {
           setStatus(`${id} → (${t.x.toFixed(0)}, ${t.y.toFixed(0)})`, false);
         }
@@ -2168,10 +2175,10 @@
   function regexEscape(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 
   function validateLabelForShape(label, shape) {
-    if (/[|\n]/.test(label)) return "label non puo' contenere | o newline";
+    if (/[|\n]/.test(label)) return "label cannot contain | or newline";
     for (const ch of shape.close) {
       if (label.includes(ch)) {
-        return `label non puo' contenere '${ch}' (closer della forma ${shape.name})`;
+        return `label cannot contain '${ch}' (closer for shape ${shape.name})`;
       }
     }
     return null;
@@ -2230,8 +2237,8 @@
       if (matches.length === 0) continue;
       if (!winnerMatch) { winnerMatch = matches[0]; winnerCount = matches.length; }
     }
-    if (!winnerMatch) return { ok: false, error: `nodo ${nodeId}: dichiarazione non trovata` };
-    if (winnerCount > 1) return { ok: false, error: `nodo ${nodeId}: ambigua (${winnerCount} match)` };
+    if (!winnerMatch) return { ok: false, error: `node ${nodeId}: declaration not found` };
+    if (winnerCount > 1) return { ok: false, error: `node ${nodeId}: ambiguous (${winnerCount} match)` };
     const err = validateLabelForShape(newLabel, newShape);
     if (err) return { ok: false, error: err };
     const m = winnerMatch;
@@ -2286,8 +2293,8 @@
   // if a node happens to be called `TD`.
   function renameIdInSource(source, oldId, newId) {
     if (oldId === newId) return { ok: true, source };
-    if (!/^[A-Za-z_][\w]*$/.test(newId)) return { ok: false, error: `ID non valido: '${newId}'` };
-    if (nodeMap[newId] || clusterMap[newId]) return { ok: false, error: `'${newId}' esiste gia'` };
+    if (!/^[A-Za-z_][\w]*$/.test(newId)) return { ok: false, error: __("editor.err.id_invalid", newId) };
+    if (nodeMap[newId] || clusterMap[newId]) return { ok: false, error: __("editor.err.id_exists", newId) };
 
     const oldEsc = regexEscape(oldId);
     const noteRe = new RegExp(`^(\\s*%%\\s+)${oldEsc}(\\s.*|\\s*)$`);
@@ -2320,9 +2327,9 @@
       if (matchIdx === -1) { matchIdx = i; leading = m[1]; trailing = m[3] || ""; }
     }
     if (matchCount === 0) {
-      return { ok: false, error: `subgraph ${id}: header non trovato (forma 'subgraph "Title"' non supportata)` };
+      return { ok: false, error: `subgraph ${id}: header not found ('subgraph "Title"' form not supported)` };
     }
-    if (matchCount > 1) return { ok: false, error: `subgraph ${id}: header ambiguo (${matchCount} match)` };
+    if (matchCount > 1) return { ok: false, error: `subgraph ${id}: ambiguous header (${matchCount} match)` };
     const newLine = newLabel === ""
       ? `${leading}${trailing}`
       : `${leading} [${newLabel}]${trailing}`;
@@ -2356,11 +2363,11 @@
       if (matched !== ordinal) { matched++; continue; }
       const arrowSegs = (stripped.match(new RegExp(`${EDGE_CONN}\\s*\\w+`, "g")) || []).length;
       if (arrowSegs > 1) {
-        return { ok: false, error: "edge in chain: dividi la linea per modificarne la label" };
+        return { ok: false, error: "edge in chain: split the line to modify its label" };
       }
       const re = new RegExp(`(\\b${sEsc})(\\s+)(${EDGE_CONN})(\\s*)(?:\\|([^|\\n]*)\\|(\\s*))?(${tEsc}\\b)`);
       const m = lines[i].match(re);
-      if (!m) return { ok: false, error: `edge ${src}→${tgt}: pattern interno non trovato` };
+      if (!m) return { ok: false, error: `edge ${src}→${tgt}: internal pattern not found` };
       const arrow = m[3];
       const rebuilt = newLabel === ""
         ? `${m[1]} ${arrow} ${m[7]}`
@@ -2368,7 +2375,7 @@
       lines[i] = lines[i].replace(re, rebuilt);
       return { ok: true, source: lines.join("\n") };
     }
-    return { ok: false, error: `edge ${src}→${tgt} #${ordinal} non trovata` };
+    return { ok: false, error: `edge ${src}→${tgt} #${ordinal} not found` };
   }
 
   // Toggle edge style between solid and dashed for a specific (src,tgt,ordinal)
@@ -2384,7 +2391,7 @@
       "<-.->": "<-->",
     };
     return mutateEdgeConnector(source, src, tgt, ordinal, STYLE_TOGGLE,
-      "stile", "solo --> ↔ -.->, --- ↔ -.-, <--> ↔ <-.->");
+      "style", "only --> ↔ -.->, --- ↔ -.-, <--> ↔ <-.->");
   }
 
   // Cycle the arrowhead through forward → none → both, preserving solid/dashed.
@@ -2398,7 +2405,7 @@
       "<-.->": "-.->",
     };
     return mutateEdgeConnector(source, src, tgt, ordinal, ARROW_CYCLE,
-      "freccia", "solo connettori solid/dashed");
+      "arrow", "only solid/dashed connectors");
   }
 
   // Shared scaffolding for connector mutations: locate the (src,tgt,ordinal)
@@ -2417,17 +2424,17 @@
       if (matched !== ordinal) { matched++; continue; }
       const arrowSegs = (stripped.match(new RegExp(`${EDGE_CONN}\\s*\\w+`, "g")) || []).length;
       if (arrowSegs > 1) {
-        return { ok: false, error: `edge in chain: dividi la linea per cambiare ${opName}` };
+        return { ok: false, error: `edge in chain: split the line to change ${opName}` };
       }
       const re = new RegExp(`(\\b${sEsc}\\s+)(${EDGE_CONN})(\\s*(?:\\|[^|\\n]*\\|\\s*)?${tEsc}\\b)`);
       const m = lines[i].match(re);
-      if (!m) return { ok: false, error: `edge ${src}→${tgt}: pattern interno non trovato` };
+      if (!m) return { ok: false, error: `edge ${src}→${tgt}: internal pattern not found` };
       const newConn = cycleMap[m[2]];
-      if (!newConn) return { ok: false, error: `connettore '${m[2]}': ${opName} non supportato (${supportedHint})` };
+      if (!newConn) return { ok: false, error: `connector '${m[2]}': ${opName} not supported (${supportedHint})` };
       lines[i] = lines[i].replace(re, `${m[1]}${newConn}${m[3]}`);
       return { ok: true, source: lines.join("\n"), from: m[2], to: newConn };
     }
-    return { ok: false, error: `edge ${src}→${tgt} #${ordinal} non trovata` };
+    return { ok: false, error: `edge ${src}→${tgt} #${ordinal} not found` };
   }
 
   // Reverse an edge by swapping src and tgt operands in the source line.
@@ -2452,11 +2459,11 @@
       if (matched !== ordinal) { matched++; continue; }
       const arrowSegs = (stripped.match(new RegExp(`${EDGE_CONN}\\s*\\w+`, "g")) || []).length;
       if (arrowSegs > 1) {
-        return { ok: false, error: "edge in chain: dividi la linea per invertire" };
+        return { ok: false, error: "edge in chain: split the line to reverse" };
       }
       const re = new RegExp(`(\\b)(${sEsc})(\\s+${EDGE_CONN}\\s*(?:\\|[^|\\n]*\\|\\s*)?)(${tEsc})(\\b)`);
       const m = lines[i].match(re);
-      if (!m) return { ok: false, error: `edge ${src}→${tgt}: pattern interno non trovato` };
+      if (!m) return { ok: false, error: `edge ${src}→${tgt}: internal pattern not found` };
       lines[i] = lines[i].replace(re, `${m[1]}${m[4]}${m[3]}${m[2]}${m[5]}`);
       // Count pre-existing (tgt,src) edges in source lines before i — that's
       // the new edge's ordinal after the rewrite. Mermaid render order tracks
@@ -2471,7 +2478,7 @@
       }
       return { ok: true, source: lines.join("\n"), newOrdinal };
     }
-    return { ok: false, error: `edge ${src}→${tgt} #${ordinal} non trovata` };
+    return { ok: false, error: `edge ${src}→${tgt} #${ordinal} not found` };
   }
 
   // Open inline editor at the curve midpoint to add/edit/remove an edge label.
@@ -2496,7 +2503,7 @@
     const input = document.createElement("input");
     input.type = "text";
     input.value = initialText;
-    input.placeholder = "label (vuoto = rimuove)";
+    input.placeholder = __("editor.edge_label_placeholder");
     Object.assign(input.style, {
       position: "fixed",
       left: `${screenX - 80}px`,
@@ -2523,13 +2530,13 @@
       cleanup();
       if (newText === initialText) return;
       const result = rewriteEdgeLabelInSource(currentSource, edge.source, edge.target, edge.ordinal, newText);
-      if (!result.ok) { setStatus(`edit rifiutato: ${result.error}`, true); return; }
+      if (!result.ok) { setStatus(__("editor.err.edit_rejected", result.error), true); return; }
       currentSource = result.source;
       markDirtySource();
       await renderDiagram();
       pushHistory();
       const lbl = `${edge.source}→${edge.target}`;
-      if (newText === "") setStatus(`${lbl}: label rimossa`);
+      if (newText === "") setStatus(`${lbl}: label removed`);
       else if (initialText === "") setStatus(`${lbl}: + "${newText}"`);
       else setStatus(`${lbl}: "${initialText}" → "${newText}"`);
     }
@@ -2543,12 +2550,12 @@
   }
 
   async function applyToggleEdgeStyle() {
-    if (!selectedEdgeKey) { setStatus("seleziona prima un edge", true); return; }
+    if (!selectedEdgeKey) { setStatus(__("editor.err.select_edge"), true); return; }
     if (!requireValidSource("toggle edge style")) return;
     const edge = findEdgeByKey(selectedEdgeKey);
     if (!edge) return;
     const result = toggleEdgeStyleInSource(currentSource, edge.source, edge.target, edge.ordinal);
-    if (!result.ok) { setStatus(`toggle stile: ${result.error}`, true); return; }
+    if (!result.ok) { setStatus(`toggle style: ${result.error}`, true); return; }
     currentSource = result.source;
     markDirtySource();
     await renderDiagram();
@@ -2557,12 +2564,12 @@
   }
 
   async function applyCycleEdgeArrow() {
-    if (!selectedEdgeKey) { setStatus("seleziona prima un edge", true); return; }
+    if (!selectedEdgeKey) { setStatus(__("editor.err.select_edge"), true); return; }
     if (!requireValidSource("cycle edge arrow")) return;
     const edge = findEdgeByKey(selectedEdgeKey);
     if (!edge) return;
     const result = cycleEdgeArrowInSource(currentSource, edge.source, edge.target, edge.ordinal);
-    if (!result.ok) { setStatus(`freccia: ${result.error}`, true); return; }
+    if (!result.ok) { setStatus(`arrow: ${result.error}`, true); return; }
     currentSource = result.source;
     markDirtySource();
     await renderDiagram();
@@ -2574,7 +2581,7 @@
   // we update selectedEdgeKey to (tgt, src, newOrdinal) before re-rendering;
   // renderDiagram will re-apply selection visuals from selectedEdgeKey.
   async function applyReverseEdge() {
-    if (!selectedEdgeKey) { setStatus("seleziona prima un edge", true); return; }
+    if (!selectedEdgeKey) { setStatus(__("editor.err.select_edge"), true); return; }
     if (!requireValidSource("reverse edge")) return;
     const edge = findEdgeByKey(selectedEdgeKey);
     if (!edge) return;
@@ -2585,7 +2592,7 @@
     selectedEdgeKey = `${edge.target}|${edge.source}|${result.newOrdinal}`;
     await renderDiagram();
     pushHistory();
-    setStatus(`${edge.source}→${edge.target}: invertito`);
+    setStatus(__("editor.op.edge_inverted", edge.source, edge.target));
   }
 
   // ── Align / Distribute selected nodes ────────────────────────────────────
@@ -2594,8 +2601,8 @@
   // the *current* mode that will be applied on click.
   const ALIGN_V_MODES = ["middle", "top", "bottom"]; // Y-axis cycle
   const ALIGN_H_MODES = ["center", "left", "right"]; // X-axis cycle
-  const ALIGN_V_LABELS = { middle: "↕ centro", top: "↕ alto", bottom: "↕ basso" };
-  const ALIGN_H_LABELS = { center: "↔ centro", left: "↔ sinistra", right: "↔ destra" };
+  const ALIGN_V_LABELS = { middle: __("editor.align.y_center"), top: __("editor.align.y_top"), bottom: __("editor.align.y_bottom") };
+  const ALIGN_H_LABELS = { center: __("editor.align.x_center"), left: __("editor.align.x_left"), right: __("editor.align.x_right") };
   let alignVMode = ALIGN_V_MODES[0];
   let alignHMode = ALIGN_H_MODES[0];
 
@@ -2626,7 +2633,7 @@
   }
 
   function applyAlignV() {
-    if (selectedNodeIds.size < 2) { setStatus("seleziona almeno 2 nodi per allineare", true); return; }
+    if (selectedNodeIds.size < 2) { setStatus(__("editor.err.select_2_nodes"), true); return; }
     const items = snapshotSelectedNodes();
     if (items.length < 2) return;
     let targetCy;
@@ -2644,14 +2651,14 @@
     updateAllClusterBounds();
     markDirtyLayout();
     pushHistory();
-    setStatus(`allineati ${items.length} nodi su Y: ${alignVMode}`);
+    setStatus(__("editor.op.aligned_y", items.length, alignVMode));
     // Cycle to next mode for next click.
     alignVMode = ALIGN_V_MODES[(ALIGN_V_MODES.indexOf(alignVMode) + 1) % ALIGN_V_MODES.length];
     if (alignVBtn) alignVBtn.textContent = ALIGN_V_LABELS[alignVMode];
   }
 
   function applyAlignH() {
-    if (selectedNodeIds.size < 2) { setStatus("seleziona almeno 2 nodi per allineare", true); return; }
+    if (selectedNodeIds.size < 2) { setStatus(__("editor.err.select_2_nodes"), true); return; }
     const items = snapshotSelectedNodes();
     if (items.length < 2) return;
     let targetCx;
@@ -2669,7 +2676,7 @@
     updateAllClusterBounds();
     markDirtyLayout();
     pushHistory();
-    setStatus(`allineati ${items.length} nodi su X: ${alignHMode}`);
+    setStatus(__("editor.op.aligned_x", items.length, alignHMode));
     alignHMode = ALIGN_H_MODES[(ALIGN_H_MODES.indexOf(alignHMode) + 1) % ALIGN_H_MODES.length];
     if (alignHBtn) alignHBtn.textContent = ALIGN_H_LABELS[alignHMode];
   }
@@ -2679,7 +2686,7 @@
   // Gap-based (not center-based) so nodes with different sizes still look
   // evenly spaced visually.
   function applyDistribute(axis) {
-    if (selectedNodeIds.size < 3) { setStatus("seleziona almeno 3 nodi per distribuire", true); return; }
+    if (selectedNodeIds.size < 3) { setStatus(__("editor.err.select_3_nodes"), true); return; }
     const items = snapshotSelectedNodes();
     if (items.length < 3) return;
     if (axis === "h") {
@@ -2714,7 +2721,7 @@
     updateAllClusterBounds();
     markDirtyLayout();
     pushHistory();
-    setStatus(`distribuiti ${items.length} nodi su ${axis === "h" ? "X" : "Y"}`);
+    setStatus(__("editor.op.distributed", items.length, axis === "h" ? "X" : "Y"));
   }
 
   function attachLabelEditors() {
@@ -2928,9 +2935,9 @@
 
   function addNodeToSource(source, id, label, shape, subgraphId) {
     if (!/^[A-Za-z_][\w]*$/.test(id)) {
-      return { ok: false, error: `ID non valido: '${id}'` };
+      return { ok: false, error: __("editor.err.id_invalid", id) };
     }
-    if (nodeMap[id]) return { ok: false, error: `nodo '${id}' esiste gia'` };
+    if (nodeMap[id]) return { ok: false, error: __("editor.err.id_exists", id) };
     const shp = shape || SHAPES[0];
     const lbl = label || id;
     const err = validateLabelForShape(lbl, shp);
@@ -2998,7 +3005,7 @@
       lines.splice(i, 1);
       return { ok: true, source: lines.join("\n"), chainLine };
     }
-    return { ok: false, error: `edge ${src}→${tgt} #${ordinal} non trovata` };
+    return { ok: false, error: `edge ${src}→${tgt} #${ordinal} not found` };
   }
 
   function deleteNodeFromSource(source, id) {
@@ -3029,7 +3036,7 @@
       removedOther++;
     }
     if (!removedDecl && removedOther === 0) {
-      return { ok: false, error: `nessun riferimento a '${id}' trovato` };
+      return { ok: false, error: `no reference to '${id}' found` };
     }
     return { ok: true, source: kept.join("\n"), removedDecl, removedOther };
   }
@@ -3111,12 +3118,12 @@
     for (let i = 0; i < lines.length; i++) {
       if (headerRe.test(lines[i])) {
         if (headerIdx !== -1) {
-          return { ok: false, error: `subgraph ${id}: header ambiguo` };
+          return { ok: false, error: `subgraph ${id}: ambiguous header` };
         }
         headerIdx = i;
       }
     }
-    if (headerIdx === -1) return { ok: false, error: `subgraph ${id}: non trovato` };
+    if (headerIdx === -1) return { ok: false, error: `subgraph ${id}: not found` };
     let depth = 1, endIdx = -1;
     for (let i = headerIdx + 1; i < lines.length; i++) {
       if (anySubgraphRe.test(lines[i])) depth++;
@@ -3125,7 +3132,7 @@
         if (depth === 0) { endIdx = i; break; }
       }
     }
-    if (endIdx === -1) return { ok: false, error: `subgraph ${id}: 'end' non trovato` };
+    if (endIdx === -1) return { ok: false, error: `subgraph ${id}: 'end' not found` };
     // Remove higher index first to keep the lower one valid.
     lines.splice(endIdx, 1);
     lines.splice(headerIdx, 1);
@@ -3203,7 +3210,7 @@
         const tgtRe = new RegExp(`^\\s*subgraph\\s+${tgtEsc}(\\s|\\[|$)`, "i");
         for (let i = range.headerIdx + 1; i < range.endIdx; i++) {
           if (tgtRe.test(probeLines[i])) {
-            return { ok: false, error: `'${targetId}' è dentro '${id}': sposta non permesso (ciclo)` };
+            return { ok: false, error: `'${targetId}' is inside '${id}': move not allowed (cycle)` };
           }
         }
       }
@@ -3217,11 +3224,11 @@
     const movedSubgraphIds = ids.filter(id => clusterMap[id]);
     for (const id of movedSubgraphIds) {
       if (id === targetId) {
-        return { ok: false, error: `'${id}' è già la destinazione` };
+        return { ok: false, error: `'${id}' is already the destination` };
       }
       const range = findSubgraphRange(lines, id);
       if (!range) {
-        return { ok: false, error: `subgraph '${id}' non trovato nel sorgente` };
+        return { ok: false, error: `subgraph '${id}' not found in source` };
       }
       const blockLines = lines.slice(range.headerIdx, range.endIdx + 1);
       lines = lines.slice(0, range.headerIdx).concat(lines.slice(range.endIdx + 1));
@@ -3295,11 +3302,11 @@
     for (const { blockLines } of cutBlocks) insertPieces.push(...blockLines);
 
     if (insertPieces.length === 0) {
-      return { ok: false, error: "niente da spostare" };
+      return { ok: false, error: __("editor.nothing_to_move") };
     }
     if (targetId) {
       const result = appendInside(lines, targetId, insertPieces);
-      if (!result) return { ok: false, error: `subgraph '${targetId}' non trovato` };
+      if (!result) return { ok: false, error: `subgraph '${targetId}' not found` };
       lines = result;
     } else {
       if (lines.length > 0 && lines[lines.length - 1] === "") {
@@ -3400,27 +3407,27 @@
     const legacy = findLegacyBareRefs(currentSource);
     if (legacy.length === 0) return;
     _legacyPromptHandled = true;
-    const msg = `Trovati ${legacy.length} nodi in formato legacy (dichiarazione fuori dal subgraph + bare-ref dentro). Vuoi normalizzare il sorgente spostando le dichiarazioni dentro il subgraph?`;
+    const msg = `Found ${legacy.length} nodes in legacy format (declaration outside subgraph + bare-ref inside). Normalize the source by moving declarations inside the subgraph?`;
     const ok = await confirmDialog(msg, {
-      title: "Normalizza formato legacy",
-      confirmLabel: "Normalizza",
-      cancelLabel: "Lascia com'è",
+      title: __("editor.normalize_title"),
+      confirmLabel: __("editor.normalize_btn"),
+      cancelLabel: __("editor.normalize_cancel"),
     });
     if (!ok) return;
     const r = normalizeLegacyBareRefs(currentSource);
-    if (!r.ok) { setStatus(`normalizza: ${r.error}`, true); return; }
+    if (!r.ok) { setStatus(`normalize: ${r.error}`, true); return; }
     if (r.changed === 0) return;
     currentSource = r.source;
     markDirtySource();
     await renderDiagram();
     pushHistory();
-    setStatus(`normalizzati ${r.changed} nodi (salva per persistere)`);
+    setStatus(__("editor.op.normalized", r.changed));
   }
 
   function addSubgraphToSource(source, id, title, memberIds, parentId) {
-    if (!/^[A-Za-z_][\w]*$/.test(id)) return { ok: false, error: `ID non valido: '${id}'` };
-    if (nodeMap[id] || clusterMap[id]) return { ok: false, error: `'${id}' esiste gia'` };
-    if (title && /[\]\n]/.test(title)) return { ok: false, error: "titolo non puo' contenere ] o newline" };
+    if (!/^[A-Za-z_][\w]*$/.test(id)) return { ok: false, error: __("editor.err.id_invalid", id) };
+    if (nodeMap[id] || clusterMap[id]) return { ok: false, error: __("editor.err.id_exists", id) };
+    if (title && /[\]\n]/.test(title)) return { ok: false, error: "title cannot contain ] or newline" };
     const head = title ? `subgraph ${id} [${title}]` : `subgraph ${id}`;
     const blockLines = [head, ...memberIds.map(m => `    ${m}`), "end"];
 
@@ -3443,13 +3450,13 @@
     for (let i = 0; i < lines.length; i++) {
       if (headerRe.test(lines[i])) { headerIdx = i; break; }
     }
-    if (headerIdx === -1) return { ok: false, error: `parent '${parentId}' non trovato` };
+    if (headerIdx === -1) return { ok: false, error: `parent '${parentId}' not found` };
     let d = 1, endIdx = -1;
     for (let i = headerIdx + 1; i < lines.length; i++) {
       if (subgraphHeaderRe.test(lines[i])) d++;
       else if (endRe.test(lines[i])) { d--; if (d === 0) { endIdx = i; break; } }
     }
-    if (endIdx === -1) return { ok: false, error: `parent '${parentId}' senza end` };
+    if (endIdx === -1) return { ok: false, error: `parent '${parentId}' missing end` };
 
     const escIds = memberIds.map(regexEscape).join("|");
     const memberLineRe = new RegExp(`^\\s*(?:${escIds})\\s*$`);
@@ -3479,7 +3486,7 @@
   function applyAddSubgraph() {
     if (!requireValidSource("+ subgraph")) return;
     if (selectedNodeIds.size < 2) {
-      setStatus("seleziona almeno 2 nodi (Shift+click)", true);
+      setStatus(__("editor.err.select_2_shift"), true);
       return;
     }
     const ids = [...selectedNodeIds];
@@ -3492,7 +3499,7 @@
     for (const id of ids) {
       const o = owners[id] || null;
       if (o !== parent) {
-        setStatus(`selezione mista: '${id}' è in ${o || "root"}, atteso ${parent || "root"}`, true);
+        setStatus(__("editor.mixed_selection", id, o || "root", parent || "root"), true);
         return;
       }
     }
@@ -3505,11 +3512,11 @@
     const title = document.querySelector("#addSubgraphModal h2");
     const okBtn = document.getElementById("subgraphOkBtn");
     if (isEdit) {
-      if (title) title.textContent = "Modifica subgraph";
-      if (okBtn) okBtn.textContent = "Salva";
+      if (title) title.textContent = __("editor.edit_subgraph");
+      if (okBtn) okBtn.textContent = __("common.save");
     } else {
-      if (title) title.textContent = "Nuovo subgraph";
-      if (okBtn) okBtn.textContent = "Crea";
+      if (title) title.textContent = __("editor.new_subgraph");
+      if (okBtn) okBtn.textContent = __("common.create");
     }
   }
   function openAddSubgraphModal(ids, parentId) {
@@ -3521,16 +3528,16 @@
     document.getElementById("subgraphModalError").textContent = "";
     document.getElementById("subgraphIdInput").value = "";
     document.getElementById("subgraphTitleInput").value = "";
-    const where = parentId ? ` (annidato in ${parentId})` : "";
+    const where = parentId ? ` (nested in ${parentId})` : "";
     document.getElementById("subgraphMembersInfo").textContent =
-      `${ids.length} nodi${where}: ${ids.join(", ")}`;
+      `${ids.length} nodes${where}: ${ids.join(", ")}`;
     setTimeout(() => document.getElementById("subgraphIdInput").focus(), 0);
   }
   function openEditSubgraphModal(subgraphId) {
-    if (!requireValidSource("modifica subgraph")) return;
-    if (!clusterMap[subgraphId]) { setStatus(`subgraph '${subgraphId}' non trovato`, true); return; }
+    if (!requireValidSource("edit subgraph")) return;
+    if (!clusterMap[subgraphId]) { setStatus(`subgraph '${subgraphId}' not found`, true); return; }
     const title = getSubgraphTitleInSource(currentSource, subgraphId);
-    if (title === null) { setStatus(`subgraph '${subgraphId}': header non trovato`, true); return; }
+    if (title === null) { setStatus(`subgraph '${subgraphId}': header not found`, true); return; }
     _editSubgraphOriginalId = subgraphId;
     _subgraphPendingIds = null;
     _subgraphPendingParent = null;
@@ -3562,9 +3569,9 @@
     const titleRaw = document.getElementById("subgraphTitleInput").value;
     const errorEl = document.getElementById("subgraphModalError");
     errorEl.textContent = "";
-    if (!idRaw) { errorEl.textContent = "ID obbligatorio"; return; }
-    if (!/^[A-Za-z_][\w]*$/.test(idRaw)) { errorEl.textContent = `ID non valido: '${idRaw}'`; return; }
-    if (nodeMap[idRaw] || clusterMap[idRaw]) { errorEl.textContent = `'${idRaw}' esiste gia'`; return; }
+    if (!idRaw) { errorEl.textContent = __("editor.err.id_required"); return; }
+    if (!/^[A-Za-z_][\w]*$/.test(idRaw)) { errorEl.textContent = __("editor.err.id_invalid", idRaw); return; }
+    if (nodeMap[idRaw] || clusterMap[idRaw]) { errorEl.textContent = __("editor.err.id_exists", idRaw); return; }
     const title = titleRaw.trim();
     const result = addSubgraphToSource(currentSource, idRaw, title, ids, parent);
     if (!result.ok) { errorEl.textContent = result.error; return; }
@@ -3574,8 +3581,7 @@
     closeAddSubgraphModal();
     await renderDiagram();
     pushHistory();
-    const where = parent ? ` (in ${parent})` : "";
-    setStatus(`+ subgraph ${idRaw} con ${ids.length} nodi${where}`);
+    setStatus(__("editor.op.subgraph_added", idRaw, ids.length));
   }
 
   async function submitEditSubgraphModal() {
@@ -3584,10 +3590,10 @@
     const newTitle = document.getElementById("subgraphTitleInput").value.trim();
     const errorEl = document.getElementById("subgraphModalError");
     errorEl.textContent = "";
-    if (!newId) { errorEl.textContent = "ID obbligatorio"; return; }
-    if (!/^[A-Za-z_][\w]*$/.test(newId)) { errorEl.textContent = `ID non valido: '${newId}'`; return; }
+    if (!newId) { errorEl.textContent = __("editor.err.id_required"); return; }
+    if (!/^[A-Za-z_][\w]*$/.test(newId)) { errorEl.textContent = __("editor.err.id_invalid", newId); return; }
     if (newId !== oldId && (nodeMap[newId] || clusterMap[newId])) {
-      errorEl.textContent = `'${newId}' esiste gia'`; return;
+      errorEl.textContent = __("editor.err.id_exists", newId); return;
     }
 
     let next = currentSource;
@@ -3613,12 +3619,12 @@
     await renderDiagram();
     pushHistory();
     const renamed = newId !== oldId ? `${oldId} → ${newId}` : newId;
-    setStatus(`✎ subgraph ${renamed}`);
+    setStatus(__("editor.op.subgraph_renamed", renamed));
   }
 
   async function handleDeleteSubgraphClick(id) {
-    if (!await confirmDialog(`Eliminare il subgraph '${id}'? I contenuti restano.`,
-      { confirmLabel: "Elimina", danger: true })) return;
+    if (!await confirmDialog(__("editor.delete_subgraph_confirm", id),
+      { confirmLabel: __("common.delete"), danger: true })) return;
     let result = deleteSubgraphFromSource(currentSource, id);
     if (!result.ok) { setStatus(`delete subgraph: ${result.error}`, true); return; }
     let next = result.source;
@@ -3630,7 +3636,7 @@
     if (selectedClusterId === id) deselectCluster();
     await renderDiagram();
     pushHistory();
-    setStatus(`− subgraph ${id}`);
+    setStatus(__("editor.op.subgraph_deleted", id));
   }
 
   // Inserts an invisible thick-stroke "hit path" alongside each visible edge
@@ -3678,8 +3684,8 @@
   async function handleDeleteEdgeClick(edge) {
     const label = `${edge.source} → ${edge.target}` +
       (edge.ordinal > 0 ? ` (#${edge.ordinal + 1})` : "");
-    if (!await confirmDialog(`Eliminare la freccia ${label}?`,
-      { confirmLabel: "Elimina", danger: true })) return;
+    if (!await confirmDialog(__("editor.delete_edge_confirm", label),
+      { confirmLabel: __("common.delete"), danger: true })) return;
     const result = deleteEdgeFromSource(currentSource, edge.source, edge.target, edge.ordinal);
     if (!result.ok) { setStatus(`delete edge: ${result.error}`, true); return; }
     currentSource = result.source;
@@ -3687,19 +3693,19 @@
     deselectEdge();
     await renderDiagram();
     pushHistory();
-    const warn = result.chainLine ? " (era in una chain: rimossa l'intera riga)" : "";
-    setStatus(`− edge ${label}${warn}`);
+    const warn = result.chainLine ? " (was in a chain: entire line removed)" : "";
+    setStatus(__("editor.op.edge_deleted", label) + warn);
   }
 
   // Batch-deletes the currently selected nodes (with confirm). Shared by the
   // Delete button and the Delete/Backspace keys.
   async function deleteSelectedNodes() {
     if (selectedNodeIds.size === 0) return;
-    if (!requireValidSource("rimuovi nodo")) return;
+    if (!requireValidSource("remove node")) return;
     const ids = [...selectedNodeIds];
-    const label = ids.length === 1 ? `il nodo '${ids[0]}'` : `${ids.length} nodi`;
-    if (!await confirmDialog(`Eliminare ${label} e tutti i riferimenti?`,
-      { confirmLabel: "Elimina", danger: true })) return;
+    const label = ids.length === 1 ? `node '${ids[0]}'` : `${ids.length} nodes`;
+    if (!await confirmDialog(__("editor.delete_node_confirm", label),
+      { confirmLabel: __("common.delete"), danger: true })) return;
     let next = currentSource, ok = 0, errs = [];
     for (const id of ids) {
       const r = deleteNodeFromSource(next, id);
@@ -3714,7 +3720,7 @@
       deselectNode();
       await renderDiagram();
       pushHistory();
-      setStatus(ids.length === 1 ? `− node ${ids[0]}` : `− ${ok}/${ids.length} nodi${errs.length ? " err: " + errs.join("; ") : ""}`,
+      setStatus(ids.length === 1 ? __("editor.op.node_deleted", ids[0]) : `− ${ok}/${ids.length} nodes${errs.length ? " err: " + errs.join("; ") : ""}`,
                 errs.length > 0);
     } else if (errs.length) {
       setStatus(`delete: ${errs.join("; ")}`, true);
@@ -3739,7 +3745,7 @@
     if (_ghostCleanup) { _ghostCleanup(); _ghostCleanup = null; }
     const src = connectSource, tgt = id;
     cancelConnectMode();
-    if (src === tgt) { setStatus(`self-loop ${src}→${tgt} non supportato`, true); return; }
+    if (src === tgt) { setStatus(__("editor.err.self_loop", src, tgt), true); return; }
     // Count existing edges between src and tgt: the new edge will have
     // ordinal = that count (ordinals are 0-based, in document order).
     const newOrdinal = edges.filter(e => e.source === src && e.target === tgt).length;
@@ -3762,7 +3768,7 @@
     _skipNextDiagramClick = true;
     await renderDiagram();
     pushHistory();
-    setStatus(`+ edge ${src} → ${tgt} (doppio click per aggiungere label)`);
+    setStatus(__("editor.op.edge_added", src, tgt));
   }
 
   function startGhostEdge(svgEl, srcId) {
@@ -3801,7 +3807,7 @@
     if (selectedNodeIds.size === 1) src = [...selectedNodeIds][0];
     else if (selectedClusterId) src = selectedClusterId;
     else {
-      setStatus("seleziona prima 1 nodo o 1 subgraph come sorgente", true);
+      setStatus(__("editor.select_1_source"), true);
       return;
     }
     connectingState = "edge-target";
@@ -3811,10 +3817,10 @@
     else if (clusterMap[src]) clusterMap[src].g.classList.add("connect-source");
     addEdgeBtn.classList.add("active");
     addEdgeBtn.innerHTML = '<svg class="icon"><use href="#icon-x"/></svg>';
-    addEdgeBtn.title = "Annulla collegamento (Esc)";
+    addEdgeBtn.title = __("editor.add_edge_cancel");
     const svgEl = diagramEl.querySelector("svg");
     _ghostCleanup = startGhostEdge(svgEl, src);
-    setStatus(`source: ${src}. Ora clicca il target (Esc per annullare).`);
+    setStatus(__("editor.source_link", src));
   }
   function cancelConnectMode() {
     if (_ghostCleanup) { _ghostCleanup(); _ghostCleanup = null; }
@@ -3827,7 +3833,7 @@
     document.body.classList.remove("connecting");
     addEdgeBtn.classList.remove("active");
     addEdgeBtn.innerHTML = '<svg class="icon"><use href="#icon-arrow-link"/></svg>';
-    addEdgeBtn.title = "Collega (E): seleziona prima un nodo sorgente, poi premi E (o clicca) e infine il target";
+    addEdgeBtn.title = __("editor.add_edge_hint");
     updateToolbarState();
     setStatus("");
   }
@@ -3844,7 +3850,7 @@
     if (selectedNodeIds.size > 0) ids.push(...selectedNodeIds);
     if (selectedClusterId) ids.push(selectedClusterId);
     if (ids.length === 0) {
-      setStatus("seleziona prima 1+ nodi o 1 subgraph", true);
+      setStatus(__("editor.select_1_or_more"), true);
       return;
     }
     connectingState = "move-target";
@@ -3852,8 +3858,8 @@
     document.body.classList.add("moving");
     moveToSubgraphBtn.classList.add("active");
     moveToSubgraphBtn.innerHTML = '<svg class="icon"><use href="#icon-x"/></svg>';
-    moveToSubgraphBtn.title = "Annulla spostamento (Esc)";
-    setStatus(`sposta ${ids.length === 1 ? ids[0] : ids.length + " elementi"}: clicca un subgraph (o lo sfondo per la root). Esc per annullare.`);
+    moveToSubgraphBtn.title = __("editor.move_cancel");
+    setStatus(__("editor.move_hint", ids.length === 1 ? ids[0] : ids.length + " elementi"));
   }
 
   function cancelMoveMode() {
@@ -3863,7 +3869,7 @@
     if (moveToSubgraphBtn) {
       moveToSubgraphBtn.classList.remove("active");
       moveToSubgraphBtn.innerHTML = '<svg class="icon"><use href="#icon-log-in"/></svg>';
-      moveToSubgraphBtn.title = "Sposta selezione: clicca un subgraph come destinazione (o lo sfondo per la root)";
+      moveToSubgraphBtn.title = __("editor.move_btn_hint");
     }
     updateToolbarState();
     setStatus("");
@@ -3875,7 +3881,7 @@
     cancelMoveMode();
     if (!ids || ids.length === 0) return;
     if (targetId && ids.includes(targetId)) {
-      setStatus("destinazione = selezione, sposta annullato", true);
+      setStatus(__("editor.err.dest_is_selection"), true);
       return;
     }
     // Capture pre-move world translates for every node whose parent will
@@ -3897,7 +3903,7 @@
       oldWorld[pid] = getWorldTranslate(n.g);
     }
     const result = moveToSubgraphInSource(currentSource, ids, targetId);
-    if (!result.ok) { setStatus(`sposta: ${result.error}`, true); return; }
+    if (!result.ok) { setStatus(`move: ${result.error}`, true); return; }
     currentSource = result.source;
     markDirtySource();
     await renderDiagram();
@@ -3923,7 +3929,7 @@
     }
     pushHistory();
     const where = targetId ? `→ ${targetId}` : "→ root";
-    setStatus(`spostati ${ids.length} elementi ${where}`);
+    setStatus(`moved ${ids.length} elements ${where}`);
   }
 
   // ── Pan / zoom ───────────────────────────────────────────────────────────
@@ -4027,7 +4033,7 @@
   function centerOnSelection() {
     if (!viewState) return false;
     const bb = selectionWorldBbox();
-    if (!bb) { setStatus("Niente da centrare — seleziona prima un elemento.", true); return false; }
+    if (!bb) { setStatus(__("editor.status.nothing_center"), true); return false; }
     const cx = (bb.minX + bb.maxX) / 2;
     const cy = (bb.minY + bb.maxY) / 2;
     viewState.x = cx - viewState.width / 2;
@@ -4236,7 +4242,7 @@
       }
       updateToolbarState();
       const n = selectedNodeIds.size;
-      setStatus(n === 0 ? "" : (n === 1 ? `selected: ${[...selectedNodeIds][0]}` : `selected: ${n} nodi`));
+      setStatus(n === 0 ? "" : (n === 1 ? __("editor.status.selected", [...selectedNodeIds][0]) : __("editor.status.selected_n", n)));
       broadcastSelection();
       return;
     }
@@ -4251,7 +4257,7 @@
     selectedNodeIds.add(id);
     if (nodeMap[id]) nodeMap[id].g.classList.add("selected");
     updateToolbarState();
-    setStatus(`selected: ${id}`);
+    setStatus(__("editor.status.selected", id));
     broadcastSelection();
   }
   function deselectNode() {
@@ -4295,7 +4301,7 @@
     if (moveToSubgraphBtn) {
       moveToSubgraphBtn.disabled = !((kind === "node") || kind === "subgraph");
     }
-    // Palette: Colore agisce su nodi e subgraph; Forma solo su nodi.
+    // Palette: Color applies to nodes and subgraphs; Shape only to nodes.
     const colorEnabled = (kind === "node") || (kind === "subgraph");
     const shapeEnabled = (kind === "node");
     if (colorPaletteEl) {
@@ -4317,7 +4323,7 @@
     selectedClusterId = id;
     clusterMap[id].g.classList.add("selected");
     updateToolbarState();
-    setStatus(`selected subgraph: ${id}`);
+    setStatus(__("editor.status.selected_subgraph", id));
     broadcastSelection();
   }
   function deselectCluster() {
@@ -4346,7 +4352,7 @@
     selectedEdgeKey = key;
     edge.path.classList.add("selected");
     const lbl = `${edge.source} → ${edge.target}` + (edge.ordinal > 0 ? ` (#${edge.ordinal + 1})` : "");
-    setStatus(`selected edge: ${lbl}`);
+    setStatus(__("editor.status.selected_edge", lbl));
     updateToolbarState();
     renderEdgeHotspots();
     broadcastSelection();
@@ -4380,10 +4386,10 @@
   }
 
   async function applyPaletteColor(color) {
-    if (!requireValidSource("applica colore")) return;
+    if (!requireValidSource("apply color")) return;
     const ids = selectedNodeIds.size > 0 ? [...selectedNodeIds]
               : (selectedClusterId ? [selectedClusterId] : []);
-    if (!ids.length) { setStatus("seleziona prima un nodo o un subgraph", true); return; }
+    if (!ids.length) { setStatus(__("editor.err.select_node_or_subgraph"), true); return; }
     const styleStr = color.reset ? null
       : `fill:${color.fill},stroke:${color.stroke},color:${color.color}`;
     let next = currentSource, applied = 0;
@@ -4391,7 +4397,7 @@
       const r = setNodeStyleInSource(next, id, styleStr);
       if (r.changed) { next = r.source; applied++; }
     }
-    if (!applied) { setStatus(`colore gia' applicato (o reset senza style)`); return; }
+    if (!applied) { setStatus(__("editor.err.color_no_change")); return; }
     currentSource = next;
     markDirtySource();
     await renderDiagram();
@@ -4407,7 +4413,7 @@
       btn.type = "button";
       if (color.reset) {
         btn.dataset.reset = "1"; btn.textContent = "×";
-        btn.title = "Reset colore (rimuove style)";
+        btn.title = __("editor.color_reset");
       } else {
         btn.style.background = color.fill;
         btn.title = color.name;
@@ -4432,12 +4438,12 @@
       const replaced = `${nodeId}${m[1]}${newShape.open}${content}${newShape.close}`;
       return { ok: true, source: source.replace(re, replaced) };
     }
-    return { ok: false, error: `dichiarazione di ${nodeId} non trovata` };
+    return { ok: false, error: `declaration of ${nodeId} not found` };
   }
 
   async function applyShapeToSelected(shape) {
-    if (!requireValidSource("cambia forma")) return;
-    if (selectedNodeIds.size === 0) { setStatus("seleziona un nodo prima", true); return; }
+    if (!requireValidSource("change shape")) return;
+    if (selectedNodeIds.size === 0) { setStatus(__("editor.err.select_node"), true); return; }
     const ids = [...selectedNodeIds];
     let next = currentSource, applied = 0, errs = [];
     for (const id of ids) {
@@ -4445,13 +4451,13 @@
       if (r.ok) { next = r.source; applied++; }
       else errs.push(`${id}: ${r.error}`);
     }
-    if (!applied) { setStatus(`cambia forma: ${errs.join("; ")}`, true); return; }
+    if (!applied) { setStatus(`change shape: ${errs.join("; ")}`, true); return; }
     currentSource = next;
     markDirtySource();
     await renderDiagram();
     pushHistory();
-    setStatus(ids.length === 1 ? `${ids[0]}: forma → ${shape.name}`
-                               : `forma → ${shape.name} (${applied}/${ids.length})${errs.length ? " err: " + errs.join("; ") : ""}`,
+    setStatus(ids.length === 1 ? `${ids[0]}: shape → ${shape.name}`
+                               : `shape → ${shape.name} (${applied}/${ids.length})${errs.length ? " err: " + errs.join("; ") : ""}`,
               errs.length > 0);
   }
 
@@ -4460,7 +4466,7 @@
       const btn = document.createElement("button");
       btn.className = "shape-mini";
       btn.type = "button";
-      btn.title = `Cambia forma → ${shape.name}`;
+      btn.title = `Change shape → ${shape.name}`;
       btn.innerHTML = `<svg viewBox="0 0 40 28">${SHAPE_PREVIEWS[shape.key] || ""}</svg>`;
       btn.addEventListener("click", () => applyShapeToSelected(shape));
       shapePaletteEl.appendChild(btn);
@@ -4504,15 +4510,15 @@
     const title = document.querySelector("#addNodeModal h2");
     const okBtn = document.getElementById("nodeOkBtn");
     if (isEdit) {
-      if (title) title.textContent = "Modifica nodo";
-      if (okBtn) okBtn.textContent = "Salva";
+      if (title) title.textContent = __("editor.edit_node");
+      if (okBtn) okBtn.textContent = __("common.save");
     } else {
-      if (title) title.textContent = "Nuovo nodo";
-      if (okBtn) okBtn.textContent = "Crea";
+      if (title) title.textContent = __("editor.new_node");
+      if (okBtn) okBtn.textContent = __("common.create");
     }
   }
   function openAddNodeModal() {
-    if (!requireValidSource("aggiungi nodo")) return;
+    if (!requireValidSource("add node")) return;
     _editNodeOriginalId = null;
     setNodeModalMode(false);
     _addNodeTargetSubgraph = selectedClusterId || null;
@@ -4521,7 +4527,7 @@
     const hint = document.getElementById("addNodeSubgraphHint");
     if (hint) {
       if (_addNodeTargetSubgraph) {
-        hint.textContent = `Il nodo verrà creato dentro il subgraph "${_addNodeTargetSubgraph}".`;
+        hint.textContent = __("editor.node_in_subgraph", _addNodeTargetSubgraph);
         hint.classList.remove("hidden");
       } else {
         hint.textContent = "";
@@ -4534,8 +4540,8 @@
     setTimeout(() => document.getElementById("nodeIdInput").focus(), 0);
   }
   function openEditNodeModal(nodeId) {
-    if (!requireValidSource("modifica nodo")) return;
-    if (!nodeMap[nodeId]) { setStatus(`nodo '${nodeId}' non trovato`, true); return; }
+    if (!requireValidSource("edit node")) return;
+    if (!nodeMap[nodeId]) { setStatus(`node '${nodeId}' not found`, true); return; }
     const shape = detectNodeShapeInSource(currentSource, nodeId) || SHAPES[0];
     const label = getNodeLabelInSource(currentSource, nodeId) ?? "";
     _editNodeOriginalId = nodeId;
@@ -4566,7 +4572,7 @@
     const label = document.getElementById("nodeLabelInput").value.trim();
     const errorEl = document.getElementById("modalError");
     errorEl.textContent = "";
-    if (!id) { errorEl.textContent = "ID obbligatorio"; return; }
+    if (!id) { errorEl.textContent = __("editor.err.id_required"); return; }
     const targetSg = _addNodeTargetSubgraph;
     const result = addNodeToSource(currentSource, id, label, modalSelectedShape, targetSg);
     if (!result.ok) { errorEl.textContent = result.error; return; }
@@ -4589,10 +4595,10 @@
     const newLabel = document.getElementById("nodeLabelInput").value.trim();
     const errorEl = document.getElementById("modalError");
     errorEl.textContent = "";
-    if (!newId) { errorEl.textContent = "ID obbligatorio"; return; }
-    if (!/^[A-Za-z_][\w]*$/.test(newId)) { errorEl.textContent = `ID non valido: '${newId}'`; return; }
+    if (!newId) { errorEl.textContent = __("editor.err.id_required"); return; }
+    if (!/^[A-Za-z_][\w]*$/.test(newId)) { errorEl.textContent = __("editor.err.id_invalid", newId); return; }
     if (newId !== oldId && (nodeMap[newId] || clusterMap[newId])) {
-      errorEl.textContent = `'${newId}' esiste gia'`; return;
+      errorEl.textContent = __("editor.err.id_exists", newId); return;
     }
 
     let next = currentSource;
@@ -4657,7 +4663,7 @@
     // Visible while we have something dirty (since last explicit Save) AND
     // at least one autosave has succeeded — confirms work is safe on server.
     if (lastDraftFlushAt && (dirtySource || dirtyLayout)) {
-      autosaveBadgeEl.textContent = "auto-salvato " + fmtClock(lastDraftFlushAt);
+      autosaveBadgeEl.textContent = "auto-saved " + fmtClock(lastDraftFlushAt);
       autosaveBadgeEl.classList.remove("hidden");
     } else {
       autosaveBadgeEl.classList.add("hidden");
@@ -4731,16 +4737,16 @@
   async function save() {
     if (saveInProgress) return;
     if (!lastParseValid) {
-      setStatus("sorgente invalido — impossibile salvare", true);
+      setStatus(__("editor.status.invalid_save"), true);
       return;
     }
     if (!dirtySource && !dirtyLayout) {
-      setStatus("niente da salvare");
+      setStatus(__("editor.status.nothing_to_save"));
       return;
     }
     saveInProgress = true;
     saveBtn.disabled = true;
-    setStatus("salvando…");
+    setStatus(__("editor.status.saving"));
     // Cancel any pending autosave; the explicit POST will carry current state.
     if (typingTimer) { clearTimeout(typingTimer); typingTimer = null; }
     try {
@@ -4754,15 +4760,15 @@
         if (json.updated_at) lastUpdatedAt = json.updated_at;
         lastDraftFlushAt = null;
         clearDirty();
-        setStatus(`salvato (rev ${currentRevisionId})`);
+        setStatus(__("editor.status.saved", currentRevisionId));
       } else if (status === 409 && json && json.error === "inactive_tab") {
         presencePing(true);
-        showToast("Modifica spostata in un'altra tua scheda. Riprova.", "warn");
+        showToast(__("editor.toast.moved_tab"), "warn");
       } else if (status === 409 && json) {
         openConflictModal(json.current_revision_id);
       } else if (status === 423) {
         presencePing(false);
-        showToast("Non hai più lo scettro — qualcun altro sta modificando.", "warn");
+        showToast(__("editor.toast.lost_scepter"), "warn");
       } else {
         setStatus(`save failed: HTTP ${status}` + (json && json.error ? ` — ${json.error}` : ""), true);
       }
@@ -4777,18 +4783,18 @@
   function resetLayout() {
     positions = {};
     markDirtyLayout();
-    renderDiagram().then(() => setStatus("layout resettato (salva per persistere)"));
+    renderDiagram().then(() => setStatus(__("editor.status.layout_reset")));
   }
 
   // ── Reload (discard local) ───────────────────────────────────────────────
 
   async function reloadFromServer() {
-    setStatus("ricaricando…");
+    setStatus(__("editor.status.reloading"));
     try {
       const { status, json } = await api("GET", `/api/diagrams/${encodeURIComponent(slug)}`);
       if (status !== 200 || !json) throw new Error(`HTTP ${status}`);
       loadFromDto(json);
-      setStatus("ricaricato dal server");
+      setStatus(__("editor.status.reloaded"));
     } catch (e) {
       setStatus(`reload failed: ${e.message}`, true);
     }
@@ -4851,9 +4857,9 @@
       // edits are already autosaved on the head row. Always mirror the server.
       await loadFromDto(json);
       if (sameRevButNewerContent) {
-        showToast("Aggiornamento live dall'editor");
+        showToast(__("editor.toast.live_update"));
       } else {
-        showToast("Diagramma aggiornato dal server");
+        showToast(__("editor.toast.server_update"));
       }
     } catch (_) { /* ignore polling errors silently */ }
   }
@@ -4884,17 +4890,17 @@
     // can see that edits land here, not on the saved snapshots.
     if (data.current) {
       const cur = data.current;
-      const basedOn = cur.source_revision_id ? `basato su #${cur.source_revision_id}` : "(mai salvato)";
+      const basedOn = cur.source_revision_id ? `based on #${cur.source_revision_id}` : "(never saved)";
       const row = document.createElement("div");
       row.className = "history-row is-head";
       row.innerHTML = `
         <span class="history-id">#working</span>
         <span class="history-meta">
           ${basedOn}
-          ${cur.updated_at ? `• ultimo edit ${escapeHtml(cur.updated_at)}` : ""}
-          • working copy live (autosalvata)
+          ${cur.updated_at ? `• last edit ${escapeHtml(cur.updated_at)}` : ""}
+          • working copy live (auto-saved)
         </span>
-        <button disabled>in modifica</button>
+        <button disabled>editing</button>
       `;
       list.appendChild(row);
     }
@@ -4903,7 +4909,7 @@
     if (revs.length === 0) {
       const note = document.createElement("p");
       note.className = "muted-small";
-      note.textContent = "Nessuna snapshot — premi Salva per crearne una.";
+      note.textContent = __("editor.no_snapshots");
       list.appendChild(note);
       return;
     }
@@ -4934,8 +4940,8 @@
   async function checkout(revisionId) {
     if (dirtySource || dirtyLayout) {
       if (!await confirmDialog(
-        `Le modifiche dopo l'ultima snapshot non sono state salvate come snapshot. Caricando #${revisionId} il working copy verrà sostituito.`,
-        { confirmLabel: "Continua", danger: true })) return;
+        __("editor.checkout_warn", revisionId),
+        { confirmLabel: __("editor.checkout_btn"), danger: true })) return;
     }
     try {
       const { status, json } = await api("POST", `/api/diagrams/${encodeURIComponent(slug)}/checkout`, {
@@ -4944,7 +4950,7 @@
       if (status !== 200 || !json) throw new Error(`HTTP ${status}`);
       closeHistoryModal();
       await loadFromDto(json);
-      setStatus(`checkout → rev ${revisionId}`);
+      setStatus(__("editor.status.checkout", revisionId));
     } catch (e) {
       setStatus(`checkout failed: ${e.message}`, true);
     }
@@ -4966,7 +4972,7 @@
     const newTitle = document.getElementById("renameTitleInput").value.trim();
     const errorEl = document.getElementById("renameError");
     errorEl.textContent = "";
-    if (!newTitle) { errorEl.textContent = "titolo obbligatorio"; return; }
+    if (!newTitle) { errorEl.textContent = "title required"; return; }
     if (newTitle === currentTitle) { closeRenameModal(); return; }
     try {
       const { status, json } = await api("PATCH", `/api/diagrams/${encodeURIComponent(slug)}`, {
@@ -4980,7 +4986,7 @@
       titleEl.textContent = currentTitle;
       document.title = currentTitle + " — Aquata";
       closeRenameModal();
-      setStatus("rinominato");
+      setStatus(__("editor.status.renamed"));
     } catch (e) {
       errorEl.textContent = e.message;
     }
@@ -5022,10 +5028,10 @@
     const el = document.getElementById("remoteUpdateBanner");
     el.classList.remove("hidden");
     el.innerHTML = `
-      <span><strong>Aggiornamento remoto disponibile</strong> (rev ${remoteRevId}).
-        Hai modifiche locali non salvate.</span>
-      <button id="remoteUpdateView">Vedi cronologia</button>
-      <button id="remoteUpdateReload" class="primary">Ricarica (perdi modifiche)</button>
+      <span><strong>Remote update available</strong> (rev ${remoteRevId}).
+        You have unsaved local changes.</span>
+      <button id="remoteUpdateView">See history</button>
+      <button id="remoteUpdateReload" class="primary">Reload (lose changes)</button>
       <button id="remoteUpdateDismiss">×</button>
     `;
     document.getElementById("remoteUpdateView").addEventListener("click", () => {
@@ -5102,16 +5108,16 @@
     const nowHolder = lockHeldByMe();
     const nowActive = iAmActiveTab();
     if (wasHolder && !nowHolder) {
-      showToast("Hai perso lo scettro di modifica.", "warn");
+      showToast(__("editor.toast.scepter_lost"), "warn");
     } else if (!wasHolder && nowHolder) {
-      showToast("Hai lo scettro: puoi modificare.");
+      showToast(__("editor.toast.scepter_gained"));
       myEditRequest = null;
       // First-broadcast: make sure followers can sync on our current viewport
       // even if we don't pan/zoom right away.
       viewDirty = true;
     }
     if (nowHolder && wasActive && !nowActive) {
-      showToast("Modifica trasferita a un'altra tua scheda.", "warn");
+      showToast(__("editor.toast.moved_other_tab"), "warn");
     }
 
     // Follow-the-holder bookkeeping. Cases that auto-disable follow:
@@ -5161,9 +5167,9 @@
   function lockHolderLabel() {
     const hid = presenceState.holder_id;
     if (!hid) return "";
-    if (hid === me.id) return "tu";
+    if (hid === me.id) return "you";
     const v = (presenceState.viewers || []).find(x => x.user_id === hid);
-    return v ? (v.display_name || v.email || ("utente #" + hid)) : ("utente #" + hid);
+    return v ? (v.display_name || v.email || ("user #" + hid)) : ("user #" + hid);
   }
 
   function renderLockBanner() {
@@ -5173,20 +5179,20 @@
 
     if (permission === "view") {
       lockBannerEl.classList.add("lock-readonly");
-      lockMessageEl.textContent = "Sola lettura — non hai permesso di modifica.";
+      lockMessageEl.textContent = __("editor.lock.readonly");
       return;
     }
 
     if (lockHeldByMe()) {
       if (iAmActiveTab()) {
         lockBannerEl.classList.add("lock-mine");
-        lockMessageEl.textContent = "Hai lo scettro: puoi modificare.";
+        lockMessageEl.textContent = __("editor.lock.mine");
       } else {
         lockBannerEl.classList.add("lock-readonly");
-        lockMessageEl.textContent = "Aperto in un'altra tua scheda. Clicca qui per modificare in questa.";
+        lockMessageEl.textContent = __("editor.lock.other_tab");
         const switchBtn = document.createElement("button");
         switchBtn.className = "primary";
-        switchBtn.textContent = "Modifica qui";
+        switchBtn.textContent = __("editor.lock.other_tab_btn");
         switchBtn.addEventListener("click", () => claimActiveTab(true));
         lockActionsEl.appendChild(switchBtn);
       }
@@ -5195,20 +5201,20 @@
 
     if (lockHeldByOther()) {
       lockBannerEl.classList.add("lock-other");
-      lockMessageEl.textContent = "Sta modificando: " + lockHolderLabel() + " — sola lettura.";
+      lockMessageEl.textContent = __("editor.lock.other_user", lockHolderLabel());
       if (myEditRequest && myEditRequest.status === "pending") {
         const span = document.createElement("span");
-        span.textContent = "Richiesta inviata, in attesa… (passa automaticamente dopo 10 min di inattività)";
+        span.textContent = __("editor.lock.requesting");
         span.style.marginRight = "10px";
         const cancelBtn = document.createElement("button");
-        cancelBtn.textContent = "Annulla richiesta";
+        cancelBtn.textContent = __("editor.lock.request_cancel");
         cancelBtn.addEventListener("click", cancelMyRequest);
         lockActionsEl.appendChild(span);
         lockActionsEl.appendChild(cancelBtn);
       } else {
         const reqBtn = document.createElement("button");
         reqBtn.className = "primary";
-        reqBtn.textContent = "Chiedi lo scettro";
+        reqBtn.textContent = __("editor.lock.request_btn");
         reqBtn.addEventListener("click", requestEdit);
         lockActionsEl.appendChild(reqBtn);
       }
@@ -5217,7 +5223,7 @@
 
     // No holder (transient: server will promote on next heartbeat).
     lockBannerEl.classList.add("lock-free");
-    lockMessageEl.textContent = "Scettro non ancora assegnato…";
+    lockMessageEl.textContent = __("editor.lock.unassigned");
   }
 
   // Send a heartbeat now, optionally claiming this tab as the active one.
@@ -5382,7 +5388,7 @@
     return PEER_PALETTE[peerSlot(userId)];
   }
   function peerLabel(v) {
-    return v.display_name || v.email || ("utente #" + v.user_id);
+    return v.display_name || v.email || ("user #" + v.user_id);
   }
 
   // Render the overlay for peers' selections. Called on every presence DTO
@@ -5533,8 +5539,8 @@
         btn.className = "peer-follow-btn" + (followingHolder ? " active" : "");
         btn.type = "button";
         btn.title = followingHolder
-          ? "Stai seguendo pan/zoom — clicca per smettere"
-          : "Sincronizza pan/zoom con chi ha lo scettro";
+          ? __("editor.follow.active")
+          : __("editor.follow.inactive");
         btn.setAttribute("aria-pressed", followingHolder ? "true" : "false");
         btn.innerHTML = '<svg class="icon"><use href="#icon-eye' + (followingHolder ? '' : '-closed') + '"/></svg>';
         btn.addEventListener("click", toggleFollowHolder);
@@ -5544,7 +5550,7 @@
       if (iHoldScepter && !isMe && v.is_following) {
         const ind = document.createElement("span");
         ind.className = "peer-follow-ind";
-        ind.title = "Sta seguendo il tuo pan/zoom";
+        ind.title = __("editor.follow.tooltip");
         ind.innerHTML = '<svg class="icon"><use href="#icon-eye"/></svg>';
         tag.appendChild(ind);
       }
@@ -5592,16 +5598,16 @@
   }
 
   async function requestEdit() {
-    const note = (prompt("Aggiungi una nota (opzionale) per chi sta modificando:") || "").trim();
+    const note = (prompt(__("editor.prompt_note")) || "").trim();
     try {
       const { status, json } = await api("POST",
         `/api/diagrams/${encodeURIComponent(slug)}/edit-requests`, { note });
       if ((status === 200 || status === 201) && json && json.request) {
         myEditRequest = json.request;
         renderLockBanner();
-        showToast("Richiesta inviata.");
+        showToast(__("editor.toast.request_sent"));
       } else {
-        showToast("Impossibile inviare la richiesta.", "warn");
+        showToast(__("editor.toast.request_failed"), "warn");
       }
     } catch (_) { /* ignore */ }
   }
@@ -5626,7 +5632,7 @@
       myEditRequest = json.request;
       if (myEditRequest && myEditRequest.status === "rejected"
           && prev && prev.status === "pending") {
-        showToast("Richiesta rifiutata.", "warn");
+        showToast(__("editor.toast.request_denied"), "warn");
         myEditRequest = null;
       }
       renderLockBanner();
@@ -5658,15 +5664,15 @@
     const r = pendingIncomingReqs[0];
     incomingReqEl.classList.remove("hidden");
     incomingReqEl.innerHTML = "";
-    const who = r.requester_name || r.requester_email || ("utente #" + r.requester_id);
+    const who = r.requester_name || r.requester_email || ("user #" + r.requester_id);
     const note = r.note ? ` — "${escapeHtml(r.note)}"` : "";
     const msg = document.createElement("span");
-    msg.innerHTML = `<strong>${escapeHtml(who)}</strong> chiede il turno${note}`;
+    msg.innerHTML = `<strong>${escapeHtml(who)}</strong> requests the turn${note}`;
     const acc = document.createElement("button");
-    acc.className = "primary"; acc.textContent = "Cedi scettro";
+    acc.className = "primary"; acc.textContent = __("editor.lock.yield");
     acc.addEventListener("click", () => acceptRequest(r.id));
     const dec = document.createElement("button");
-    dec.className = "danger"; dec.textContent = "Rifiuta";
+    dec.className = "danger"; dec.textContent = __("editor.lock.deny");
     dec.addEventListener("click", () => declineRequest(r.id));
     incomingReqEl.appendChild(msg);
     incomingReqEl.appendChild(acc);
@@ -5692,7 +5698,7 @@
       clearDirty();
       hideIncomingBanner();
       pollHead();
-      showToast("Scettro ceduto.");
+      showToast(__("editor.toast.scepter_yielded"));
     } catch (_) { /* ignore */ }
   }
 
@@ -5738,14 +5744,14 @@
       row.className = "share-row" + (s.disabled ? " disabled" : "");
       const who = s.user_name ? `${s.user_name} <small>${s.user_email}</small>` : s.user_email;
       row.innerHTML = `
-        <span class="share-user">${who || ("utente #" + s.user_id)}</span>
+        <span class="share-user">${who || ("user #" + s.user_id)}</span>
         <span class="share-perm">${escapeHtml(s.permission)}</span>
       `;
       const removeBtn = document.createElement("button");
-      removeBtn.textContent = "Rimuovi";
+      removeBtn.textContent = __("common.remove");
       removeBtn.addEventListener("click", async () => {
-        if (!await confirmDialog("Rimuovere la condivisione con questo utente?",
-          { confirmLabel: "Rimuovi", danger: true })) return;
+        if (!await confirmDialog(__("dashboard.remove_share_confirm"),
+          { confirmLabel: __("common.remove"), danger: true })) return;
         try {
           await api("DELETE", `/api/diagrams/${encodeURIComponent(slug)}/shares/${s.user_id}`, {});
           await loadShareList();
@@ -5761,7 +5767,7 @@
     const perm  = document.getElementById("sharePermInput").value;
     const errEl = document.getElementById("shareError");
     errEl.textContent = "";
-    if (!email) { errEl.textContent = "Email obbligatoria"; return; }
+    if (!email) { errEl.textContent = __("dashboard.email_required"); return; }
     try {
       const { status, json } = await api("POST",
         `/api/diagrams/${encodeURIComponent(slug)}/shares`, { email, permission: perm });
@@ -5780,8 +5786,8 @@
 
   reloadBtn.addEventListener("click", async () => {
     if (dirtySource || dirtyLayout) {
-      if (!await confirmDialog("Scartare le modifiche locali e ricaricare dal server?",
-        { confirmLabel: "Scarta e ricarica", danger: true })) return;
+      if (!await confirmDialog(__("editor.reload_confirm"),
+        { confirmLabel: __("editor.reload_btn"), danger: true })) return;
     }
     await reloadFromServer();
   });
@@ -5939,7 +5945,7 @@
       }
       panel.classList.add("collapsed");
       btn.textContent = collapsedArrow;
-      btn.title = "Espandi";
+      btn.title = __("editor.expand");
     }
   }
   restorePanelState(sourcePanel, togglePanelBtn, "left", "»", "«");
@@ -5962,7 +5968,7 @@
     }
     panel.classList.toggle("collapsed", willCollapse);
     btn.textContent = willCollapse ? collapsedArrow : expandedArrow;
-    btn.title = willCollapse ? "Espandi" : "Collassa";
+    btn.title = willCollapse ? __("editor.expand") : __("editor.collapse");
     updatePanelPref(panel.id === "sourcePanel" ? "left" : "right",
       { collapsed: willCollapse });
   }
@@ -6095,12 +6101,12 @@
     try {
       await renderDiagram();
       pushHistory();
-      setStatus("pronto");
+      setStatus(__("editor.status.ready"));
       await maybePromptLegacyNormalize();
     } catch (e) {
       setSourceValidity(false, e.message || String(e));
       setSourceValue(currentSource);
-      setStatus(`render error: ${e.message}`, true);
+      setStatus(__("editor.status.render_error", e.message), true);
     }
     setInterval(pollHead, 5000);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) pollHead(); });

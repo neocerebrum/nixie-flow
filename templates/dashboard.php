@@ -5,16 +5,16 @@
 ?>
 <section class="page">
     <header class="page-header">
-        <h1>Dashboard</h1>
-        <button id="newDiagramBtn" class="btn btn-primary"><svg class="icon icon-sm"><use href="#icon-plus"/></svg> Nuovo diagramma</button>
+        <h1><?= __('dashboard.heading') ?></h1>
+        <button id="newDiagramBtn" class="btn btn-primary"><svg class="icon icon-sm"><use href="#icon-plus"/></svg> <?= __('dashboard.new_diagram') ?></button>
     </header>
 
-    <p class="muted">Bentornato, <strong><?= e($user['display_name'] ?? $user['email']) ?></strong>.</p>
+    <p class="muted"><?= __('dashboard.welcome', e($user['display_name'] ?? $user['email'])) ?></p>
 
-    <h2 class="section-title">I miei diagrammi</h2>
+    <h2 class="section-title"><?= __('dashboard.my_diagrams') ?></h2>
     <?php if (empty($diagrams)): ?>
         <section class="card empty-state">
-            <p>Non hai ancora diagrammi. Crea il primo per iniziare.</p>
+            <p><?= __('dashboard.empty') ?></p>
         </section>
     <?php else: ?>
         <div class="diagram-grid">
@@ -24,17 +24,17 @@
                         <h3><?= e($d['title'] ?: $d['slug']) ?></h3>
                         <p class="diagram-slug"><code><?= e($d['slug']) ?></code></p>
                         <p class="diagram-meta">
-                            Aggiornato <?= e($d['updated_at']) ?>
+                            <?= __('dashboard.updated', e($d['updated_at'])) ?>
                         </p>
                     </a>
                     <div class="diagram-card-actions">
-                        <button class="btn-icon diagram-share" data-slug="<?= e($d['slug']) ?>" data-title="<?= e($d['title']) ?>" title="Condividi" aria-label="Condividi">
+                        <button class="btn-icon diagram-share" data-slug="<?= e($d['slug']) ?>" data-title="<?= e($d['title']) ?>" title="<?= __('dashboard.share') ?>" aria-label="<?= __('dashboard.share') ?>">
                             <svg class="icon"><use href="#icon-share"/></svg>
                         </button>
-                        <button class="btn-icon diagram-rename" data-slug="<?= e($d['slug']) ?>" data-title="<?= e($d['title']) ?>" title="Rinomina" aria-label="Rinomina">
+                        <button class="btn-icon diagram-rename" data-slug="<?= e($d['slug']) ?>" data-title="<?= e($d['title']) ?>" title="<?= __('dashboard.rename') ?>" aria-label="<?= __('dashboard.rename') ?>">
                             <svg class="icon"><use href="#icon-rename"/></svg>
                         </button>
-                        <button class="btn-icon danger diagram-delete" data-slug="<?= e($d['slug']) ?>" data-title="<?= e($d['title']) ?>" title="Elimina" aria-label="Elimina">
+                        <button class="btn-icon danger diagram-delete" data-slug="<?= e($d['slug']) ?>" data-title="<?= e($d['title']) ?>" title="<?= __('dashboard.delete') ?>" aria-label="<?= __('dashboard.delete') ?>">
                             <svg class="icon"><use href="#icon-trash"/></svg>
                         </button>
                     </div>
@@ -44,7 +44,7 @@
     <?php endif; ?>
 
     <?php if (!empty($sharedDiagrams)): ?>
-        <h2 class="section-title">Condivisi con me</h2>
+        <h2 class="section-title"><?= __('dashboard.shared_with_me') ?></h2>
         <div class="diagram-grid">
             <?php foreach ($sharedDiagrams as $d): ?>
                 <article class="diagram-card diagram-card-shared">
@@ -53,7 +53,7 @@
                         <p class="diagram-slug"><code><?= e($d['slug']) ?></code></p>
                         <p class="diagram-meta">
                             <span class="share-perm-badge"><?= e($d['share_permission']) ?></span>
-                            · Aggiornato <?= e($d['updated_at']) ?>
+                            · <?= __('dashboard.updated', e($d['updated_at'])) ?>
                         </p>
                     </a>
                 </article>
@@ -62,87 +62,87 @@
     <?php endif; ?>
 </section>
 
-<!-- Modal nuovo diagramma -->
+<!-- Modal: new diagram -->
 <div id="newDiagramModal" class="modal hidden">
     <div class="modal-backdrop"></div>
     <div class="modal-box">
-        <h2>Nuovo diagramma</h2>
+        <h2><?= __('dashboard.modal.new.title') ?></h2>
         <label class="field">
-            <span>Titolo</span>
-            <input id="newDiagramTitle" type="text" autocomplete="off" placeholder="es. Architettura sistema X">
+            <span><?= __('dashboard.modal.new.field_title') ?></span>
+            <input id="newDiagramTitle" type="text" autocomplete="off" placeholder="<?= __('dashboard.modal.new.placeholder') ?>">
         </label>
         <label class="field">
-            <span>Slug <small>(opzionale: lasciare vuoto per generarlo dal titolo)</small></span>
-            <input id="newDiagramSlug" type="text" autocomplete="off" placeholder="auto-generato">
+            <span><?= __('dashboard.modal.new.field_slug') ?></span>
+            <input id="newDiagramSlug" type="text" autocomplete="off" placeholder="<?= __('dashboard.modal.new.slug_placeholder') ?>">
         </label>
         <div id="newDiagramError"></div>
         <div class="modal-buttons">
-            <button id="newDiagramCancelBtn">Annulla</button>
-            <button id="newDiagramOkBtn" class="btn btn-primary">Crea</button>
+            <button id="newDiagramCancelBtn"><?= __('common.cancel') ?></button>
+            <button id="newDiagramOkBtn" class="btn btn-primary"><?= __('dashboard.modal.new.create') ?></button>
         </div>
     </div>
 </div>
 
-<!-- Modal rinomina -->
+<!-- Modal: rename -->
 <div id="renameDiagramModal" class="modal hidden">
     <div class="modal-backdrop"></div>
     <div class="modal-box">
-        <h2>Rinomina diagramma</h2>
+        <h2><?= __('dashboard.modal.rename.title') ?></h2>
         <label class="field">
-            <span>Titolo</span>
+            <span><?= __('dashboard.modal.rename.field_title') ?></span>
             <input id="renameDiagramTitle" type="text" autocomplete="off">
         </label>
         <div id="renameDiagramError"></div>
         <div class="modal-buttons">
-            <button id="renameDiagramCancelBtn">Annulla</button>
-            <button id="renameDiagramOkBtn" class="btn btn-primary">Salva</button>
+            <button id="renameDiagramCancelBtn"><?= __('common.cancel') ?></button>
+            <button id="renameDiagramOkBtn" class="btn btn-primary"><?= __('dashboard.modal.rename.save') ?></button>
         </div>
     </div>
 </div>
 
-<!-- Modal condividi (riusato dalla dashboard) -->
+<!-- Modal: share (reused from dashboard) -->
 <div id="dashShareModal" class="modal hidden">
     <div class="modal-backdrop"></div>
     <div class="modal-box modal-wide">
-        <h2>Condividi <span id="dashShareTitle"></span></h2>
-        <p class="muted-small">L'utente deve avere un account su Aquata. "view" = sola lettura, "edit" = può modificare.</p>
+        <h2><?= __('dashboard.modal.share.title') ?> <span id="dashShareTitle"></span></h2>
+        <p class="muted-small"><?= __('dashboard.modal.share.help') ?></p>
         <form id="dashShareAddForm" class="share-add">
-            <input id="dashShareEmailInput" type="email" placeholder="email@dominio.it" required autocomplete="off">
+            <input id="dashShareEmailInput" type="email" placeholder="<?= __('dashboard.modal.share.placeholder') ?>" required autocomplete="off">
             <select id="dashSharePermInput">
                 <option value="view">view</option>
                 <option value="edit" selected>edit</option>
             </select>
-            <button type="submit" class="primary">Aggiungi</button>
+            <button type="submit" class="primary"><?= __('dashboard.modal.share.add') ?></button>
         </form>
         <div id="dashShareError"></div>
         <div id="dashShareList" class="share-list"></div>
         <div class="modal-buttons">
-            <button id="dashShareCloseBtn">Chiudi</button>
+            <button id="dashShareCloseBtn"><?= __('dashboard.modal.share.close') ?></button>
         </div>
     </div>
 </div>
 
-<!-- Modal: conferma generica (riusa lo stile dell'editor) -->
+<!-- Modal: generic confirmation (reuses editor styling) -->
 <div id="confirmDialogModal" class="modal hidden">
     <div class="modal-backdrop"></div>
     <div class="modal-box">
-        <h2 id="confirmDialogTitle">Conferma</h2>
+        <h2 id="confirmDialogTitle"><?= __('common.confirm') ?></h2>
         <div id="confirmDialogMessage" class="modal-info"></div>
         <div class="modal-buttons">
-            <button id="confirmDialogCancelBtn">Annulla</button>
-            <button id="confirmDialogOkBtn" class="primary">Conferma</button>
+            <button id="confirmDialogCancelBtn"><?= __('common.cancel') ?></button>
+            <button id="confirmDialogOkBtn" class="primary"><?= __('common.confirm') ?></button>
         </div>
     </div>
 </div>
 
-<!-- Modal: info / errore (alert non bloccante) -->
+<!-- Modal: info / error (non-blocking alert) -->
 <div id="infoDialogModal" class="modal hidden">
     <div class="modal-backdrop"></div>
     <div class="modal-box">
-        <h2 id="infoDialogTitle">Avviso</h2>
+        <h2 id="infoDialogTitle"><?= __('common.alert') ?></h2>
         <div id="infoDialogMessage" class="modal-info"></div>
         <div class="modal-buttons">
-            <button id="infoDialogOkBtn" class="primary">OK</button>
+            <button id="infoDialogOkBtn" class="primary"><?= __('common.ok') ?></button>
         </div>
     </div>
 </div>

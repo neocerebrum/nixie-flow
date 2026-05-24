@@ -66,7 +66,7 @@ final class EditorController
     {
         http_response_code(404);
         View::render('404', [
-            'message' => 'Diagramma non trovato o non hai accesso.',
-        ], ['title' => 'Non trovato — Aquata', 'active' => '']);
+            'message' => __('error.diagram_not_found'),
+        ], ['title' => __('404.title'), 'active' => '']);
     }
 }

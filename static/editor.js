@@ -1378,12 +1378,60 @@
     };
   }
 
+  // Auto-curve control points in world coords for an edge that has anchor or
+  // cluster normals but no explicit bend entry. Returns null when the edge
+  // would be a straight line (no anchors, no clusters).
+  function autoCurveCps(edge) {
+    const sn = endpointInfo(edge.source);
+    const tn = endpointInfo(edge.target);
+    if (!sn || !tn) return null;
+    const sT = getWorldTranslate(sn.g);
+    const tT = getWorldTranslate(tn.g);
+    const scx = sT.x + sn.centerLocal.x, scy = sT.y + sn.centerLocal.y;
+    const tcx = tT.x + tn.centerLocal.x, tcy = tT.y + tn.centerLocal.y;
+    const dx = tcx - scx, dy = tcy - scy;
+    const anchors = edgeAnchors[edgeKey(edge)] || {};
+    const sAnchor = anchors.source ? anchorPoint(sn, anchors.source) : null;
+    const tAnchor = anchors.target ? anchorPoint(tn, anchors.target) : null;
+    const sIsCluster = !!clusterMap[edge.source];
+    const tIsCluster = !!clusterMap[edge.target];
+    if (!sIsCluster && !tIsCluster && !sAnchor && !tAnchor) return null;
+    const sBoundary = sAnchor || findShapeBoundary(sn, dx, dy);
+    const tBoundary = tAnchor || findShapeBoundary(tn, -dx, -dy);
+    const sxW = sT.x + sBoundary.x, syW = sT.y + sBoundary.y;
+    const txW = tT.x + tBoundary.x, tyW = tT.y + tBoundary.y;
+    const dist = Math.hypot(txW - sxW, tyW - syW) || 1;
+    const cl = Math.max(40, Math.min(200, dist * 0.3));
+    let snx, sny;
+    if (sAnchor) { snx = sAnchor.nx; sny = sAnchor.ny; }
+    else if (sIsCluster) {
+      const nrm = clusterOutwardNormal(sn, sBoundary);
+      snx = nrm.x; sny = nrm.y;
+    } else {
+      snx = (txW - sxW) / dist; sny = (tyW - syW) / dist;
+    }
+    let tnx, tny;
+    if (tAnchor) { tnx = tAnchor.nx; tny = tAnchor.ny; }
+    else if (tIsCluster) {
+      const nrm = clusterOutwardNormal(tn, tBoundary);
+      tnx = nrm.x; tny = nrm.y;
+    } else {
+      tnx = (sxW - txW) / dist; tny = (syW - tyW) / dist;
+    }
+    return {
+      c1: { x: sxW + snx * cl, y: syW + sny * cl },
+      c2: { x: txW + tnx * cl, y: tyW + tny * cl },
+    };
+  }
+
   // Render the two cubic-bend handles + their tangent guide lines for the
-  // selected edge. When no edgeBend entry exists yet, handles sit at the
-  // neutral defaults (t1=1/3, n1=0, t2=2/3, n2=0): grabbing one promotes it
-  // into a real entry. Ctrl/Cmd while dragging snaps the dragged handle's
-  // perpendicular offset to 0 (8px-screen threshold) ⇒ that endpoint's
-  // tangent goes flat.
+  // selected edge. When no edgeBend entry exists and the edge is a straight
+  // line, handles sit at the neutral defaults (t1=1/3, n1=0, t2=2/3, n2=0).
+  // When no edgeBend entry exists but the edge has auto-curvature (anchors or
+  // clusters), handles sit at the actual auto-curve control points so their
+  // position matches the visible curve. Grabbing one promotes it into a real
+  // entry. Ctrl/Cmd while dragging snaps the dragged handle's perpendicular
+  // offset to 0 (8px-screen threshold) ⇒ that endpoint's tangent goes flat.
   function renderEdgeBendHandle() {
     const svgEl = diagramEl && diagramEl.querySelector("svg");
     if (!svgEl) return;
@@ -1396,12 +1444,28 @@
     const ep = edgeWorldEndpoints(edge);
     if (!ep) return;
     const { sxW, syW, txW, tyW } = ep;
-    const bend = edgeBend[selectedEdgeKey] || BEND_DEFAULT;
-    const c1 = bendCpWorld(sxW, syW, txW, tyW, bend, 1);
-    const c2 = bendCpWorld(sxW, syW, txW, tyW, bend, 2);
     const hasEntry = !!edgeBend[selectedEdgeKey];
-    const isStraight1 = !hasEntry || Math.abs(bend.n1) < 0.01;
-    const isStraight2 = !hasEntry || Math.abs(bend.n2) < 0.01;
+    let c1, c2, isStraight1, isStraight2;
+    if (hasEntry) {
+      const bend = edgeBend[selectedEdgeKey];
+      c1 = bendCpWorld(sxW, syW, txW, tyW, bend, 1);
+      c2 = bendCpWorld(sxW, syW, txW, tyW, bend, 2);
+      isStraight1 = Math.abs(bend.n1) < 0.01;
+      isStraight2 = Math.abs(bend.n2) < 0.01;
+    } else {
+      const auto = autoCurveCps(edge);
+      if (auto) {
+        c1 = auto.c1;
+        c2 = auto.c2;
+        isStraight1 = false;
+        isStraight2 = false;
+      } else {
+        c1 = bendCpWorld(sxW, syW, txW, tyW, BEND_DEFAULT, 1);
+        c2 = bendCpWorld(sxW, syW, txW, tyW, BEND_DEFAULT, 2);
+        isStraight1 = true;
+        isStraight2 = true;
+      }
+    }
 
     const SVG_NS = "http://www.w3.org/2000/svg";
     const overlay = document.createElementNS(SVG_NS, "g");

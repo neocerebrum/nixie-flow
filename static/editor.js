@@ -1507,6 +1507,20 @@
       };
       hit.addEventListener("pointerdown", start);
       dot.addEventListener("pointerdown", start);
+      const resetBend = (ev) => {
+        ev.stopPropagation();
+        ev.preventDefault();
+        if (!selectedEdgeKey || !canWrite || !lockHeldByMe()) return;
+        if (!edgeBend[selectedEdgeKey]) return;
+        delete edgeBend[selectedEdgeKey];
+        const e = findEdgeByKey(selectedEdgeKey);
+        if (e) rerouteEdge(e);
+        markDirtyLayout();
+        renderEdgeBendHandle();
+        pushHistory();
+      };
+      hit.addEventListener("dblclick", resetBend);
+      dot.addEventListener("dblclick", resetBend);
     };
     mkHandle(1, c1, isStraight1);
     mkHandle(2, c2, isStraight2);
@@ -1542,8 +1556,19 @@
           snapping = true;
         }
       }
-      // Start from current bend (or defaults) and update only the dragged pair.
-      const cur = edgeBend[key] || { ...BEND_DEFAULT };
+      // Start from current bend, or from auto-curve equivalents if the edge
+      // has anchor/cluster curvature, otherwise from straight-line defaults.
+      let cur = edgeBend[key];
+      if (!cur) {
+        const auto = autoCurveCps(edge);
+        if (auto) {
+          const b1 = worldToBend(sxW, syW, txW, tyW, auto.c1.x, auto.c1.y);
+          const b2 = worldToBend(sxW, syW, txW, tyW, auto.c2.x, auto.c2.y);
+          cur = { t1: b1.t, n1: b1.n, t2: b2.t, n2: b2.n };
+        } else {
+          cur = { ...BEND_DEFAULT };
+        }
+      }
       const next = { ...cur };
       if (which === 1) { next.t1 = t; next.n1 = finalN; }
       else { next.t2 = t; next.n2 = finalN; }
@@ -6050,7 +6075,7 @@
       deselectCluster();
       setStatus("");
     }
-    if (!e.target.closest("path.flowchart-link, g.edgeLabel, g.edgeLabels") && selectedEdgeKey) {
+    if (!e.target.closest("path.flowchart-link, g.edgeLabel, g.edgeLabels, g.edge-bend, g.edge-hotspots") && selectedEdgeKey) {
       deselectEdge();
       setStatus("");
     }

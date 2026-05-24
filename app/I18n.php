@@ -5,7 +5,7 @@ namespace App;
 
 final class I18n
 {
-    private const SUPPORTED  = ['en', 'it', 'fr', 'de', 'es', 'pt'];
+    private const SUPPORTED  = ['en', 'it', 'fr', 'de', 'es', 'pt', 'zh', 'ja', 'ko'];
     private const FALLBACK   = 'en';
     private const COOKIE     = 'aquata_lang';
     private const COOKIE_TTL = 365 * 86400;

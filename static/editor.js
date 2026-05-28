@@ -1295,21 +1295,34 @@
   // marker drawing in the −X direction = backward along the line at the target,
   // i.e. toward the source. The line itself still terminates at the boundary,
   // producing a tiny segment between the arrow tip and the boundary that reads
-  // visually as the arrow's stem.
-  const ARROW_MARKER_REFX_BUMP = 4;
+  // visually as the arrow's stem. Start-markers (back-arrow on `<-->` edges)
+  // need the opposite sign AND a slightly larger magnitude: Mermaid v10.9.1
+  // defines pointEnd with refX=6 (tip at marker-x=10 → bump +4 lands the tip
+  // on the endpoint) and pointStart with refX=4.5 (mirrored shape, tip at
+  // marker-x=0 → bump -4.5 lands the tip on the line start). The 0.5-unit
+  // asymmetry comes from Mermaid's own defaults, not from us.
+  // FUTURE: hard-coded to Mermaid 10.9.1's refX defaults — if the Mermaid
+  // version bumps and the defaults shift, this calibration drifts. A more
+  // robust fix would read each marker's path tip extent and compute the
+  // delta dynamically; sufficient for now since the version is pinned.
+  const ARROW_MARKER_REFX_BUMP_END = 4;
+  const ARROW_MARKER_REFX_BUMP_START = -4.5;
   function offsetArrowMarkers(svgEl) {
     // Mermaid v10 IDs vary across releases (e.g. `flowchart-pointEnd`,
     // `flowchart-pointEnd_1`, `…-End-XYZ`). Match any marker whose id contains
-    // "end" (case-insensitive) for the refX offset (only end-markers need it),
-    // and match BOTH start and end for the colour-inheritance pass — otherwise
-    // the start-side arrowhead on bidirectional edges stays in its default
-    // (white) colour while the edge body gets recoloured.
+    // "start" or "end" (case-insensitive) for the refX offset, and the same
+    // set for the colour-inheritance pass — otherwise the start-side arrowhead
+    // on bidirectional edges stays in its default (white) colour while the
+    // edge body gets recoloured.
     for (const m of svgEl.querySelectorAll('marker')) {
       const id = m.getAttribute('id') || '';
-      if (/end/i.test(id)) {
+      const isEnd = /end/i.test(id);
+      const isStart = !isEnd && /start/i.test(id);
+      if (isEnd || isStart) {
         const cur = parseFloat(m.getAttribute('refX') || '0');
         if (!Number.isNaN(cur)) {
-          m.setAttribute('refX', String(cur + ARROW_MARKER_REFX_BUMP));
+          const delta = isEnd ? ARROW_MARKER_REFX_BUMP_END : ARROW_MARKER_REFX_BUMP_START;
+          m.setAttribute('refX', String(cur + delta));
         }
       }
       if (!/(start|end)/i.test(id)) continue;
@@ -2798,6 +2811,10 @@
   // Reverse swaps src↔tgt in the source line. The edge identity changes, so
   // we re-key the selection to (tgt, src, newOrdinal) before re-rendering;
   // renderDiagram will re-apply selection visuals from selectedEdgeKeys.
+  // Layout entries (anchors/bend/styles) keyed by `src|tgt|ord` would
+  // otherwise be pruned as orphans after the rewrite — migrate them onto the
+  // new key with the appropriate geometric transform, and shift the ordinals
+  // of the other (s,t) / (t,s) edges that get renumbered by the swap.
   async function applyReverseEdge() {
     const key = singleEdgeKey();
     if (!key) { setStatus(__("editor.err.select_edge"), true); return; }
@@ -2806,13 +2823,70 @@
     if (!edge) return;
     const result = reverseEdgeInSource(currentSource, edge.source, edge.target, edge.ordinal);
     if (!result.ok) { setStatus(`inverti: ${result.error}`, true); return; }
+    const s = edge.source, t = edge.target, oOld = edge.ordinal, oNew = result.newOrdinal;
+    migrateLayoutOnReverse(s, t, oOld, oNew);
     currentSource = result.source;
     markDirtySource();
+    markDirtyLayout();
     selectedEdgeKeys.clear();
-    selectedEdgeKeys.add(`${edge.target}|${edge.source}|${result.newOrdinal}`);
+    selectedEdgeKeys.add(`${t}|${s}|${oNew}`);
     await renderDiagram();
     pushHistory();
-    setStatus(__("editor.op.edge_inverted", edge.source, edge.target));
+    setStatus(__("editor.op.edge_inverted", s, t));
+  }
+
+  // Transform a cubic bend on edge reversal. The chord direction flips, so
+  // each control point's chord parameter becomes 1−t and the perpendicular
+  // offset flips sign; cp1 and cp2 swap roles (cp1 sits near the new source,
+  // which is the old target). Same world geometry, mirrored description.
+  function reverseBend(b) {
+    if (!b) return b;
+    return { t1: 1 - b.t2, n1: -b.n2, t2: 1 - b.t1, n2: -b.n1 };
+  }
+
+  // Anchors store a compass direction per endpoint role. The physical nodes
+  // don't move, but their roles swap: the source-side anchor becomes the
+  // target-side anchor and vice versa.
+  function reverseAnchors(a) {
+    if (!a) return a;
+    const out = {};
+    if (a.target !== undefined) out.source = a.target;
+    if (a.source !== undefined) out.target = a.source;
+    return out;
+  }
+
+  // Re-key edgeAnchors / edgeBend / edgeStyles so they survive a reverse on
+  // edge (s,t) at ordinal oOld → (t,s) at ordinal oNew. Three groups need
+  // updates: the edge itself (transformed), the other (s,t) edges after oOld
+  // (ordinal shifts down by 1), and the other (t,s) edges at oNew or later
+  // (ordinal shifts up by 1). Done per bucket via a single rebuild so the
+  // intermediate state can't collide with itself.
+  function migrateLayoutOnReverse(s, t, oOld, oNew) {
+    const oldKey = `${s}|${t}|${oOld}`;
+    const newKey = `${t}|${s}|${oNew}`;
+    const remap = (k) => {
+      const parts = k.split("|");
+      if (parts.length !== 3) return k;
+      const [a, b, oStr] = parts;
+      const o = parseInt(oStr, 10);
+      if (!Number.isFinite(o)) return k;
+      if (k === oldKey) return newKey;
+      if (a === s && b === t && o > oOld) return `${a}|${b}|${o - 1}`;
+      if (a === t && b === s && o >= oNew) return `${a}|${b}|${o + 1}`;
+      return k;
+    };
+    const rebuild = (bucket, transformSelf) => {
+      const next = {};
+      for (const [k, v] of Object.entries(bucket)) {
+        const nk = remap(k);
+        next[nk] = (k === oldKey && transformSelf) ? transformSelf(v) : v;
+      }
+      for (const k of Object.keys(bucket)) delete bucket[k];
+      Object.assign(bucket, next);
+    };
+    rebuild(edgeAnchors, reverseAnchors);
+    rebuild(edgeBend, reverseBend);
+    rebuild(edgeStyles, null);
   }
 
   // ── Align / Distribute selected nodes ────────────────────────────────────

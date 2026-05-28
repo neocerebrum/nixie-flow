@@ -2069,6 +2069,11 @@
         // the primary contact, which is what we want.
         if (ev.pointerType === "mouse" && ev.button !== 0) return;
         if (!ev.isPrimary) return;
+        // Modifier held: user is mid-multiselect and likely missed the target
+        // element (subgraph backgrounds extend further than they look on
+        // nested diagrams). Mirror the empty-canvas click handler — preserve
+        // the current selection and don't start a drag.
+        if (ev.shiftKey || ev.ctrlKey || ev.metaKey) return;
         if (isReadOnly) {
           // Spectator: select-only, no drag.
           ev.preventDefault(); ev.stopPropagation();
@@ -6434,9 +6439,16 @@
     svg.setAttribute("width", "0");
     svg.setAttribute("height", "0");
     svg.style.position = "absolute";
+    // `filterUnits="userSpaceOnUse"` with a huge absolute region: the default
+    // (objectBoundingBox + percentages) collapses to zero for vertical-only
+    // edges (bbox width = 0) and clips arrowheads on near-vertical paths
+    // (markers extend beyond the path bbox). userSpaceOnUse with a region
+    // larger than any plausible diagram side-steps both — browsers clip
+    // internally to the visible area so the perf cost is negligible.
     svg.innerHTML = `
       <defs>
-        <filter id="aq-sel-outline" x="-50%" y="-50%" width="200%" height="200%">
+        <filter id="aq-sel-outline" filterUnits="userSpaceOnUse"
+                x="-100000" y="-100000" width="200000" height="200000">
           <feMorphology in="SourceGraphic" operator="dilate" radius="2" result="dilated"/>
           <feFlood flood-color="#000"/>
           <feComposite in2="dilated" operator="in" result="outline"/>

@@ -364,6 +364,7 @@ return [
     'js.editor.status.selected_n'       => 'ausgewählt: %s Knoten',
     'js.editor.status.selected_subgraph'=> 'ausgewählter Subgraph: %s',
     'js.editor.status.selected_edge'    => 'ausgewählte Edge: %s',
+    'js.editor.status.selected_edges_n' => 'ausgewählt: %s Edges',
     'js.editor.status.node_moved'       => '%s → (%s, %s)',
     'js.editor.status.nodes_moved'      => '%s Knoten verschoben',
 

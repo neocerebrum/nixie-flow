@@ -364,6 +364,7 @@ return [
     'js.editor.status.selected_n'       => '選択: %s個のノード',
     'js.editor.status.selected_subgraph'=> '選択したサブグラフ: %s',
     'js.editor.status.selected_edge'    => '選択したエッジ: %s',
+    'js.editor.status.selected_edges_n' => '選択: %s本のエッジ',
     'js.editor.status.node_moved'       => '%s → (%s, %s)',
     'js.editor.status.nodes_moved'      => '%s個のノードを移動しました',
 

@@ -320,13 +320,16 @@ body.deleting-edge g.edgeLabels > g { cursor: not-allowed; }
 body.deleting-edge g.edgeLabels > g:hover rect,
 body.deleting-edge g.edgeLabels > g:hover .edgeLabel { outline: 2px solid #bf616a; }
 
+/* Node / subgraph selection: crisp black halo around the shape (defined as
+   #aq-sel-outline in the page-level <svg> defs), thickness bump, forced
+   solid stroke. The user's per-element stroke colour stays visible. */
 .node.selected > rect:first-of-type,
 .node.selected > polygon:first-of-type,
 .node.selected > path:first-of-type,
 .node.selected > circle:first-of-type,
 .node.selected > ellipse:first-of-type {
-    stroke: #c0392b !important; stroke-width: 3px !important;
     stroke-dasharray: none !important;
+    filter: url(#aq-sel-outline);
 }
 
 g.cluster:hover > rect:first-of-type,
@@ -335,8 +338,8 @@ g.cluster:hover > path:first-of-type { filter: brightness(1.15); }
 g.cluster.selected > rect:first-of-type,
 g.cluster.selected > polygon:first-of-type,
 g.cluster.selected > path:first-of-type {
-    stroke: #c0392b !important; stroke-width: 3px !important;
     stroke-dasharray: none !important;
+    filter: url(#aq-sel-outline);
 }
 body.deleting g.cluster:hover > rect:first-of-type,
 body.deleting g.cluster:hover > polygon:first-of-type,
@@ -344,10 +347,13 @@ body.deleting g.cluster:hover > path:first-of-type {
     stroke: #c0392b !important; stroke-width: 3px !important;
 }
 
-/* Edge selection: red stroke, slightly thicker; overrides Mermaid's per-edge stroke */
+/* Edge selection: same crisp black halo as nodes/subgraphs (shared filter
+   #aq-sel-outline). The user's per-edge stroke colour stays visible; the
+   filter covers the arrowhead marker too since markers are part of the
+   path's filter input. */
 #diagram path.flowchart-link.selected {
-    stroke: #c0392b !important;
-    stroke-width: 3.5px !important;
+    stroke-width: 3px !important;
+    filter: url(#aq-sel-outline);
 }
 
 /* Edge hotspot anchors: dots overlaid on source/target shapes when an edge

@@ -364,6 +364,7 @@ return [
     'js.editor.status.selected_n'       => 'selecionados: %s nós',
     'js.editor.status.selected_subgraph'=> 'subgraph selecionado: %s',
     'js.editor.status.selected_edge'    => 'edge selecionado: %s',
+    'js.editor.status.selected_edges_n' => 'selecionados: %s edges',
     'js.editor.status.node_moved'       => '%s → (%s, %s)',
     'js.editor.status.nodes_moved'      => '%s nós movidos',
 

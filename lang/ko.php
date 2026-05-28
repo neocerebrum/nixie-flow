@@ -364,6 +364,7 @@ return [
     'js.editor.status.selected_n'       => '선택됨: %s개 노드',
     'js.editor.status.selected_subgraph'=> '선택된 서브그래프: %s',
     'js.editor.status.selected_edge'    => '선택된 엣지: %s',
+    'js.editor.status.selected_edges_n' => '선택됨: %s개 엣지',
     'js.editor.status.node_moved'       => '%s → (%s, %s)',
     'js.editor.status.nodes_moved'      => '%s개 노드 이동됨',
 

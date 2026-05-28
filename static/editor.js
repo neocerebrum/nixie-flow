@@ -191,7 +191,7 @@
   let connectSource = null;
   let selectedNodeIds = new Set(); // multi-select via Shift/Ctrl/Cmd+click
   let selectedClusterId = null;
-  let selectedEdgeKey = null; // "<src>|<tgt>|<ordinal>"
+  let selectedEdgeKeys = new Set(); // multi-select via Shift/Ctrl/Cmd+click; entries: "<src>|<tgt>|<ordinal>"
   let initialViewBox = null;
   let viewState = null;
   let skipSourceSync = false;
@@ -579,10 +579,10 @@
       if (clusterMap[selectedClusterId]) clusterMap[selectedClusterId].g.classList.add("selected");
       else selectedClusterId = null;
     }
-    if (selectedEdgeKey) {
-      const e = findEdgeByKey(selectedEdgeKey);
+    for (const key of [...selectedEdgeKeys]) {
+      const e = findEdgeByKey(key);
       if (e) e.path.classList.add("selected");
-      else selectedEdgeKey = null;
+      else selectedEdgeKeys.delete(key);
     }
     updateToolbarState();
     applyNoteTooltips();
@@ -1526,7 +1526,7 @@
       edge.label.setAttribute("transform", `translate(${labelXW - lFrame.x}, ${labelYW - lFrame.y})`);
     }
     // Keep hotspot dots glued to the source/target shapes during drag.
-    if (selectedEdgeKey === edgeKey(edge)) renderEdgeHotspots();
+    if (selectedEdgeKeys.has(edgeKey(edge))) renderEdgeHotspots();
   }
 
   function rerouteAllEdges() {
@@ -1544,10 +1544,13 @@
     const old = svgEl.querySelector(":scope > g.edge-hotspots");
     if (old) old.remove();
     renderEdgeBendHandle();
-    if (!selectedEdgeKey) return;
+    // Anchor hotspots / bend handles only make sense on a single edge — on
+    // multi-select they'd be ambiguous and crowd the canvas.
+    const soleKey = singleEdgeKey();
+    if (!soleKey) return;
     // Spectator mode: no writes possible, so hide the affordance.
     if (!canWrite) return;
-    const edge = findEdgeByKey(selectedEdgeKey);
+    const edge = findEdgeByKey(soleKey);
     if (!edge) return;
     const sn = endpointInfo(edge.source);
     const tn = endpointInfo(edge.target);
@@ -1559,7 +1562,7 @@
     const overlay = document.createElementNS(SVG_NS, "g");
     overlay.setAttribute("class", "edge-hotspots");
     svgEl.appendChild(overlay);
-    const anchors = edgeAnchors[selectedEdgeKey] || {};
+    const anchors = edgeAnchors[soleKey] || {};
     const sT = getWorldTranslate(sn.g);
     const tT = getWorldTranslate(tn.g);
     drawHotspotSet(overlay, sn, sT, sAnchors, "source", anchors.source);
@@ -1647,17 +1650,20 @@
     if (!svgEl) return;
     const old = svgEl.querySelector(":scope > g.edge-bend");
     if (old) old.remove();
-    if (!selectedEdgeKey) return;
+    // Bend handles only render on a single-edge selection; on multi-select
+    // they'd be ambiguous (one bend per edge) and visually noisy.
+    const soleKey = singleEdgeKey();
+    if (!soleKey) return;
     if (!canWrite) return;
-    const edge = findEdgeByKey(selectedEdgeKey);
+    const edge = findEdgeByKey(soleKey);
     if (!edge) return;
     const ep = edgeWorldEndpoints(edge);
     if (!ep) return;
     const { sxW, syW, txW, tyW } = ep;
-    const hasEntry = !!edgeBend[selectedEdgeKey];
+    const hasEntry = !!edgeBend[soleKey];
     let c1, c2, isStraight1, isStraight2;
     if (hasEntry) {
-      const bend = edgeBend[selectedEdgeKey];
+      const bend = edgeBend[soleKey];
       c1 = bendCpWorld(sxW, syW, txW, tyW, bend, 1);
       c2 = bendCpWorld(sxW, syW, txW, tyW, bend, 2);
       isStraight1 = Math.abs(bend.n1) < 0.01;
@@ -1713,17 +1719,17 @@
         if (ev.pointerType === "mouse" && ev.button !== 0) return;
         ev.stopPropagation();
         ev.preventDefault();
-        beginBendDrag(ev, selectedEdgeKey, which);
+        beginBendDrag(ev, soleKey, which);
       };
       hit.addEventListener("pointerdown", start);
       dot.addEventListener("pointerdown", start);
       const resetBend = (ev) => {
         ev.stopPropagation();
         ev.preventDefault();
-        if (!selectedEdgeKey || !canWrite || !lockHeldByMe()) return;
-        if (!edgeBend[selectedEdgeKey]) return;
-        delete edgeBend[selectedEdgeKey];
-        const e = findEdgeByKey(selectedEdgeKey);
+        if (!canWrite || !lockHeldByMe()) return;
+        if (!edgeBend[soleKey]) return;
+        delete edgeBend[soleKey];
+        const e = findEdgeByKey(soleKey);
         if (e) rerouteEdge(e);
         markDirtyLayout();
         renderEdgeBendHandle();
@@ -1874,11 +1880,13 @@
   // anchor. Clicking the currently active anchor returns to auto routing.
   function toggleEdgeAnchor(endpoint, name) {
     if (connectingState) return;
-    if (!selectedEdgeKey) return;
+    // Anchors are an affordance of the single-edge bend overlay — the function
+    // is only reachable while exactly one edge is selected.
+    const key = singleEdgeKey();
+    if (!key) return;
     if (!canWrite || !lockHeldByMe()) return;
-    const edge = findEdgeByKey(selectedEdgeKey);
+    const edge = findEdgeByKey(key);
     if (!edge) return;
-    const key = selectedEdgeKey;
     const cur = edgeAnchors[key] || {};
     const next = { source: cur.source, target: cur.target };
     if (next[endpoint] === name) {
@@ -2753,9 +2761,10 @@
   }
 
   async function applyToggleEdgeStyle() {
-    if (!selectedEdgeKey) { setStatus(__("editor.err.select_edge"), true); return; }
+    const key = singleEdgeKey();
+    if (!key) { setStatus(__("editor.err.select_edge"), true); return; }
     if (!requireValidSource("toggle edge style")) return;
-    const edge = findEdgeByKey(selectedEdgeKey);
+    const edge = findEdgeByKey(key);
     if (!edge) return;
     const result = toggleEdgeStyleInSource(currentSource, edge.source, edge.target, edge.ordinal);
     if (!result.ok) { setStatus(`toggle style: ${result.error}`, true); return; }
@@ -2767,9 +2776,10 @@
   }
 
   async function applyCycleEdgeArrow() {
-    if (!selectedEdgeKey) { setStatus(__("editor.err.select_edge"), true); return; }
+    const key = singleEdgeKey();
+    if (!key) { setStatus(__("editor.err.select_edge"), true); return; }
     if (!requireValidSource("cycle edge arrow")) return;
-    const edge = findEdgeByKey(selectedEdgeKey);
+    const edge = findEdgeByKey(key);
     if (!edge) return;
     const result = cycleEdgeArrowInSource(currentSource, edge.source, edge.target, edge.ordinal);
     if (!result.ok) { setStatus(`arrow: ${result.error}`, true); return; }
@@ -2781,18 +2791,20 @@
   }
 
   // Reverse swaps src↔tgt in the source line. The edge identity changes, so
-  // we update selectedEdgeKey to (tgt, src, newOrdinal) before re-rendering;
-  // renderDiagram will re-apply selection visuals from selectedEdgeKey.
+  // we re-key the selection to (tgt, src, newOrdinal) before re-rendering;
+  // renderDiagram will re-apply selection visuals from selectedEdgeKeys.
   async function applyReverseEdge() {
-    if (!selectedEdgeKey) { setStatus(__("editor.err.select_edge"), true); return; }
+    const key = singleEdgeKey();
+    if (!key) { setStatus(__("editor.err.select_edge"), true); return; }
     if (!requireValidSource("reverse edge")) return;
-    const edge = findEdgeByKey(selectedEdgeKey);
+    const edge = findEdgeByKey(key);
     if (!edge) return;
     const result = reverseEdgeInSource(currentSource, edge.source, edge.target, edge.ordinal);
     if (!result.ok) { setStatus(`inverti: ${result.error}`, true); return; }
     currentSource = result.source;
     markDirtySource();
-    selectedEdgeKey = `${edge.target}|${edge.source}|${result.newOrdinal}`;
+    selectedEdgeKeys.clear();
+    selectedEdgeKeys.add(`${edge.target}|${edge.source}|${result.newOrdinal}`);
     await renderDiagram();
     pushHistory();
     setStatus(__("editor.op.edge_inverted", edge.source, edge.target));
@@ -3044,9 +3056,9 @@
   // Decide what (if anything) the panel binds to right now, and refresh it.
   function updateNotesPanel() {
     let kind = null, id = null;
-    if (selectedNodeIds.size === 1 && !selectedClusterId && !selectedEdgeKey) {
+    if (selectedNodeIds.size === 1 && !selectedClusterId && selectedEdgeKeys.size === 0) {
       kind = "node"; id = [...selectedNodeIds][0];
-    } else if (selectedClusterId && selectedNodeIds.size === 0 && !selectedEdgeKey) {
+    } else if (selectedClusterId && selectedNodeIds.size === 0 && selectedEdgeKeys.size === 0) {
       kind = "subgraph"; id = selectedClusterId;
     }
     // Was the panel already bound to this same element? (Compare against the
@@ -3872,7 +3884,7 @@
         t.addEventListener("click", (ev) => {
           if (connectingState) return;
           ev.stopPropagation(); ev.preventDefault();
-          toggleEdgeSelection(edge);
+          toggleEdgeSelection(edge, ev.ctrlKey || ev.metaKey || ev.shiftKey);
         });
         t.addEventListener("dblclick", (ev) => {
           if (connectingState) return;
@@ -3898,6 +3910,47 @@
     pushHistory();
     const warn = result.chainLine ? " (was in a chain: entire line removed)" : "";
     setStatus(__("editor.op.edge_deleted", label) + warn);
+  }
+
+  // Batch-deletes the currently selected edges (with confirm). For multiple
+  // ordinals on the same (src,tgt) pair we delete in descending-ordinal order:
+  // each delete shifts subsequent ordinals down by one, so lower-ordinal keys
+  // remain valid as we go.
+  async function deleteSelectedEdges() {
+    if (selectedEdgeKeys.size === 0) return;
+    if (!requireValidSource("remove edge")) return;
+    const tuples = [];
+    for (const k of selectedEdgeKeys) {
+      const e = findEdgeByKey(k);
+      if (e) tuples.push({ source: e.source, target: e.target, ordinal: e.ordinal });
+    }
+    if (tuples.length === 0) return;
+    tuples.sort((a, b) => b.ordinal - a.ordinal);
+    const label = tuples.length === 1
+      ? `${tuples[0].source} → ${tuples[0].target}` + (tuples[0].ordinal > 0 ? ` (#${tuples[0].ordinal + 1})` : "")
+      : `${tuples.length} edges`;
+    if (!await confirmDialog(__("editor.delete_edge_confirm", label),
+      { confirmLabel: __("common.delete"), danger: true })) return;
+    let next = currentSource, ok = 0, errs = [], chainWarn = false;
+    for (const t of tuples) {
+      const r = deleteEdgeFromSource(next, t.source, t.target, t.ordinal);
+      if (r.ok) { next = r.source; ok++; if (r.chainLine) chainWarn = true; }
+      else errs.push(`${t.source}→${t.target}#${t.ordinal}: ${r.error}`);
+    }
+    if (ok > 0) {
+      currentSource = next;
+      markDirtySource();
+      deselectEdge();
+      await renderDiagram();
+      pushHistory();
+      const warn = chainWarn ? " (some edges were in a chain: full line removed)" : "";
+      setStatus(tuples.length === 1
+        ? __("editor.op.edge_deleted", label) + warn
+        : `− ${ok}/${tuples.length} edges${errs.length ? " err: " + errs.join("; ") : ""}` + warn,
+        errs.length > 0);
+    } else if (errs.length) {
+      setStatus(`delete: ${errs.join("; ")}`, true);
+    }
   }
 
   // Batch-deletes the currently selected nodes (with confirm). Shared by the
@@ -3935,11 +3988,7 @@
     if (connectingState) return;
     const kind = selectionKind();
     if (kind === "node") return deleteSelectedNodes();
-    if (kind === "edge") {
-      const edge = findEdgeByKey(selectedEdgeKey);
-      if (edge) return handleDeleteEdgeClick(edge);
-      return;
-    }
+    if (kind === "edge") return deleteSelectedEdges();
     if (kind === "subgraph") return handleDeleteSubgraphClick(selectedClusterId);
   }
 
@@ -3963,11 +4012,12 @@
     // click still bubbles up to diagramEl (line ~4360) and would deselect
     // any edge it sees set. The one-shot flag tells that listener to
     // skip this click — and renderDiagram's restore-selection logic will
-    // apply the visual highlight from selectedEdgeKey once the new edge
+    // apply the visual highlight from selectedEdgeKeys once the new edge
     // is in the DOM.
     deselectNode();
     deselectCluster();
-    selectedEdgeKey = `${src}|${tgt}|${newOrdinal}`;
+    selectedEdgeKeys.clear();
+    selectedEdgeKeys.add(`${src}|${tgt}|${newOrdinal}`);
     _skipNextDiagramClick = true;
     await renderDiagram();
     pushHistory();
@@ -4218,15 +4268,13 @@
         if (bb) include(bb.minX, bb.minY, bb.maxX, bb.maxY);
       }
     }
-    if (selectedEdgeKey) {
-      const edge = findEdgeByKey(selectedEdgeKey);
-      if (edge && edge.path) {
-        let bb; try { bb = edge.path.getBBox(); } catch (_) { bb = null; }
-        if (bb) {
-          const t = getElementParentTranslate(edge.path);
-          include(t.x + bb.x, t.y + bb.y, t.x + bb.x + bb.width, t.y + bb.y + bb.height);
-        }
-      }
+    for (const k of selectedEdgeKeys) {
+      const edge = findEdgeByKey(k);
+      if (!edge || !edge.path) continue;
+      let bb; try { bb = edge.path.getBBox(); } catch (_) { bb = null; }
+      if (!bb) continue;
+      const t = getElementParentTranslate(edge.path);
+      include(t.x + bb.x, t.y + bb.y, t.x + bb.x + bb.width, t.y + bb.y + bb.height);
     }
     return found ? { minX, minY, maxX, maxY } : null;
   }
@@ -4473,12 +4521,18 @@
   }
 
   // Selection bus: derive the current selection kind from state.
-  // Returns one of: 'node' (1+ nodes), 'edge' (1 edge), 'subgraph' (1 subgraph), null.
+  // Returns one of: 'node' (1+ nodes), 'edge' (1+ edges), 'subgraph' (1 subgraph), null.
   function selectionKind() {
     if (selectedNodeIds.size > 0) return "node";
-    if (selectedEdgeKey) return "edge";
+    if (selectedEdgeKeys.size > 0) return "edge";
     if (selectedClusterId) return "subgraph";
     return null;
+  }
+  // Returns the sole selected edge key (when exactly one is selected) or null.
+  // Use for operations that only make sense on a single edge: bend handles,
+  // toggle style, cycle arrow, reverse, edit label.
+  function singleEdgeKey() {
+    return selectedEdgeKeys.size === 1 ? [...selectedEdgeKeys][0] : null;
   }
 
   // Single source of truth for toolbar enable/disable. Called after every
@@ -4492,9 +4546,12 @@
     if (addEdgeBtn)      addEdgeBtn.disabled      = !((kind === "node" && nNodes === 1) || kind === "subgraph");
     if (addSubgraphBtn)  addSubgraphBtn.disabled  = !(kind === "node" && nNodes >= 2);
     if (deleteBtn)       deleteBtn.disabled       = (kind === null);
-    if (toggleEdgeStyleBtn) toggleEdgeStyleBtn.disabled = (kind !== "edge");
-    if (cycleEdgeArrowBtn)  cycleEdgeArrowBtn.disabled  = (kind !== "edge");
-    if (reverseEdgeBtn)     reverseEdgeBtn.disabled     = (kind !== "edge");
+    // Edge-style / arrow / reverse only act on a single edge — the source
+    // mutations are per-(src,tgt,ord) tuple. Disable on multi-edge selection.
+    const singleEdge = (kind === "edge" && selectedEdgeKeys.size === 1);
+    if (toggleEdgeStyleBtn) toggleEdgeStyleBtn.disabled = !singleEdge;
+    if (cycleEdgeArrowBtn)  cycleEdgeArrowBtn.disabled  = !singleEdge;
+    if (reverseEdgeBtn)     reverseEdgeBtn.disabled     = !singleEdge;
     const alignEnabled = (kind === "node" && nNodes >= 2);
     const distributeEnabled = (kind === "node" && nNodes >= 3);
     if (alignVBtn)        alignVBtn.disabled        = !alignEnabled;
@@ -4543,16 +4600,41 @@
     for (const e of edges) if (edgeKey(e) === key) return e;
     return null;
   }
-  function toggleEdgeSelection(edge) {
+  function toggleEdgeSelection(edge, additive) {
     const key = edgeKey(edge);
-    if (selectedEdgeKey === key) { deselectEdge(); return; }
+    if (additive) {
+      // Shift/Ctrl/Cmd+click: toggle membership without disturbing the rest.
+      deselectNode();
+      deselectCluster();
+      if (selectedEdgeKeys.has(key)) {
+        selectedEdgeKeys.delete(key);
+        edge.path.classList.remove("selected");
+      } else {
+        selectedEdgeKeys.add(key);
+        edge.path.classList.add("selected");
+      }
+      updateToolbarState();
+      renderEdgeHotspots();
+      const n = selectedEdgeKeys.size;
+      if (n === 0) setStatus("");
+      else if (n === 1) {
+        const e = findEdgeByKey([...selectedEdgeKeys][0]);
+        const lbl = e ? `${e.source} → ${e.target}` + (e.ordinal > 0 ? ` (#${e.ordinal + 1})` : "") : "";
+        setStatus(__("editor.status.selected_edge", lbl));
+      } else setStatus(__("editor.status.selected_edges_n", n));
+      broadcastSelection();
+      return;
+    }
+    // Plain click: replace selection with [edge]; clicking the only-selected edge deselects.
+    if (selectedEdgeKeys.size === 1 && selectedEdgeKeys.has(key)) { deselectEdge(); return; }
     deselectNode();
     deselectCluster();
-    if (selectedEdgeKey) {
-      const prev = findEdgeByKey(selectedEdgeKey);
+    for (const k of selectedEdgeKeys) {
+      const prev = findEdgeByKey(k);
       if (prev) prev.path.classList.remove("selected");
     }
-    selectedEdgeKey = key;
+    selectedEdgeKeys.clear();
+    selectedEdgeKeys.add(key);
     edge.path.classList.add("selected");
     const lbl = `${edge.source} → ${edge.target}` + (edge.ordinal > 0 ? ` (#${edge.ordinal + 1})` : "");
     setStatus(__("editor.status.selected_edge", lbl));
@@ -4561,11 +4643,11 @@
     broadcastSelection();
   }
   function deselectEdge() {
-    if (selectedEdgeKey) {
-      const prev = findEdgeByKey(selectedEdgeKey);
+    for (const k of selectedEdgeKeys) {
+      const prev = findEdgeByKey(k);
       if (prev) prev.path.classList.remove("selected");
     }
-    selectedEdgeKey = null;
+    selectedEdgeKeys.clear();
     updateToolbarState();
     renderEdgeHotspots();
     broadcastSelection();
@@ -4592,8 +4674,8 @@
     if (!requireValidSource("apply color")) return;
     // Selection dispatch: edge takes priority (it can only be solo-selected),
     // then nodes, then a single subgraph.
-    const edgeSelected = !!selectedEdgeKey;
-    const ids = edgeSelected ? [selectedEdgeKey]
+    const edgeSelected = selectedEdgeKeys.size > 0;
+    const ids = edgeSelected ? [...selectedEdgeKeys]
               : (selectedNodeIds.size > 0 ? [...selectedNodeIds]
                 : (selectedClusterId ? [selectedClusterId] : []));
     if (!ids.length) { setStatus(__("editor.err.select_node_or_subgraph"), true); return; }
@@ -5531,7 +5613,7 @@
 
   function currentSelection() {
     const nodes = [...selectedNodeIds];
-    const edges = selectedEdgeKey ? [selectedEdgeKey] : [];
+    const edges = [...selectedEdgeKeys];
     const cluster = selectedClusterId || null;
     if (nodes.length === 0 && edges.length === 0 && !cluster) return null;
     return { nodes, edges, cluster };
@@ -6277,7 +6359,7 @@
       if (connectingState) { cancelConnectMode(); return; }
       if (selectedNodeIds.size > 0) { deselectNode(); setStatus(""); }
       if (selectedClusterId) { deselectCluster(); setStatus(""); }
-      if (selectedEdgeKey) { deselectEdge(); setStatus(""); }
+      if (selectedEdgeKeys.size > 0) { deselectEdge(); setStatus(""); }
       return;
     }
     if (e.key === "0" || e.key === "Home") { e.preventDefault(); fitView(); return; }
@@ -6329,13 +6411,43 @@
       deselectCluster();
       setStatus("");
     }
-    if (!e.target.closest("path.flowchart-link, g.edgeLabel, g.edgeLabels, g.edge-bend, g.edge-hotspots") && selectedEdgeKey) {
+    if (!e.target.closest("path.flowchart-link, g.edgeLabel, g.edgeLabels, g.edge-bend, g.edge-hotspots") && selectedEdgeKeys.size > 0) {
       deselectEdge();
       setStatus("");
     }
   });
 
   // ── Init ─────────────────────────────────────────────────────────────────
+
+  // Inject reusable SVG filter defs into the document so CSS can reference
+  // them by id from inside any SVG (Mermaid output, peer rings, etc.).
+  // `aq-sel-outline` paints a crisp dilated black halo behind the source
+  // geometry — used by edges (`path.flowchart-link.selected`), nodes
+  // (`.node.selected > <shape>`), and subgraphs (`g.cluster.selected > …`).
+  // SVG2 feMorphology dilates by exact pixel radius (no Gaussian blur),
+  // so the outline edge is sharp.
+  (function injectSvgFilters() {
+    if (document.getElementById("aq-svg-filters")) return;
+    const SVG_NS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(SVG_NS, "svg");
+    svg.id = "aq-svg-filters";
+    svg.setAttribute("width", "0");
+    svg.setAttribute("height", "0");
+    svg.style.position = "absolute";
+    svg.innerHTML = `
+      <defs>
+        <filter id="aq-sel-outline" x="-50%" y="-50%" width="200%" height="200%">
+          <feMorphology in="SourceGraphic" operator="dilate" radius="2" result="dilated"/>
+          <feFlood flood-color="#000"/>
+          <feComposite in2="dilated" operator="in" result="outline"/>
+          <feMerge>
+            <feMergeNode in="outline"/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
+      </defs>`;
+    document.body.appendChild(svg);
+  })();
 
   buildPalette();
   buildShapeGrid();

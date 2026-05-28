@@ -364,6 +364,7 @@ return [
     'js.editor.status.selected_n'       => '已选择：%s 个节点',
     'js.editor.status.selected_subgraph'=> '已选择子图：%s',
     'js.editor.status.selected_edge'    => '已选择连线：%s',
+    'js.editor.status.selected_edges_n' => '已选择：%s 条连线',
     'js.editor.status.node_moved'       => '%s → (%s, %s)',
     'js.editor.status.nodes_moved'      => '%s 个节点已移动',
 

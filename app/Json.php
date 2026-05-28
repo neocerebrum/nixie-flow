@@ -88,6 +88,12 @@ final class Json
                 $v['edgeBend'] = new \stdClass();
             }
         }
+        foreach (['nodeStyles', 'subgraphStyles', 'edgeStyles'] as $bucket) {
+            if (is_array($v) && array_key_exists($bucket, $v)
+                && is_array($v[$bucket]) && $v[$bucket] === []) {
+                $v[$bucket] = new \stdClass();
+            }
+        }
         $encoded = json_encode($v, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         if ($encoded === false) {
             Response::error("Field $key is not JSON-encodable", 400);

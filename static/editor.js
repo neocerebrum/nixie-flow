@@ -148,9 +148,35 @@
   // signed perpendicular offset in SVG world units. n=0 ⇒ straight line.
   let edgeBend = (bootstrap.layout && bootstrap.layout.edgeBend) || {};
   if (Array.isArray(edgeBend)) edgeBend = {};
+  // Per-element visual styles stored outside the Mermaid source.
+  //   nodeStyles[id]      = { fill, stroke, color }   — node fill/border/label
+  //   subgraphStyles[id]  = { fill, stroke, color }   — cluster fill/border/label
+  //   edgeStyles["s|t|o"] = { stroke, color }         — edge line/label color
+  // Keys are extracted from any `style …` directives on load (see
+  // extractInlineStylesFromSource) and applied to the SVG post-render.
+  let nodeStyles     = (bootstrap.layout && bootstrap.layout.nodeStyles)     || {};
+  if (Array.isArray(nodeStyles)) nodeStyles = {};
+  let subgraphStyles = (bootstrap.layout && bootstrap.layout.subgraphStyles) || {};
+  if (Array.isArray(subgraphStyles)) subgraphStyles = {};
+  let edgeStyles     = (bootstrap.layout && bootstrap.layout.edgeStyles)     || {};
+  if (Array.isArray(edgeStyles)) edgeStyles = {};
   // Promote legacy quadratic bends to cubic on initial load (idempotent).
   // `migrateAllBends` is a function declaration so it's hoisted within this IIFE.
   migrateAllBends();
+  // Migrate inline `style …` directives out of the Mermaid source into the
+  // layout layer. Idempotent — diagrams already clean are unaffected.
+  // Persistence happens on the next save/autosave; we don't mark dirty here
+  // because that would surface "unsaved changes" the instant a diagram opens.
+  extractInlineStylesFromSource();
+
+  // Single shape for everything sent to the save / draft / beacon endpoints.
+  function buildLayoutPayload() {
+    return {
+      version: 1,
+      positions, edgeAnchors, edgeBend,
+      nodeStyles, subgraphStyles, edgeStyles,
+    };
+  }
   let currentRevisionId = bootstrap.revision_id;
   let currentTitle = bootstrap.title;
   const slug = bootstrap.slug;
@@ -411,6 +437,9 @@
       positions: JSON.parse(JSON.stringify(positions)),
       edgeAnchors: JSON.parse(JSON.stringify(edgeAnchors)),
       edgeBend: JSON.parse(JSON.stringify(edgeBend)),
+      nodeStyles: JSON.parse(JSON.stringify(nodeStyles)),
+      subgraphStyles: JSON.parse(JSON.stringify(subgraphStyles)),
+      edgeStyles: JSON.parse(JSON.stringify(edgeStyles)),
     });
     if (history.length > HISTORY_CAP) {
       history = history.slice(history.length - HISTORY_CAP);
@@ -431,6 +460,9 @@
     positions = JSON.parse(JSON.stringify(snap.positions));
     edgeAnchors = JSON.parse(JSON.stringify(snap.edgeAnchors || {}));
     edgeBend = JSON.parse(JSON.stringify(snap.edgeBend || {}));
+    nodeStyles = JSON.parse(JSON.stringify(snap.nodeStyles || {}));
+    subgraphStyles = JSON.parse(JSON.stringify(snap.subgraphStyles || {}));
+    edgeStyles = JSON.parse(JSON.stringify(snap.edgeStyles || {}));
     migrateAllBends();
     markDirtySource(); markDirtyLayout();
     try {
@@ -528,6 +560,7 @@
     indexNodesAndEdges(svgEl);
     reorderClustersByContainment(svgEl);
     offsetArrowMarkers(svgEl);
+    applyVisualStyles(svgEl);
     applySavedPositions();
     updateAllClusterBounds();
     rerouteAllEdges();
@@ -696,6 +729,68 @@
     }
   }
 
+  // Apply user-defined fills/strokes/text colors stored in the layout layer
+  // (nodeStyles / subgraphStyles / edgeStyles). These directives used to live
+  // inline as `style …` / `linkStyle …` lines inside the Mermaid source; we
+  // now keep them out of the source so it stays clean for LLM consumers and
+  // re-apply them post-render here. CSS `!important` selection styles in
+  // editor.css still win over the inline styles set below.
+  function applyVisualStyles(svgEl) {
+    for (const id of Object.keys(nodeStyles)) {
+      const n = nodeMap[id];
+      if (!n) continue;
+      paintShape(n.g, nodeStyles[id]);
+    }
+    for (const id of Object.keys(subgraphStyles)) {
+      const c = clusterMap[id];
+      if (!c) continue;
+      if (c.bg) paintEl(c.bg, subgraphStyles[id]);
+      if (c.label) paintLabelText(c.label, subgraphStyles[id]);
+    }
+    for (const e of edges) {
+      const props = edgeStyles[edgeKey(e)];
+      if (!props) continue;
+      if (props.stroke) e.path.style.stroke = props.stroke;
+      if (props.color && e.label) paintLabelText(e.label, props);
+    }
+  }
+
+  // Paint the primitive shape children of a node group (rect, polygon, circle,
+  // ellipse, path) plus its label text.
+  function paintShape(g, props) {
+    for (const child of g.children) {
+      const tag = child.tagName.toLowerCase();
+      if (tag === "rect" || tag === "polygon" || tag === "circle"
+          || tag === "ellipse" || tag === "path") {
+        paintEl(child, props);
+      }
+    }
+    const label = g.querySelector(":scope > g.label");
+    if (label) paintLabelText(label, props);
+  }
+
+  function paintEl(el, props) {
+    if (props.fill)   el.style.fill   = props.fill;
+    if (props.stroke) el.style.stroke = props.stroke;
+  }
+
+  function shallowEq(a, b) {
+    const ka = Object.keys(a), kb = Object.keys(b);
+    if (ka.length !== kb.length) return false;
+    for (const k of ka) if (a[k] !== b[k]) return false;
+    return true;
+  }
+
+  // SVG `<text>` colors via `fill`, not `color`. Mermaid is configured with
+  // htmlLabels:false so all labels are plain `<text>` — set fill on every
+  // descendant text element.
+  function paintLabelText(labelG, props) {
+    if (!props.color) return;
+    for (const t of labelG.querySelectorAll("text, tspan")) {
+      t.style.fill = props.color;
+    }
+  }
+
   // Reorder sibling `g.cluster` elements so outer subgraphs paint first and
   // inner ones paint on top. Mermaid sometimes emits nested clusters in the
   // wrong source-derived order — when a child appears earlier than its parent
@@ -808,20 +903,35 @@
       markDirtyLayout();
     }
     pruneOrphanEdgeAnchors();
+    pruneOrphanNodeStyles();
   }
 
-  // Drop edgeAnchors entries that no longer correspond to any current edge.
-  // Edges are keyed by `src|tgt|ord`; the triple changes when ids are renamed
-  // outside the editor's rename flow or when edges are reordered/deleted.
+  // Drop edgeAnchors / edgeBend / edgeStyles entries that no longer correspond
+  // to any current edge. Edges are keyed by `src|tgt|ord`; the triple changes
+  // when ids are renamed outside the editor's rename flow or when edges are
+  // reordered/deleted.
   function pruneOrphanEdgeAnchors() {
     const live = new Set();
     for (const e of edges) live.add(edgeKey(e));
     let changed = false;
-    for (const k of Object.keys(edgeAnchors)) {
-      if (!live.has(k)) { delete edgeAnchors[k]; changed = true; }
+    for (const bucket of [edgeAnchors, edgeBend, edgeStyles]) {
+      for (const k of Object.keys(bucket)) {
+        if (!live.has(k)) { delete bucket[k]; changed = true; }
+      }
     }
-    for (const k of Object.keys(edgeBend)) {
-      if (!live.has(k)) { delete edgeBend[k]; changed = true; }
+    if (changed) markDirtyLayout();
+  }
+
+  // Drop nodeStyles / subgraphStyles entries whose id no longer exists in the
+  // current graph. Triggered after each render so deletes / source edits clean
+  // up. Keeps the layout JSON tidy without changing observable behavior.
+  function pruneOrphanNodeStyles() {
+    let changed = false;
+    for (const id of Object.keys(nodeStyles)) {
+      if (!nodeMap[id]) { delete nodeStyles[id]; changed = true; }
+    }
+    for (const id of Object.keys(subgraphStyles)) {
+      if (!clusterMap[id]) { delete subgraphStyles[id]; changed = true; }
     }
     if (changed) markDirtyLayout();
   }
@@ -851,6 +961,15 @@
     if (a.touchedAny) { edgeAnchors = a.updated; changed = true; }
     const b = rekey(edgeBend);
     if (b.touchedAny) { edgeBend = b.updated; changed = true; }
+    const c = rekey(edgeStyles);
+    if (c.touchedAny) { edgeStyles = c.updated; changed = true; }
+    for (const bucket of [nodeStyles, subgraphStyles]) {
+      if (Object.prototype.hasOwnProperty.call(bucket, oldId)) {
+        bucket[newId] = bucket[oldId];
+        delete bucket[oldId];
+        changed = true;
+      }
+    }
     if (changed) markDirtyLayout();
   }
 
@@ -1181,13 +1300,28 @@
   function offsetArrowMarkers(svgEl) {
     // Mermaid v10 IDs vary across releases (e.g. `flowchart-pointEnd`,
     // `flowchart-pointEnd_1`, `…-End-XYZ`). Match any marker whose id contains
-    // "end" (case-insensitive) so we cover all flowchart end-marker variants.
+    // "end" (case-insensitive) for the refX offset (only end-markers need it),
+    // and match BOTH start and end for the colour-inheritance pass — otherwise
+    // the start-side arrowhead on bidirectional edges stays in its default
+    // (white) colour while the edge body gets recoloured.
     for (const m of svgEl.querySelectorAll('marker')) {
       const id = m.getAttribute('id') || '';
-      if (!/end/i.test(id)) continue;
-      const cur = parseFloat(m.getAttribute('refX') || '0');
-      if (Number.isNaN(cur)) continue;
-      m.setAttribute('refX', String(cur + ARROW_MARKER_REFX_BUMP));
+      if (/end/i.test(id)) {
+        const cur = parseFloat(m.getAttribute('refX') || '0');
+        if (!Number.isNaN(cur)) {
+          m.setAttribute('refX', String(cur + ARROW_MARKER_REFX_BUMP));
+        }
+      }
+      if (!/(start|end)/i.test(id)) continue;
+      // SVG2 `context-stroke`: makes the arrowhead inherit the stroke colour
+      // of the referencing edge path. Set on BOTH fill (arrow body) and stroke
+      // (arrow outline) — otherwise the outline stays at the marker's hard-
+      // coded default. Default (uncoloured) edges already share the marker's
+      // default stroke, so visible output is unchanged for them.
+      for (const p of m.querySelectorAll('path, polygon')) {
+        p.style.fill   = 'context-stroke';
+        p.style.stroke = 'context-stroke';
+      }
     }
   }
 
@@ -1214,6 +1348,75 @@
     }
     return null;
   }
+  // Move legacy `style <id> fill:…,stroke:…,color:…` directives out of the
+  // Mermaid source and into nodeStyles/subgraphStyles (in the layout layer).
+  // Visual styles are pure presentation — keeping them in the source pollutes
+  // it for LLM consumers without adding semantic value. Idempotent: a source
+  // with no `style` lines is a no-op. Subgraph vs node is disambiguated by
+  // scanning for `subgraph <id>` declarations in the same source.
+  function extractInlineStylesFromSource() {
+    if (!currentSource) return false;
+    const subgraphIds = new Set();
+    const sgRe = /^\s*subgraph\s+([A-Za-z_][\w-]*)\b/;
+    for (const line of currentSource.split("\n")) {
+      const m = line.match(sgRe);
+      if (m) subgraphIds.add(m[1]);
+    }
+    const styleRe = /^\s*style\s+([A-Za-z_][\w-]*)\s+(.+?)\s*$/;
+    const out = [];
+    let changed = false;
+    for (const line of currentSource.split("\n")) {
+      const m = line.match(styleRe);
+      if (!m) { out.push(line); continue; }
+      const id = m[1];
+      const props = parseStyleProps(m[2]);
+      if (!props) { out.push(line); continue; } // unparseable: leave in source
+      const bucket = subgraphIds.has(id) ? subgraphStyles : nodeStyles;
+      bucket[id] = Object.assign({}, bucket[id] || {}, props);
+      changed = true;
+      // skip line → drop from source
+    }
+    if (changed) currentSource = out.join("\n");
+    return changed;
+  }
+
+  // Parse a Mermaid `style` value list ("fill:#5e81ac,stroke:#3b5371,…") into
+  // a plain object. Returns null if the string is not a comma-separated list
+  // of `key:value` pairs (e.g. user wrote something exotic — leave it alone).
+  // Color-typed props with garbage values (corruption from accidental pastes
+  // into the source) are silently dropped so the rotten value doesn't carry
+  // over into the layout layer.
+  function parseStyleProps(str) {
+    const out = {};
+    for (const part of str.split(",")) {
+      const p = part.trim();
+      if (!p) continue;
+      const i = p.indexOf(":");
+      if (i < 1) return null;
+      const k = p.slice(0, i).trim();
+      const v = p.slice(i + 1).trim();
+      if (!k || !v) return null;
+      if (isColorProp(k) && !isValidCssColor(v)) continue;
+      out[k] = v;
+    }
+    return Object.keys(out).length ? out : null;
+  }
+
+  function isColorProp(k) {
+    return k === "fill" || k === "stroke" || k === "color";
+  }
+  // Accept hex (#rgb/#rgba/#rrggbb/#rrggbbaa), functional notations
+  // (rgb/rgba/hsl/hsla/hwb/lab/lch/oklab/oklch/color), and bare keywords for
+  // named colors / `none` / `transparent` / `currentColor`. Anything else is
+  // treated as garbage — corrupted source values would otherwise survive the
+  // migration and silently break rendering once moved into the layout layer.
+  function isValidCssColor(v) {
+    if (/^#[0-9a-fA-F]{3,8}$/.test(v)) return true;
+    if (/^(rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color)\s*\([^()]*\)$/i.test(v)) return true;
+    if (/^[a-zA-Z]+$/.test(v)) return true;
+    return false;
+  }
+
   function migrateAllBends() {
     for (const k of Object.keys(edgeBend)) {
       const m = migrateBend(edgeBend[k]);
@@ -4301,8 +4504,8 @@
     if (moveToSubgraphBtn) {
       moveToSubgraphBtn.disabled = !((kind === "node") || kind === "subgraph");
     }
-    // Palette: Color applies to nodes and subgraphs; Shape only to nodes.
-    const colorEnabled = (kind === "node") || (kind === "subgraph");
+    // Palette: Color applies to nodes, subgraphs, and edges; Shape only to nodes.
+    const colorEnabled = (kind === "node") || (kind === "subgraph") || (kind === "edge");
     const shapeEnabled = (kind === "node");
     if (colorPaletteEl) {
       for (const b of colorPaletteEl.querySelectorAll("button")) b.disabled = !colorEnabled;
@@ -4387,22 +4590,65 @@
 
   async function applyPaletteColor(color) {
     if (!requireValidSource("apply color")) return;
-    const ids = selectedNodeIds.size > 0 ? [...selectedNodeIds]
-              : (selectedClusterId ? [selectedClusterId] : []);
+    // Selection dispatch: edge takes priority (it can only be solo-selected),
+    // then nodes, then a single subgraph.
+    const edgeSelected = !!selectedEdgeKey;
+    const ids = edgeSelected ? [selectedEdgeKey]
+              : (selectedNodeIds.size > 0 ? [...selectedNodeIds]
+                : (selectedClusterId ? [selectedClusterId] : []));
     if (!ids.length) { setStatus(__("editor.err.select_node_or_subgraph"), true); return; }
-    const styleStr = color.reset ? null
-      : `fill:${color.fill},stroke:${color.stroke},color:${color.color}`;
-    let next = currentSource, applied = 0;
+    let next = currentSource, sourceChanged = false, anyDeleted = false, applied = 0;
+    // Edges only have a line + label: use the palette's most saturated value
+    // (`fill`) for both stroke and label. Nodes/subgraphs keep the full triple.
+    const props = color.reset ? null
+      : (edgeSelected
+          ? { stroke: color.fill, color: color.fill }
+          : { fill: color.fill, stroke: color.stroke, color: color.color });
     for (const id of ids) {
-      const r = setNodeStyleInSource(next, id, styleStr);
-      if (r.changed) { next = r.source; applied++; }
+      const bucket = edgeSelected ? edgeStyles
+                   : (clusterMap[id] ? subgraphStyles : nodeStyles);
+      let touched = false;
+      if (props) {
+        const prev = bucket[id];
+        if (!prev || !shallowEq(prev, props)) {
+          bucket[id] = Object.assign({}, prev || {}, props);
+          touched = true;
+        }
+      } else if (bucket[id]) {
+        delete bucket[id];
+        touched = true;
+        anyDeleted = true;
+      }
+      // Defensive: a stale `style <id> …` left in the source by the legacy
+      // code path (or another tab) would shadow the bucket via Mermaid's
+      // native pass — drop it so the bucket is the single source of truth.
+      // Only applies to nodes/subgraphs (edges never had inline `style …`).
+      if (!edgeSelected) {
+        const r = setNodeStyleInSource(next, id, null);
+        if (r.changed) { next = r.source; sourceChanged = true; touched = true; }
+      }
+      if (touched) applied++;
     }
     if (!applied) { setStatus(__("editor.err.color_no_change")); return; }
-    currentSource = next;
-    markDirtySource();
-    await renderDiagram();
+    markDirtyLayout();
+    // Full re-render is needed when (a) source mutated, or (b) any entry was
+    // deleted from a bucket — in that case applyVisualStyles can't restore the
+    // Mermaid-default look because it doesn't know what was there originally,
+    // so we let Mermaid re-render from clean source.
+    if (sourceChanged || anyDeleted) {
+      if (sourceChanged) { currentSource = next; markDirtySource(); }
+      await renderDiagram();
+    } else {
+      // Pure additive bucket change: skip Mermaid round-trip and just restyle
+      // the existing SVG. Avoids the re-layout flash from re-parsing.
+      const svgEl = diagramEl.querySelector("svg");
+      if (svgEl) applyVisualStyles(svgEl);
+    }
     pushHistory();
-    setStatus(ids.length === 1 ? `${ids[0]}: color ${color.name}`
+    const label = edgeSelected
+      ? (() => { const e = findEdgeByKey(ids[0]); return e ? `${e.source} → ${e.target}` : ids[0]; })()
+      : ids[0];
+    setStatus(ids.length === 1 ? `${label}: color ${color.name}`
                                : `color ${color.name} → ${applied}/${ids.length} elementi`);
   }
 
@@ -4682,16 +4928,14 @@
     draftFlushInFlight = true;
 
     const snapSource = currentSource;
-    const snapPositions = JSON.parse(JSON.stringify(positions));
-    const snapEdgeAnchors = JSON.parse(JSON.stringify(edgeAnchors));
-    const snapEdgeBend = JSON.parse(JSON.stringify(edgeBend));
+    const snapLayout = buildLayoutPayload();
     const expected = currentRevisionId;
     try {
       const { status, json } = await api("PATCH",
         `/api/diagrams/${encodeURIComponent(slug)}/draft`,
         {
           source: snapSource,
-          layout: { version: 1, positions: snapPositions, edgeAnchors: snapEdgeAnchors, edgeBend: snapEdgeBend },
+          layout: snapLayout,
           expected_revision_id: expected,
         });
       if (status === 200 && json) {
@@ -4727,7 +4971,7 @@
         headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
         body: JSON.stringify({
           source: currentSource,
-          layout: { version: 1, positions, edgeAnchors, edgeBend },
+          layout: buildLayoutPayload(),
           expected_revision_id: currentRevisionId,
         }),
       });
@@ -4752,7 +4996,7 @@
     try {
       const { status, json } = await api("POST", `/api/diagrams/${encodeURIComponent(slug)}`, {
         source: currentSource,
-        layout: { version: 1, positions, edgeAnchors, edgeBend },
+        layout: buildLayoutPayload(),
         expected_revision_id: currentRevisionId,
       });
       if (status === 200 && json) {
@@ -4802,11 +5046,15 @@
 
   function loadFromDto(dto) {
     currentSource = dto.source || "";
-    positions = (dto.layout && dto.layout.positions) || {};
-    if (Array.isArray(positions)) positions = {};
-    edgeBend = (dto.layout && dto.layout.edgeBend) || {};
-    if (Array.isArray(edgeBend)) edgeBend = {};
+    const L = dto.layout || {};
+    positions      = Array.isArray(L.positions)      ? {} : (L.positions      || {});
+    edgeAnchors    = Array.isArray(L.edgeAnchors)    ? {} : (L.edgeAnchors    || {});
+    edgeBend       = Array.isArray(L.edgeBend)       ? {} : (L.edgeBend       || {});
+    nodeStyles     = Array.isArray(L.nodeStyles)     ? {} : (L.nodeStyles     || {});
+    subgraphStyles = Array.isArray(L.subgraphStyles) ? {} : (L.subgraphStyles || {});
+    edgeStyles     = Array.isArray(L.edgeStyles)     ? {} : (L.edgeStyles     || {});
     migrateAllBends();
+    extractInlineStylesFromSource();
     currentRevisionId = dto.revision_id;
     if (dto.updated_at) lastUpdatedAt = dto.updated_at;
     if (dto.title && dto.title !== currentTitle) {

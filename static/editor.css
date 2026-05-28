@@ -102,6 +102,44 @@ body { margin: 0; overflow: hidden; display: flex; flex-direction: column; }
 .shape-mini:hover { border-color: #88c0d0; color: #88c0d0; }
 .shape-mini svg { width: 32px; height: 24px; display: block; }
 
+/* Inert swatches: nothing selected to apply to — dimmed but still editable
+   (double-click opens the preset editor). */
+.color-swatch.swatch-inert { opacity: .45; cursor: default; }
+.color-swatch.swatch-inert:hover { transform: none; border-color: #3a4551; }
+
+/* ── Palette preset editor modal ───────────────────────────────────────── */
+#palettePresetModal .modal-box { min-width: 480px; }
+.pp-title { color: #88c0d0; font-weight: 500; font-size: .85em; }
+.pp-body { display: flex; gap: 22px; margin: 8px 0 4px; }
+.pp-channels { display: flex; flex-direction: column; gap: 14px; flex: 1; min-width: 0; }
+.pp-channel { background: #1c242e; border: 1px solid #2a3441; border-radius: 6px; padding: 10px 12px; }
+.pp-channel-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.pp-swatch { width: 20px; height: 20px; border-radius: 4px; border: 1px solid #3a4551; }
+.pp-channel-name { font-size: 13px; color: #d8dee9; flex: 1; }
+.pp-hex { font-family: ui-monospace, monospace; font-size: 12px; color: #8b97a6; text-transform: uppercase; }
+.pp-sliders { display: flex; gap: 14px; }
+.pp-slider { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.pp-slider .pp-ch { font-size: 11px; color: #6f7a88; }
+.pp-slider input[type=range] { width: 100%; accent-color: #88c0d0; }
+.pp-slider .pp-val { font-size: 11px; color: #8b97a6; font-family: ui-monospace, monospace; }
+.pp-aside { display: flex; flex-direction: column; gap: 12px; align-items: stretch; width: 120px; }
+.pp-preview-wrap { display: flex; flex-direction: column; gap: 6px; }
+.pp-preview-label { font-size: 11px; color: #6f7a88; }
+.pp-preview {
+    height: 64px; border-radius: 6px; display: flex; align-items: center;
+    justify-content: center; font-size: 18px; font-weight: 600; overflow: hidden;
+    position: relative;
+}
+.pp-preview .pp-edge-line { position: absolute; left: 10%; right: 10%; height: 3px; border-radius: 2px; }
+.pp-preview .pp-edge-label { position: relative; z-index: 1; background: #1c242e; padding: 0 6px; border-radius: 3px; }
+.pp-eyedrop { display: inline-flex; align-items: center; gap: 6px; justify-content: center; }
+.pp-eyedrop .icon { width: 16px; height: 16px; }
+
+/* Eyedropper pick mode: the modal is hidden entirely while picking, so the
+   canvas is fully clickable; only the crosshair cursor signals the mode. */
+body.eyedropper-active #diagram,
+body.eyedropper-active #diagram * { cursor: crosshair !important; }
+
 /* Main split */
 #main { flex: 1; display: flex; min-height: 0; min-width: 0; }
 #sourcePanel {

@@ -55,7 +55,10 @@
     hexagon:    `<polygon points="10,6 30,6 36,14 30,22 10,22 4,14" fill="currentColor"/>`,
   };
 
-  const PALETTE = [
+  // Pastel base palette (the node defaults). The subgraph and edge default
+  // palettes are derived from this one slot-by-slot via HSL transforms so the
+  // three palettes stay aligned by slot/name (see DEFAULT_PALETTES below).
+  const PALETTE_BASE = [
     { name: "blue",   fill: "#5e81ac", stroke: "#3b5371", color: "#eceff4" },
     { name: "cyan",   fill: "#88c0d0", stroke: "#5b8898", color: "#2e3440" },
     { name: "green",  fill: "#a3be8c", stroke: "#738a5f", color: "#2e3440" },
@@ -63,8 +66,151 @@
     { name: "orange", fill: "#d08770", stroke: "#9a5540", color: "#2e3440" },
     { name: "red",    fill: "#bf616a", stroke: "#8e3b44", color: "#eceff4" },
     { name: "purple", fill: "#b48ead", stroke: "#815b7e", color: "#eceff4" },
-    { name: "reset",  reset: true },
   ];
+  const PALETTE_NAMES = PALETTE_BASE.map((p) => p.name);
+
+  // ── Color math (hex ↔ rgb ↔ hsl, luminance) ───────────────────────────────
+  function hexToRgb(hex) {
+    let h = String(hex || "").trim().replace(/^#/, "");
+    if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+    const n = parseInt(h, 16);
+    if (!Number.isFinite(n) || h.length !== 6) return { r: 0, g: 0, b: 0 };
+    return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+  }
+  function clamp255(v) { return Math.max(0, Math.min(255, Math.round(v))); }
+  function rgbToHex({ r, g, b }) {
+    const h = (v) => clamp255(v).toString(16).padStart(2, "0");
+    return "#" + h(r) + h(g) + h(b);
+  }
+  function rgbToHsl({ r, g, b }) {
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    let h = 0, s = 0; const l = (max + min) / 2;
+    if (max !== min) {
+      const d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      switch (max) {
+        case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+        case g: h = (b - r) / d + 2; break;
+        default: h = (r - g) / d + 4;
+      }
+      h /= 6;
+    }
+    return { h, s, l };
+  }
+  function hslToRgb({ h, s, l }) {
+    let r, g, b;
+    if (s === 0) { r = g = b = l; }
+    else {
+      const hue2rgb = (p, q, t) => {
+        if (t < 0) t += 1; if (t > 1) t -= 1;
+        if (t < 1 / 6) return p + (q - p) * 6 * t;
+        if (t < 1 / 2) return q;
+        if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+        return p;
+      };
+      const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+      const p = 2 * l - q;
+      r = hue2rgb(p, q, h + 1 / 3); g = hue2rgb(p, q, h); b = hue2rgb(p, q, h - 1 / 3);
+    }
+    return { r: r * 255, g: g * 255, b: b * 255 };
+  }
+  function rgbToHsv({ r, g, b }) {
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+    let h = 0;
+    if (d !== 0) {
+      switch (max) {
+        case r: h = ((g - b) / d) % 6; break;
+        case g: h = (b - r) / d + 2; break;
+        default: h = (r - g) / d + 4;
+      }
+      h *= 60; if (h < 0) h += 360;
+    }
+    return { h, s: (max === 0 ? 0 : d / max) * 100, v: max * 100 };
+  }
+  function hsvToRgb({ h, s, v }) {
+    h = ((h % 360) + 360) % 360; s /= 100; v /= 100;
+    const c = v * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = v - c;
+    let r = 0, g = 0, b = 0;
+    if (h < 60) { r = c; g = x; }
+    else if (h < 120) { r = x; g = c; }
+    else if (h < 180) { g = c; b = x; }
+    else if (h < 240) { g = x; b = c; }
+    else if (h < 300) { r = x; b = c; }
+    else { r = c; b = x; }
+    return { r: (r + m) * 255, g: (g + m) * 255, b: (b + m) * 255 };
+  }
+  function relLuminance({ r, g, b }) {
+    const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+  }
+  // Pick a legible label color (dark Nord vs light Nord) for a given fill.
+  function textOn(fillHex) {
+    return relLuminance(hexToRgb(fillHex)) > 0.45 ? "#2e3440" : "#eceff4";
+  }
+  // Shift saturation/lightness of a hex color in HSL space (deltas, clamped).
+  function shiftHsl(hex, dS, dL) {
+    const hsl = rgbToHsl(hexToRgb(hex));
+    hsl.s = Math.max(0, Math.min(1, hsl.s + dS));
+    hsl.l = Math.max(0, Math.min(1, hsl.l + dL));
+    return rgbToHex(hslToRgb(hsl));
+  }
+  // Parse a CSS color (hex or rgb()/rgba()) to a hex string; null if unknown.
+  function cssColorToHex(css) {
+    if (!css) return null;
+    const s = String(css).trim();
+    if (s === "none" || s === "transparent") return null;
+    if (s[0] === "#") return rgbToHex(hexToRgb(s));
+    const m = s.match(/rgba?\(\s*([\d.]+)[ ,]+([\d.]+)[ ,]+([\d.]+)/i);
+    if (m) return rgbToHex({ r: +m[1], g: +m[2], b: +m[3] });
+    return null;
+  }
+
+  // Default palettes, one per object group. Nodes = pastel base; subgraphs =
+  // same hues but darker; edges = same hues but more saturated/brilliant
+  // (edges have no fill — only the line stroke + label color matter).
+  const DEFAULT_PALETTES = {
+    nodes: PALETTE_BASE.map((p) => ({ fill: p.fill, stroke: p.stroke, color: p.color })),
+    subgraphs: PALETTE_BASE.map((p) => {
+      const fill = shiftHsl(p.fill, 0.02, -0.28);
+      return { fill, stroke: shiftHsl(p.stroke, 0.02, -0.20), color: textOn(fill) };
+    }),
+    edges: PALETTE_BASE.map((p) => {
+      const vivid = shiftHsl(p.fill, 0.30, 0.04);
+      return { stroke: vivid, color: vivid };
+    }),
+  };
+  const PALETTE_GROUPS = ["nodes", "subgraphs", "edges"];
+  // Channel layout per group, for the preset editor modal (property → i18n key).
+  const PALETTE_CHANNELS = {
+    nodes:     [["fill", "background"], ["stroke", "border"], ["color", "text"]],
+    subgraphs: [["fill", "background"], ["stroke", "border"], ["color", "text"]],
+    edges:     [["stroke", "line"], ["color", "label"]],
+  };
+
+  // Normalize a stored palettes object: must have all three groups as arrays of
+  // the right length; otherwise fall back to the defaults for that group.
+  function normalizePalettes(raw) {
+    const out = {};
+    for (const g of PALETTE_GROUPS) {
+      const arr = raw && Array.isArray(raw[g]) ? raw[g] : null;
+      if (arr && arr.length === PALETTE_BASE.length
+          && arr.every((p) => p && typeof p === "object")) {
+        out[g] = arr.map((p, i) => {
+          const def = DEFAULT_PALETTES[g][i];
+          const merged = {};
+          for (const [prop] of PALETTE_CHANNELS[g]) {
+            merged[prop] = cssColorToHex(p[prop]) || def[prop];
+          }
+          return merged;
+        });
+      } else {
+        out[g] = DEFAULT_PALETTES[g].map((p) => Object.assign({}, p));
+      }
+    }
+    return out;
+  }
 
   // ── DOM refs ─────────────────────────────────────────────────────────────
 
@@ -160,6 +306,12 @@
   if (Array.isArray(subgraphStyles)) subgraphStyles = {};
   let edgeStyles     = (bootstrap.layout && bootstrap.layout.edgeStyles)     || {};
   if (Array.isArray(edgeStyles)) edgeStyles = {};
+  // Custom color palettes (one per object group), diagram-wide. Stored in the
+  // layout JSON so they travel with the diagram to shared collaborators.
+  // Editing a preset never recolors existing elements (their concrete colors
+  // live in nodeStyles/subgraphStyles/edgeStyles) — it only changes future
+  // clicks. See normalizePalettes / DEFAULT_PALETTES.
+  let palettes = normalizePalettes(bootstrap.layout && bootstrap.layout.palettes);
   // Promote legacy quadratic bends to cubic on initial load (idempotent).
   // `migrateAllBends` is a function declaration so it's hoisted within this IIFE.
   migrateAllBends();
@@ -175,6 +327,7 @@
       version: 1,
       positions, edgeAnchors, edgeBend,
       nodeStyles, subgraphStyles, edgeStyles,
+      palettes,
     };
   }
   let currentRevisionId = bootstrap.revision_id;
@@ -440,6 +593,7 @@
       nodeStyles: JSON.parse(JSON.stringify(nodeStyles)),
       subgraphStyles: JSON.parse(JSON.stringify(subgraphStyles)),
       edgeStyles: JSON.parse(JSON.stringify(edgeStyles)),
+      palettes: JSON.parse(JSON.stringify(palettes)),
     });
     if (history.length > HISTORY_CAP) {
       history = history.slice(history.length - HISTORY_CAP);
@@ -463,6 +617,9 @@
     nodeStyles = JSON.parse(JSON.stringify(snap.nodeStyles || {}));
     subgraphStyles = JSON.parse(JSON.stringify(snap.subgraphStyles || {}));
     edgeStyles = JSON.parse(JSON.stringify(snap.edgeStyles || {}));
+    palettes = normalizePalettes(snap.palettes);
+    currentPaletteGroup = null; // force swatch rebuild — colors may have changed
+    renderActivePalette();
     migrateAllBends();
     markDirtySource(); markDirtyLayout();
     try {
@@ -4888,14 +5045,11 @@
     if (moveToSubgraphBtn) {
       moveToSubgraphBtn.disabled = !(kind === "node" || kind === "subgraph" || kind === "subgraphs" || kind === "mixed");
     }
-    // Palette: Color applies to nodes, subgraphs, and edges (and to mixed/
-    // multi-subgraph by recoloring each kind in its own bucket); Shape only
-    // to nodes.
-    const colorEnabled = (kind === "node") || (kind === "subgraph") || (kind === "subgraphs") || (kind === "edge") || (kind === "mixed");
+    // Palette: the swatch row swaps to the active selection's group and marks
+    // swatches inert when there's nothing to apply to (still double-click
+    // editable). Shape applies only to nodes.
+    renderActivePalette();
     const shapeEnabled = (kind === "node");
-    if (colorPaletteEl) {
-      for (const b of colorPaletteEl.querySelectorAll("button")) b.disabled = !colorEnabled;
-    }
     if (shapePaletteEl) {
       for (const b of shapePaletteEl.querySelectorAll("button")) b.disabled = !shapeEnabled;
     }
@@ -5023,25 +5177,32 @@
     return { ok: true, source: source + line + "\n", changed: true };
   }
 
-  async function applyPaletteColor(color) {
+  // Apply palette slot `slot` (0..6) to the current selection, or clear the
+  // styling when slot === "reset". Each selected id is routed to its own bucket
+  // and gets the preset for its OWN group: in a mixed node+subgraph selection a
+  // single slot applies palettes.nodes[slot] to nodes and palettes.subgraphs[slot]
+  // to subgraphs by index (the three palettes share slot identity).
+  async function applyPaletteColor(slot) {
     if (!requireValidSource("apply color")) return;
-    // Selection dispatch: edge takes priority (it can only be solo-selected),
-    // then the union of selected nodes + selected subgraphs. Each id is
-    // routed to its own bucket (nodeStyles vs subgraphStyles) inside the loop.
+    const reset = slot === "reset";
     const edgeSelected = selectedEdgeKeys.size > 0;
     const ids = edgeSelected ? [...selectedEdgeKeys]
               : [...selectedNodeIds, ...selectedClusterIds];
     if (!ids.length) { setStatus(__("editor.err.select_node_or_subgraph"), true); return; }
     let next = currentSource, sourceChanged = false, anyDeleted = false, applied = 0;
-    // Edges only have a line + label: use the palette's most saturated value
-    // (`fill`) for both stroke and label. Nodes/subgraphs keep the full triple.
-    const props = color.reset ? null
-      : (edgeSelected
-          ? { stroke: color.fill, color: color.fill }
-          : { fill: color.fill, stroke: color.stroke, color: color.color });
     for (const id of ids) {
-      const bucket = edgeSelected ? edgeStyles
-                   : (clusterMap[id] ? subgraphStyles : nodeStyles);
+      const isSubgraph = !edgeSelected && !!clusterMap[id];
+      const bucket = edgeSelected ? edgeStyles : (isSubgraph ? subgraphStyles : nodeStyles);
+      let props = null;
+      if (!reset) {
+        if (edgeSelected) {
+          const pr = palettes.edges[slot];
+          props = { stroke: pr.stroke, color: pr.color };
+        } else {
+          const pr = (isSubgraph ? palettes.subgraphs : palettes.nodes)[slot];
+          props = { fill: pr.fill, stroke: pr.stroke, color: pr.color };
+        }
+      }
       let touched = false;
       if (props) {
         const prev = bucket[id];
@@ -5080,28 +5241,360 @@
       if (svgEl) applyVisualStyles(svgEl);
     }
     pushHistory();
+    const name = reset ? __("editor.color_reset") : PALETTE_NAMES[slot];
     const label = edgeSelected
       ? (() => { const e = findEdgeByKey(ids[0]); return e ? `${e.source} → ${e.target}` : ids[0]; })()
       : ids[0];
-    setStatus(ids.length === 1 ? `${label}: color ${color.name}`
-                               : `color ${color.name} → ${applied}/${ids.length} elementi`);
+    setStatus(ids.length === 1 ? `${label}: color ${name}`
+                               : `color ${name} → ${applied}/${ids.length} elementi`);
   }
 
-  function buildPalette() {
-    for (const color of PALETTE) {
+  // ── Contextual palette row ─────────────────────────────────────────────────
+  // One swatch row that swaps with the selection: edge → edge palette; only
+  // subgraph(s) → subgraph palette; nodes (or mixed node+subgraph) → node
+  // palette. When nothing is selected the row is sticky (keeps the last group)
+  // and swatches are inert for applying but still double-click-editable.
+  let lastPaletteGroup = "nodes";
+  let currentPaletteGroup = null;
+  const paletteGroupLabelEl = document.getElementById("paletteGroupLabel");
+
+  function paletteApplyEnabled() {
+    return selectedEdgeKeys.size > 0 || selectedNodeIds.size > 0 || selectedClusterIds.size > 0;
+  }
+  function selectionPaletteGroup() {
+    if (selectedEdgeKeys.size > 0) return "edges";
+    if (selectedClusterIds.size > 0 && selectedNodeIds.size === 0) return "subgraphs";
+    if (selectedNodeIds.size > 0 || selectedClusterIds.size > 0) return "nodes";
+    return lastPaletteGroup;
+  }
+
+  function buildSwatches(group) {
+    colorPaletteEl.innerHTML = "";
+    const presets = palettes[group];
+    for (let i = 0; i < presets.length; i++) {
+      const pr = presets[i];
       const btn = document.createElement("button");
       btn.className = "color-swatch";
       btn.type = "button";
-      if (color.reset) {
-        btn.dataset.reset = "1"; btn.textContent = "×";
-        btn.title = __("editor.color_reset");
-      } else {
-        btn.style.background = color.fill;
-        btn.title = color.name;
-      }
-      btn.addEventListener("click", () => applyPaletteColor(color));
+      btn.dataset.slot = String(i);
+      // Edge swatches have no fill — preview the line color (stroke).
+      btn.style.background = group === "edges" ? pr.stroke : pr.fill;
+      if (group !== "edges" && pr.stroke) btn.style.borderColor = pr.stroke;
+      btn.title = PALETTE_NAMES[i];
+      let clickTimer = null;
+      btn.addEventListener("click", () => {
+        // Disambiguate single-click (apply) from double-click (edit): a brief
+        // delay lets a second click cancel the apply before it fires.
+        if (clickTimer) return;
+        clickTimer = setTimeout(() => {
+          clickTimer = null;
+          if (paletteApplyEnabled()) applyPaletteColor(i);
+        }, 180);
+      });
+      btn.addEventListener("dblclick", () => {
+        if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
+        openPresetEditor(currentPaletteGroup, i);
+      });
       colorPaletteEl.appendChild(btn);
     }
+    // Reset swatch — clears styling; not editable, applies instantly.
+    const reset = document.createElement("button");
+    reset.className = "color-swatch";
+    reset.type = "button";
+    reset.dataset.reset = "1";
+    reset.textContent = "×";
+    reset.title = __("editor.color_reset");
+    reset.addEventListener("click", () => { if (paletteApplyEnabled()) applyPaletteColor("reset"); });
+    colorPaletteEl.appendChild(reset);
+  }
+
+  // Rebuild the swatch row for the active group (only when the group changed)
+  // and reflect whether applying is currently possible.
+  function renderActivePalette() {
+    if (!colorPaletteEl) return;
+    const hasSel = paletteApplyEnabled();
+    const group = selectionPaletteGroup();
+    if (hasSel) lastPaletteGroup = group;
+    if (group !== currentPaletteGroup) {
+      currentPaletteGroup = group;
+      buildSwatches(group);
+    }
+    for (const b of colorPaletteEl.querySelectorAll("button")) {
+      b.classList.toggle("swatch-inert", !hasSel);
+    }
+    if (paletteGroupLabelEl) {
+      paletteGroupLabelEl.textContent = __("editor.palette_group." + group);
+    }
+  }
+
+  // ── Preset editor modal ────────────────────────────────────────────────────
+  const palettePresetModal = document.getElementById("palettePresetModal");
+  const presetChannelsEl = document.getElementById("palettePresetChannels");
+  const presetPreviewEl = document.getElementById("palettePresetPreview");
+  const presetEyedropBtn = document.getElementById("palettePresetEyedrop");
+  const presetTitleEl = document.getElementById("palettePresetTitle");
+  // Working state of the open editor: { group, slot, values:{prop:hex} }.
+  let presetEdit = null;
+  let presetPicking = false;
+
+  function openPresetEditor(group, slot) {
+    const pr = palettes[group][slot];
+    const values = {}, hsv = {};
+    // Keep an HSV working copy per channel so dragging V/S to an extreme (e.g.
+    // black) doesn't lose the hue when we round-trip through hex.
+    for (const [prop] of PALETTE_CHANNELS[group]) {
+      values[prop] = pr[prop];
+      hsv[prop] = rgbToHsv(hexToRgb(pr[prop]));
+    }
+    presetEdit = { group, slot, values, hsv };
+    if (presetTitleEl) {
+      presetTitleEl.textContent =
+        `${__("editor.palette_group." + group)} · ${PALETTE_NAMES[slot]}`;
+    }
+    buildPresetChannels();
+    updatePresetPreview();
+    palettePresetModal.classList.remove("hidden");
+  }
+
+  function closePresetEditor() {
+    endEyedropper();
+    palettePresetModal.classList.add("hidden");
+    presetEdit = null;
+  }
+
+  // HSV channels: Hue 0–360°, Saturation/Value 0–100%.
+  const HSV_CHANNELS = [
+    { k: "h", label: "H", max: 360, unit: "°" },
+    { k: "s", label: "S", max: 100, unit: "" },
+    { k: "v", label: "V", max: 100, unit: "" },
+  ];
+  function fmtHsv(k, val) { return Math.round(val) + (k === "h" ? "°" : ""); }
+
+  function buildPresetChannels() {
+    presetChannelsEl.innerHTML = "";
+    for (const [prop, key] of PALETTE_CHANNELS[presetEdit.group]) {
+      const hsv = presetEdit.hsv[prop];
+      const wrap = document.createElement("div");
+      wrap.className = "pp-channel";
+      wrap.dataset.prop = prop;
+      const head = document.createElement("div");
+      head.className = "pp-channel-head";
+      head.innerHTML =
+        `<span class="pp-swatch"></span>` +
+        `<span class="pp-channel-name">${__("editor.palette_channel." + key)}</span>` +
+        `<span class="pp-hex"></span>`;
+      wrap.appendChild(head);
+      // H/S/V on a single row: letter on top, slider below, value beneath.
+      const sliders = document.createElement("div");
+      sliders.className = "pp-sliders";
+      for (const { k, label, max } of HSV_CHANNELS) {
+        const row = document.createElement("label");
+        row.className = "pp-slider";
+        row.innerHTML =
+          `<span class="pp-ch">${label}</span>` +
+          `<input type="range" min="0" max="${max}" value="${Math.round(hsv[k])}" data-ch="${k}">` +
+          `<span class="pp-val">${fmtHsv(k, hsv[k])}</span>`;
+        const input = row.querySelector("input");
+        input.addEventListener("input", () => {
+          presetEdit.hsv[prop][k] = +input.value;
+          presetEdit.values[prop] = rgbToHex(hsvToRgb(presetEdit.hsv[prop]));
+          row.querySelector(".pp-val").textContent = fmtHsv(k, +input.value);
+          paintPresetChannel(wrap, prop);
+          updatePresetPreview();
+        });
+        sliders.appendChild(row);
+      }
+      wrap.appendChild(sliders);
+      presetChannelsEl.appendChild(wrap);
+      paintPresetChannel(wrap, prop);
+    }
+  }
+
+  function paintPresetChannel(wrap, prop) {
+    const hex = presetEdit.values[prop];
+    wrap.querySelector(".pp-swatch").style.background = hex;
+    wrap.querySelector(".pp-hex").textContent = hex;
+  }
+
+  // Refresh slider positions/labels from presetEdit.values (used by eyedropper).
+  // Recomputes the HSV working copy from the (new) hex first.
+  function syncPresetChannels() {
+    for (const wrap of presetChannelsEl.querySelectorAll(".pp-channel")) {
+      const prop = wrap.dataset.prop;
+      presetEdit.hsv[prop] = rgbToHsv(hexToRgb(presetEdit.values[prop]));
+      const hsv = presetEdit.hsv[prop];
+      for (const input of wrap.querySelectorAll("input[data-ch]")) {
+        const k = input.dataset.ch;
+        input.value = Math.round(hsv[k]);
+        input.parentElement.querySelector(".pp-val").textContent = fmtHsv(k, hsv[k]);
+      }
+      paintPresetChannel(wrap, prop);
+    }
+    updatePresetPreview();
+  }
+
+  function updatePresetPreview() {
+    if (!presetPreviewEl || !presetEdit) return;
+    const v = presetEdit.values;
+    if (presetEdit.group === "edges") {
+      presetPreviewEl.style.background = "";
+      presetPreviewEl.style.border = "none";
+      presetPreviewEl.innerHTML =
+        `<span class="pp-edge-line" style="background:${v.stroke}"></span>` +
+        `<span class="pp-edge-label" style="color:${v.color}">Abc</span>`;
+    } else {
+      presetPreviewEl.innerHTML = `<span style="color:${v.color}">Abc</span>`;
+      presetPreviewEl.style.background = v.fill;
+      presetPreviewEl.style.border = `2px solid ${v.stroke}`;
+    }
+  }
+
+  function savePresetEdit() {
+    if (!presetEdit) return;
+    const { group, slot, values } = presetEdit;
+    const target = palettes[group][slot];
+    let changed = false;
+    for (const [prop] of PALETTE_CHANNELS[group]) {
+      if (target[prop] !== values[prop]) { target[prop] = values[prop]; changed = true; }
+    }
+    closePresetEditor();
+    if (!changed) return;
+    markDirtyLayout();
+    pushHistory();
+    // Repaint the swatch row if the edited group is the one on screen.
+    if (group === currentPaletteGroup) { currentPaletteGroup = null; renderActivePalette(); }
+    setStatus(`palette ${__("editor.palette_group." + group)} · ${PALETTE_NAMES[slot]}`);
+  }
+
+  // ── Eyedropper ──────────────────────────────────────────────────────────────
+  // Arm a one-shot pick: the next click on a graph element loads its colors
+  // into the open preset editor. The modal dims + stops intercepting pointer
+  // events so the canvas underneath is clickable.
+  function armEyedropper() {
+    if (!presetEdit) return;
+    presetPicking = true;
+    // Hide the modal entirely so the canvas underneath is fully clickable; it
+    // reappears (endEyedropper) once an element is picked or the pick cancelled.
+    palettePresetModal.classList.add("hidden");
+    document.body.classList.add("eyedropper-active");
+    setStatus(__("editor.eyedropper_picking"));
+  }
+  function endEyedropper() {
+    if (!presetPicking) return;
+    presetPicking = false;
+    document.body.classList.remove("eyedropper-active");
+    if (presetEdit) palettePresetModal.classList.remove("hidden");
+  }
+
+  // Read the concrete colors of a node/subgraph/edge by id/key — prefer the
+  // stored bucket, fall back to the rendered SVG's computed styles.
+  function readElementColors(kind, idOrKey) {
+    if (kind === "node") {
+      const n = nodeMap[idOrKey]; if (!n) return null;
+      const store = nodeStyles[idOrKey] || {};
+      const shape = [...n.g.children].find((c) =>
+        /^(rect|polygon|circle|ellipse|path)$/.test(c.tagName.toLowerCase()));
+      const cs = shape ? getComputedStyle(shape) : null;
+      return {
+        fill: store.fill || (cs && cssColorToHex(cs.fill)) || "#5e81ac",
+        stroke: store.stroke || (cs && cssColorToHex(cs.stroke)) || "#3b5371",
+        color: store.color || readLabelHex(n.g) || "#eceff4",
+      };
+    }
+    if (kind === "subgraph") {
+      const c = clusterMap[idOrKey]; if (!c) return null;
+      const store = subgraphStyles[idOrKey] || {};
+      const cs = c.bg ? getComputedStyle(c.bg) : null;
+      return {
+        fill: store.fill || (cs && cssColorToHex(cs.fill)) || "#4c566a",
+        stroke: store.stroke || (cs && cssColorToHex(cs.stroke)) || "#2e3440",
+        color: store.color || (c.label && readLabelHex(c.label)) || "#eceff4",
+      };
+    }
+    if (kind === "edge") {
+      const e = findEdgeByKey(idOrKey); if (!e) return null;
+      const store = edgeStyles[idOrKey] || {};
+      const cs = e.path ? getComputedStyle(e.path) : null;
+      const stroke = store.stroke || (cs && cssColorToHex(cs.stroke)) || "#88c0d0";
+      return {
+        stroke,
+        color: store.color || (e.label && readLabelHex(e.label)) || stroke,
+        fill: stroke,
+      };
+    }
+    return null;
+  }
+  function readLabelHex(g) {
+    const t = g.querySelector("text, tspan");
+    return t ? cssColorToHex(getComputedStyle(t).fill) : null;
+  }
+
+  // Resolve a click in pick mode to {kind,id} using the rendered SVG groups.
+  function pickColorsFromEvent(e) {
+    const nodeG = e.target.closest("g.node");
+    if (nodeG) {
+      const id = Object.keys(nodeMap).find((k) => nodeMap[k].g === nodeG);
+      if (id) return readElementColors("node", id);
+    }
+    const clusterG = e.target.closest("g.cluster");
+    if (clusterG) {
+      const id = Object.keys(clusterMap).find((k) => clusterMap[k].g === clusterG
+        || clusterMap[k].bg === e.target || (clusterMap[k].g && clusterMap[k].g.contains(e.target)));
+      if (id) return readElementColors("subgraph", id);
+    }
+    const pathEl = e.target.closest("path.flowchart-link, g.edgePaths path");
+    if (pathEl) {
+      const e2 = edges.find((ed) => ed.path === pathEl);
+      if (e2) return readElementColors("edge", edgeKey(e2));
+    }
+    const labelG = e.target.closest("g.edgeLabel, g.edgeLabels > g");
+    if (labelG) {
+      const e2 = edges.find((ed) => ed.label && (ed.label === labelG || ed.label.contains(e.target)));
+      if (e2) return readElementColors("edge", edgeKey(e2));
+    }
+    return null;
+  }
+
+  function loadPickedColors(colors) {
+    if (!presetEdit || !colors) return;
+    let any = false;
+    for (const [prop] of PALETTE_CHANNELS[presetEdit.group]) {
+      if (colors[prop]) { presetEdit.values[prop] = colors[prop]; any = true; }
+    }
+    if (any) { syncPresetChannels(); setStatus(__("editor.eyedropper_done")); }
+  }
+
+  function initPresetEditor() {
+    if (!palettePresetModal) return;
+    const okBtn = document.getElementById("palettePresetOk");
+    const cancelBtn = document.getElementById("palettePresetCancel");
+    if (okBtn) okBtn.addEventListener("click", savePresetEdit);
+    if (cancelBtn) cancelBtn.addEventListener("click", closePresetEditor);
+    if (presetEyedropBtn) presetEyedropBtn.addEventListener("click", armEyedropper);
+    const backdrop = palettePresetModal.querySelector(".modal-backdrop");
+    if (backdrop) backdrop.addEventListener("click", () => { if (!presetPicking) closePresetEditor(); });
+    // One-shot color pick: while armed, intercept the next canvas pointerdown
+    // before it reaches the selection/drag handlers (capture phase + stop).
+    diagramEl.addEventListener("pointerdown", (e) => {
+      if (!presetPicking) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const colors = pickColorsFromEvent(e);
+      endEyedropper();
+      if (colors) loadPickedColors(colors);
+      else setStatus(__("editor.eyedropper_miss"), true);
+      // Swallow the trailing click this pointerdown produces so it neither
+      // selects the picked element nor closes the modal via the backdrop.
+      const swallow = (ev) => { ev.stopPropagation(); ev.preventDefault(); cleanup(); };
+      const cleanup = () => { document.removeEventListener("click", swallow, true); clearTimeout(t); };
+      document.addEventListener("click", swallow, true);
+      const t = setTimeout(cleanup, 350);
+    }, true);
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      if (presetPicking) { e.stopPropagation(); endEyedropper(); setStatus(""); return; }
+      if (!palettePresetModal.classList.contains("hidden")) { e.stopPropagation(); closePresetEditor(); }
+    }, true);
   }
 
   // ── Shape change ─────────────────────────────────────────────────────────
@@ -5488,6 +5981,9 @@
     nodeStyles     = Array.isArray(L.nodeStyles)     ? {} : (L.nodeStyles     || {});
     subgraphStyles = Array.isArray(L.subgraphStyles) ? {} : (L.subgraphStyles || {});
     edgeStyles     = Array.isArray(L.edgeStyles)     ? {} : (L.edgeStyles     || {});
+    palettes       = normalizePalettes(L.palettes);
+    currentPaletteGroup = null; // force swatch rebuild — colors may have changed
+    renderActivePalette();
     migrateAllBends();
     extractInlineStylesFromSource();
     currentRevisionId = dto.revision_id;
@@ -6826,7 +7322,8 @@
     document.body.appendChild(svg);
   })();
 
-  buildPalette();
+  renderActivePalette();
+  initPresetEditor();
   buildShapeGrid();
   buildShapePalette();
   initSourceEditor();

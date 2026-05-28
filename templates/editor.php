@@ -47,7 +47,7 @@
 </div>
 
 <div id="palette">
-    <span class="palette-label"><?= __('editor.color') ?></span>
+    <span class="palette-label" id="paletteGroupLabel"><?= __('editor.color') ?></span>
     <span id="colorPalette"></span>
     <span class="palette-label" style="margin-left: 16px;"><?= __('editor.shape') ?></span>
     <span id="shapePalette"></span>
@@ -178,6 +178,32 @@
         <div class="modal-buttons">
             <button id="renameCancelBtn"><?= __('common.cancel') ?></button>
             <button id="renameOkBtn" class="primary"><?= __('common.save') ?></button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: palette preset editor -->
+<div id="palettePresetModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-box">
+        <h2><?= __('editor.modal.palette.title') ?> <span id="palettePresetTitle" class="pp-title"></span></h2>
+        <div class="pp-body">
+            <div id="palettePresetChannels" class="pp-channels"></div>
+            <div class="pp-aside">
+                <div class="pp-preview-wrap">
+                    <span class="pp-preview-label"><?= __('editor.modal.palette.preview') ?></span>
+                    <div id="palettePresetPreview" class="pp-preview"></div>
+                </div>
+                <button id="palettePresetEyedrop" class="palette-btn pp-eyedrop" type="button"
+                        title="<?= __('editor.modal.palette.eyedropper') ?>">
+                    <svg class="icon"><use href="#icon-pipette"/></svg>
+                    <span><?= __('editor.modal.palette.eyedropper') ?></span>
+                </button>
+            </div>
+        </div>
+        <div class="modal-buttons">
+            <button id="palettePresetCancel"><?= __('common.cancel') ?></button>
+            <button id="palettePresetOk" class="primary"><?= __('common.save') ?></button>
         </div>
     </div>
 </div>

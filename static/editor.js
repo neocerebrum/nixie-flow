@@ -190,7 +190,7 @@
   let _skipNextDiagramClick = false;
   let connectSource = null;
   let selectedNodeIds = new Set(); // multi-select via Shift/Ctrl/Cmd+click
-  let selectedClusterId = null;
+  let selectedClusterIds = new Set(); // multi-select via Shift/Ctrl/Cmd+click; can coexist with selectedNodeIds (mixed selection)
   let selectedEdgeKeys = new Set(); // multi-select via Shift/Ctrl/Cmd+click; entries: "<src>|<tgt>|<ordinal>"
   let initialViewBox = null;
   let viewState = null;
@@ -575,9 +575,9 @@
       if (nodeMap[id]) nodeMap[id].g.classList.add("selected");
       else selectedNodeIds.delete(id);
     }
-    if (selectedClusterId) {
-      if (clusterMap[selectedClusterId]) clusterMap[selectedClusterId].g.classList.add("selected");
-      else selectedClusterId = null;
+    for (const cid of [...selectedClusterIds]) {
+      if (clusterMap[cid]) clusterMap[cid].g.classList.add("selected");
+      else selectedClusterIds.delete(cid);
     }
     for (const key of [...selectedEdgeKeys]) {
       const e = findEdgeByKey(key);
@@ -2082,11 +2082,23 @@
         // the primary contact, which is what we want.
         if (ev.pointerType === "mouse" && ev.button !== 0) return;
         if (!ev.isPrimary) return;
-        // Modifier held: user is mid-multiselect and likely missed the target
-        // element (subgraph backgrounds extend further than they look on
-        // nested diagrams). Mirror the empty-canvas click handler — preserve
-        // the current selection and don't start a drag.
-        if (ev.shiftKey || ev.ctrlKey || ev.metaKey) return;
+        // Modifier held (shift/ctrl/cmd): no drag, toggle additive on
+        // pointerup. Lets the user add this subgraph to an existing
+        // node-or-cluster multi-selection (mixed group).
+        const additive = ev.shiftKey || ev.ctrlKey || ev.metaKey;
+        if (additive) {
+          ev.preventDefault(); ev.stopPropagation();
+          const pointerId = ev.pointerId;
+          function onUpAdditive(e) {
+            if (e && e.pointerId !== pointerId) return;
+            document.removeEventListener("pointerup", onUpAdditive);
+            document.removeEventListener("pointercancel", onUpAdditive);
+            toggleClusterSelection(id, true);
+          }
+          document.addEventListener("pointerup", onUpAdditive);
+          document.addEventListener("pointercancel", onUpAdditive);
+          return;
+        }
         if (isReadOnly) {
           // Spectator: select-only, no drag.
           ev.preventDefault(); ev.stopPropagation();
@@ -2115,22 +2127,36 @@
     const c = clusterMap[id];
     if (!c) return;
     const pointerId = ev.pointerId;
-    // Eager select-on-press for clusters too: pick the cluster as soon as
-    // the gesture starts so it stays selected at the end of a drag.
+    // Eager select-on-press: if this cluster isn't already part of the
+    // current selection, replace selection with just [id] (Figma-style plain
+    // click). If it is already selected (possibly in a mixed group with
+    // nodes/other clusters), preserve the selection and drag the whole set.
     let selectedOnDown = false;
-    if (selectedClusterId !== id) {
-      toggleClusterSelection(id);
+    if (!selectedClusterIds.has(id)) {
+      toggleClusterSelection(id, false);
       selectedOnDown = true;
     }
-    const members = findSubgraphMembers(currentSource, id);
+    // Build the group: every selected cluster's bg follows the drag (for
+    // non-rect bgs), plus the UNION of all members across selected clusters
+    // and all individually selected nodes. Dedup by node id.
+    const groupClusters = [];
+    for (const cid of selectedClusterIds) {
+      const cc = clusterMap[cid];
+      if (!cc) continue;
+      groupClusters.push({ id: cid, c: cc, origin: getNodeTranslate(cc.g) });
+    }
+    const memberSet = new Set();
+    for (const cid of selectedClusterIds) {
+      for (const mid of findSubgraphMembers(currentSource, cid)) memberSet.add(mid);
+    }
+    for (const nid of selectedNodeIds) memberSet.add(nid);
     const memberStates = [];
-    for (const mid of members) {
+    for (const mid of memberSet) {
       const n = nodeMap[mid];
       if (!n) continue;
       const t = getNodeTranslate(n.g);
       memberStates.push({ id: mid, n, originX: t.x, originY: t.y });
     }
-    const clusterOrigin = getNodeTranslate(c.g);
     const start = screenToSvg(svgEl, ev.clientX, ev.clientY);
     let moved = false;
 
@@ -2140,12 +2166,14 @@
       const dx = cur.x - start.x;
       const dy = cur.y - start.y;
       if (!moved && (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5)) moved = true;
-      // Move members manually; the dragged cluster (and any nested/outer
-      // clusters that share members with it) will be repositioned by
+      // Move members manually; the dragged clusters (and any nested/outer
+      // clusters that share members with them) will be repositioned by
       // updateAllClusterBounds below, which derives each cluster's box
       // from its current members. The fallback setNodeTranslate keeps
       // non-rect cluster bgs (polygon/path) following the drag.
-      setNodeTranslate(c.g, clusterOrigin.x + dx, clusterOrigin.y + dy);
+      for (const gc of groupClusters) {
+        setNodeTranslate(gc.c.g, gc.origin.x + dx, gc.origin.y + dy);
+      }
       for (const m of memberStates) {
         setNodeTranslate(m.n.g, m.originX + dx, m.originY + dy);
         rerouteNodeEdges(m.id);
@@ -2154,10 +2182,12 @@
       // ancestors need to grow/shrink, and its inner descendants need
       // their own bg rect to follow the moved members.
       updateAllClusterBounds();
-      // Edges incident to the cluster itself (cluster↔cluster or cluster↔node)
-      // aren't on any member's edge list — reroute them explicitly.
-      if (c.incomingEdges) for (const e of c.incomingEdges) rerouteEdge(e);
-      if (c.outgoingEdges) for (const e of c.outgoingEdges) rerouteEdge(e);
+      // Edges incident to any selected cluster itself (cluster↔cluster or
+      // cluster↔node) aren't on any member's edge list — reroute explicitly.
+      for (const gc of groupClusters) {
+        if (gc.c.incomingEdges) for (const e of gc.c.incomingEdges) rerouteEdge(e);
+        if (gc.c.outgoingEdges) for (const e of gc.c.outgoingEdges) rerouteEdge(e);
+      }
     }
     function onUp(e) {
       if (e && e.pointerId !== pointerId) return;
@@ -2167,7 +2197,7 @@
       if (!moved) {
         // Click without drag: if we already selected on pointerdown, leave
         // the cluster selected; otherwise toggle (re-click to deselect).
-        if (!selectedOnDown) toggleClusterSelection(id);
+        if (!selectedOnDown) toggleClusterSelection(id, false);
         return;
       }
       let changed = 0;
@@ -2258,18 +2288,37 @@
     }
     // Group drag: pointerdown on a node that's part of an existing
     // multi-selection drags every selected node by the same delta — same
-    // ergonomics as if they were inside a virtual subgraph. Pointerdown on
-    // a non-selected node falls back to single-node drag.
-    const draggingGroup = selectedNodeIds.has(id) && selectedNodeIds.size > 1;
-    const groupStates = [];
+    // ergonomics as if they were inside a virtual subgraph. If the current
+    // selection is mixed (nodes + subgraphs), the cluster members are pulled
+    // in too so the whole block moves rigidly. Pointerdown on a non-selected
+    // node falls back to single-node drag.
+    const nodeIsInSelection = selectedNodeIds.has(id);
+    const hasMixedClusters = nodeIsInSelection && selectedClusterIds.size > 0;
+    const draggingGroup = (nodeIsInSelection && selectedNodeIds.size > 1) || hasMixedClusters;
+    const groupNodeSet = new Set();
     if (draggingGroup) {
-      for (const gid of selectedNodeIds) {
-        const ng = nodeMap[gid];
-        if (!ng) continue;
-        groupStates.push({ id: gid, n: ng, origin: getNodeTranslate(ng.g) });
+      for (const nid of selectedNodeIds) groupNodeSet.add(nid);
+      for (const cid of selectedClusterIds) {
+        for (const mid of findSubgraphMembers(currentSource, cid)) groupNodeSet.add(mid);
       }
     } else {
-      groupStates.push({ id, n, origin: getNodeTranslate(n.g) });
+      groupNodeSet.add(id);
+    }
+    const groupStates = [];
+    for (const gid of groupNodeSet) {
+      const ng = nodeMap[gid];
+      if (!ng) continue;
+      groupStates.push({ id: gid, n: ng, origin: getNodeTranslate(ng.g) });
+    }
+    // Non-rect cluster bgs (polygon/path) need their own translate too — for
+    // rect bgs updateAllClusterBounds repaints them from member positions.
+    const groupClusters = [];
+    if (draggingGroup) {
+      for (const cid of selectedClusterIds) {
+        const cc = clusterMap[cid];
+        if (!cc) continue;
+        groupClusters.push({ id: cid, c: cc, origin: getNodeTranslate(cc.g) });
+      }
     }
     const groupIds = new Set(groupStates.map(gs => gs.id));
 
@@ -2349,7 +2398,14 @@
         setNodeTranslate(gs.n.g, gs.origin.x + dx, gs.origin.y + dy);
         rerouteNodeEdges(gs.id);
       }
+      for (const gc of groupClusters) {
+        setNodeTranslate(gc.c.g, gc.origin.x + dx, gc.origin.y + dy);
+      }
       updateAllClusterBounds();
+      for (const gc of groupClusters) {
+        if (gc.c.incomingEdges) for (const e of gc.c.incomingEdges) rerouteEdge(e);
+        if (gc.c.outgoingEdges) for (const e of gc.c.outgoingEdges) rerouteEdge(e);
+      }
       n.g.classList.toggle("snapping", !!(snap.snapX || snap.snapY));
       if (snap.snapX || snap.snapY) {
         const parts = [];
@@ -3135,10 +3191,10 @@
   // Decide what (if anything) the panel binds to right now, and refresh it.
   function updateNotesPanel() {
     let kind = null, id = null;
-    if (selectedNodeIds.size === 1 && !selectedClusterId && selectedEdgeKeys.size === 0) {
+    if (selectedNodeIds.size === 1 && selectedClusterIds.size === 0 && selectedEdgeKeys.size === 0) {
       kind = "node"; id = [...selectedNodeIds][0];
-    } else if (selectedClusterId && selectedNodeIds.size === 0 && selectedEdgeKeys.size === 0) {
-      kind = "subgraph"; id = selectedClusterId;
+    } else if (selectedClusterIds.size === 1 && selectedNodeIds.size === 0 && selectedEdgeKeys.size === 0) {
+      kind = "subgraph"; id = [...selectedClusterIds][0];
     }
     // Was the panel already bound to this same element? (Compare against the
     // PREVIOUS binding, before we overwrite it below.) Used to decide whether
@@ -3906,7 +3962,10 @@
       markDirtyLayout();
     }
     if (newId !== oldId) renameIdInEdgeAnchors(oldId, newId);
-    if (selectedClusterId === oldId) selectedClusterId = newId;
+    if (selectedClusterIds.has(oldId)) {
+      selectedClusterIds.delete(oldId);
+      selectedClusterIds.add(newId);
+    }
     currentSource = next;
     markDirtySource();
     closeAddSubgraphModal();
@@ -3927,7 +3986,12 @@
     if (stripped.ok) next = stripped.source;
     currentSource = next;
     markDirtySource();
-    if (selectedClusterId === id) deselectCluster();
+    if (selectedClusterIds.has(id)) {
+      if (clusterMap[id]) clusterMap[id].g.classList.remove("selected");
+      selectedClusterIds.delete(id);
+      updateToolbarState();
+      broadcastSelection();
+    }
     await renderDiagram();
     pushHistory();
     setStatus(__("editor.op.subgraph_deleted", id));
@@ -4068,7 +4132,7 @@
     const kind = selectionKind();
     if (kind === "node") return deleteSelectedNodes();
     if (kind === "edge") return deleteSelectedEdges();
-    if (kind === "subgraph") return handleDeleteSubgraphClick(selectedClusterId);
+    if (kind === "subgraph") return handleDeleteSubgraphClick([...selectedClusterIds][0]);
   }
 
   async function handleConnectClick(id) {
@@ -4136,8 +4200,8 @@
     if (connectingState === "edge-target") { cancelConnectMode(); return; }
     if (!requireValidSource("+ Edge")) return;
     let src = null;
-    if (selectedNodeIds.size === 1) src = [...selectedNodeIds][0];
-    else if (selectedClusterId) src = selectedClusterId;
+    if (selectedNodeIds.size === 1 && selectedClusterIds.size === 0) src = [...selectedNodeIds][0];
+    else if (selectedClusterIds.size === 1 && selectedNodeIds.size === 0) src = [...selectedClusterIds][0];
     else {
       setStatus(__("editor.select_1_source"), true);
       return;
@@ -4180,7 +4244,7 @@
     if (!requireValidSource("> Subgraph")) return;
     const ids = [];
     if (selectedNodeIds.size > 0) ids.push(...selectedNodeIds);
-    if (selectedClusterId) ids.push(selectedClusterId);
+    if (selectedClusterIds.size > 0) ids.push(...selectedClusterIds);
     if (ids.length === 0) {
       setStatus(__("editor.select_1_or_more"), true);
       return;
@@ -4365,12 +4429,11 @@
       const t = getWorldTranslate(n.g);
       include(t.x + bb.x, t.y + bb.y, t.x + bb.x + bb.width, t.y + bb.y + bb.height);
     }
-    if (selectedClusterId) {
-      const c = clusterMap[selectedClusterId];
-      if (c) {
-        const bb = getClusterRectWorldBbox(c);
-        if (bb) include(bb.minX, bb.minY, bb.maxX, bb.maxY);
-      }
+    for (const cid of selectedClusterIds) {
+      const c = clusterMap[cid];
+      if (!c) continue;
+      const bb = getClusterRectWorldBbox(c);
+      if (bb) include(bb.minX, bb.minY, bb.maxX, bb.maxY);
     }
     for (const k of selectedEdgeKeys) {
       const edge = findEdgeByKey(k);
@@ -4417,6 +4480,144 @@
     applyViewState(svgEl);
     viewDirty = true;
   }
+  // Rubber-band selection. Left-mouse-down on background starts a candidate
+  // marquee; once the pointer moves past MARQUEE_THRESHOLD_PX we begin
+  // drawing a dashed rect overlay in view-space coords. On release we
+  // intersect that rect (AABB) against every node and cluster bbox and
+  // commit the result. Shift/Ctrl/Cmd held at pointerdown → additive
+  // (union with existing selection); otherwise the result replaces the
+  // current selection.
+  function startMarquee(ev, svgEl) {
+    const MARQUEE_THRESHOLD_PX = 4;
+    const pointerId = ev.pointerId;
+    const additive = ev.shiftKey || ev.ctrlKey || ev.metaKey;
+    const rect0 = svgEl.getBoundingClientRect();
+    const start = clientToView(ev.clientX - rect0.left, ev.clientY - rect0.top, rect0);
+    const sx0 = ev.clientX, sy0 = ev.clientY;
+    let overlay = null;
+    let started = false;
+    let lastView = start;
+
+    function ensureOverlay() {
+      if (overlay) return;
+      overlay = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      overlay.setAttribute("class", "marquee");
+      overlay.setAttribute("fill", "rgba(136,192,208,0.12)");
+      overlay.setAttribute("stroke", "#88c0d0");
+      overlay.setAttribute("stroke-dasharray", "4 3");
+      overlay.setAttribute("pointer-events", "none");
+      // Keep the dashed border 1 device-pixel wide regardless of zoom.
+      overlay.setAttribute("vector-effect", "non-scaling-stroke");
+      overlay.setAttribute("stroke-width", "1");
+      svgEl.appendChild(overlay);
+    }
+    function paint() {
+      const x = Math.min(start.x, lastView.x);
+      const y = Math.min(start.y, lastView.y);
+      const w = Math.abs(lastView.x - start.x);
+      const h = Math.abs(lastView.y - start.y);
+      overlay.setAttribute("x", x);
+      overlay.setAttribute("y", y);
+      overlay.setAttribute("width", w);
+      overlay.setAttribute("height", h);
+    }
+    function onMove(e) {
+      if (e.pointerId !== pointerId) return;
+      if (!started) {
+        const ddx = e.clientX - sx0, ddy = e.clientY - sy0;
+        if (Math.abs(ddx) < MARQUEE_THRESHOLD_PX && Math.abs(ddy) < MARQUEE_THRESHOLD_PX) return;
+        started = true;
+        ensureOverlay();
+      }
+      const rect = svgEl.getBoundingClientRect();
+      lastView = clientToView(e.clientX - rect.left, e.clientY - rect.top, rect);
+      paint();
+    }
+    function onUp(e) {
+      if (e && e.pointerId !== pointerId) return;
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      document.removeEventListener("pointercancel", onUp);
+      if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      if (!started) return; // below threshold → let the normal click handler run
+      // Suppress the trailing diagramEl click so it doesn't immediately
+      // clear the selection we just made.
+      _skipNextDiagramClick = true;
+      const mMinX = Math.min(start.x, lastView.x);
+      const mMaxX = Math.max(start.x, lastView.x);
+      const mMinY = Math.min(start.y, lastView.y);
+      const mMaxY = Math.max(start.y, lastView.y);
+      // Containment test: an element is picked only if its entire AABB sits
+      // inside the marquee. Strict-inclusion semantics — matches Figma's
+      // left-to-right drag behavior and avoids accidental grabs of large
+      // subgraphs that just happen to overlap the box edge.
+      const contains = (aMinX, aMinY, aMaxX, aMaxY) =>
+        aMinX >= mMinX && aMaxX <= mMaxX && aMinY >= mMinY && aMaxY <= mMaxY;
+
+      const pickedNodes = [];
+      for (const [id, n] of Object.entries(nodeMap)) {
+        let bb; try { bb = n.g.getBBox(); } catch (_) { continue; }
+        const t = getWorldTranslate(n.g);
+        if (contains(t.x + bb.x, t.y + bb.y, t.x + bb.x + bb.width, t.y + bb.y + bb.height)) {
+          pickedNodes.push(id);
+        }
+      }
+      const pickedClusters = [];
+      for (const [id, c] of Object.entries(clusterMap)) {
+        const bb = getClusterRectWorldBbox(c);
+        if (!bb) continue;
+        if (contains(bb.minX, bb.minY, bb.maxX, bb.maxY)) pickedClusters.push(id);
+      }
+
+      if (!additive) {
+        // Replace: clear everything, then add picks. Inline-clear (don't call
+        // deselect* which each broadcast separately) — one broadcast at the
+        // end is enough.
+        for (const sid of selectedNodeIds) {
+          if (nodeMap[sid]) nodeMap[sid].g.classList.remove("selected");
+        }
+        selectedNodeIds.clear();
+        for (const cid of selectedClusterIds) {
+          if (clusterMap[cid]) clusterMap[cid].g.classList.remove("selected");
+        }
+        selectedClusterIds.clear();
+        for (const k of selectedEdgeKeys) {
+          const prev = findEdgeByKey(k);
+          if (prev) prev.path.classList.remove("selected");
+        }
+        selectedEdgeKeys.clear();
+      }
+      for (const id of pickedNodes) {
+        if (!selectedNodeIds.has(id)) {
+          selectedNodeIds.add(id);
+          if (nodeMap[id]) nodeMap[id].g.classList.add("selected");
+        }
+      }
+      for (const id of pickedClusters) {
+        if (!selectedClusterIds.has(id)) {
+          selectedClusterIds.add(id);
+          if (clusterMap[id]) clusterMap[id].g.classList.add("selected");
+        }
+      }
+      updateToolbarState();
+      renderEdgeHotspots();
+      const total = selectedNodeIds.size + selectedClusterIds.size;
+      if (total === 0) setStatus("");
+      else if (total === 1 && selectedNodeIds.size === 1) {
+        setStatus(__("editor.status.selected", [...selectedNodeIds][0]));
+      } else if (total === 1 && selectedClusterIds.size === 1) {
+        setStatus(__("editor.status.selected_subgraph", [...selectedClusterIds][0]));
+      } else {
+        setStatus(__("editor.status.selected_n", total));
+      }
+      broadcastSelection();
+    }
+
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+    document.addEventListener("pointercancel", onUp);
+  }
+
   function setupPanZoom(svgEl) {
     if (initialViewBox === null) {
       const vb = svgEl.viewBox.baseVal;
@@ -4490,9 +4691,18 @@
         if (e.target.closest("g.edgeLabels > g")) return;
       }
       if (connectingState) return;
-      // Mouse: pan only with the middle button. Left button on background
-      // is free for future use (rubber-band selection etc.). Touch/pen:
-      // single-contact pan still works (button === 0 on primary contact).
+      // Mouse left button on background → rubber-band (marquee) selection.
+      // The marquee owns its own pointermove/pointerup listeners, so we
+      // return here BEFORE the pan path. Touch/pen single-contact still
+      // pans (button === 0 on primary contact); we restrict marquee to
+      // pointerType === "mouse" so touch panning isn't hijacked.
+      if (e.pointerType === "mouse" && e.button === 0) {
+        e.preventDefault();
+        startMarquee(e, svgEl);
+        return;
+      }
+      // Mouse: pan only with the middle button. Touch/pen: single-contact
+      // pan still works (button === 0 on primary contact).
       if (e.pointerType === "mouse" && e.button !== 1) return;
       e.preventDefault();
       activePointers.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
@@ -4585,8 +4795,9 @@
 
   function toggleNodeSelection(id, additive) {
     if (additive) {
-      // Shift/Ctrl/Cmd+click: toggle membership without disturbing the rest.
-      deselectCluster();
+      // Shift/Ctrl/Cmd+click: toggle membership without disturbing existing
+      // subgraph selection (mixed node+cluster groups). Edges are mutually
+      // exclusive with nodes/clusters — additive node-click drops them.
       deselectEdge();
       if (selectedNodeIds.has(id)) {
         selectedNodeIds.delete(id);
@@ -4596,13 +4807,17 @@
         if (nodeMap[id]) nodeMap[id].g.classList.add("selected");
       }
       updateToolbarState();
-      const n = selectedNodeIds.size;
-      setStatus(n === 0 ? "" : (n === 1 ? __("editor.status.selected", [...selectedNodeIds][0]) : __("editor.status.selected_n", n)));
+      const nN = selectedNodeIds.size, nC = selectedClusterIds.size;
+      if (nN === 0 && nC === 0) setStatus("");
+      else if (nC === 0 && nN === 1) setStatus(__("editor.status.selected", [...selectedNodeIds][0]));
+      else setStatus(__("editor.status.selected_n", nN + nC));
       broadcastSelection();
       return;
     }
     // Plain click: replace selection with [id]; clicking the only-selected node deselects.
-    if (selectedNodeIds.size === 1 && selectedNodeIds.has(id)) { deselectNode(); return; }
+    if (selectedNodeIds.size === 1 && selectedNodeIds.has(id) && selectedClusterIds.size === 0) {
+      deselectNode(); return;
+    }
     deselectCluster();
     deselectEdge();
     for (const sid of selectedNodeIds) {
@@ -4625,12 +4840,18 @@
   }
 
   // Selection bus: derive the current selection kind from state.
-  // Returns one of: 'node' (1+ nodes), 'edge' (1+ edges), 'subgraph' (1 subgraph), null.
+  // Returns one of: 'node' (1+ nodes only), 'edge' (1+ edges only),
+  // 'subgraph' (exactly 1 subgraph only), 'subgraphs' (2+ subgraphs only),
+  // 'mixed' (nodes + subgraphs), null.
   function selectionKind() {
-    if (selectedNodeIds.size > 0) return "node";
-    if (selectedEdgeKeys.size > 0) return "edge";
-    if (selectedClusterId) return "subgraph";
-    return null;
+    const nN = selectedNodeIds.size;
+    const nE = selectedEdgeKeys.size;
+    const nC = selectedClusterIds.size;
+    if (nN === 0 && nE === 0 && nC === 0) return null;
+    if (nE > 0) return "edge"; // edges stay mutually exclusive
+    if (nN > 0 && nC > 0) return "mixed";
+    if (nN > 0) return "node";
+    return nC === 1 ? "subgraph" : "subgraphs";
   }
   // Returns the sole selected edge key (when exactly one is selected) or null.
   // Use for operations that only make sense on a single edge: bend handles,
@@ -4649,7 +4870,9 @@
     const nNodes = selectedNodeIds.size;
     if (addEdgeBtn)      addEdgeBtn.disabled      = !((kind === "node" && nNodes === 1) || kind === "subgraph");
     if (addSubgraphBtn)  addSubgraphBtn.disabled  = !(kind === "node" && nNodes >= 2);
-    if (deleteBtn)       deleteBtn.disabled       = (kind === null);
+    // Delete: enabled only for single-kind selections. Mixed and multi-
+    // subgraph are intentionally disabled to keep destructive ops unambiguous.
+    if (deleteBtn)       deleteBtn.disabled       = !(kind === "node" || kind === "edge" || kind === "subgraph");
     // Edge-style / arrow / reverse only act on a single edge — the source
     // mutations are per-(src,tgt,ord) tuple. Disable on multi-edge selection.
     const singleEdge = (kind === "edge" && selectedEdgeKeys.size === 1);
@@ -4663,10 +4886,12 @@
     if (distributeHBtn)   distributeHBtn.disabled   = !distributeEnabled;
     if (distributeVBtn)   distributeVBtn.disabled   = !distributeEnabled;
     if (moveToSubgraphBtn) {
-      moveToSubgraphBtn.disabled = !((kind === "node") || kind === "subgraph");
+      moveToSubgraphBtn.disabled = !(kind === "node" || kind === "subgraph" || kind === "subgraphs" || kind === "mixed");
     }
-    // Palette: Color applies to nodes, subgraphs, and edges; Shape only to nodes.
-    const colorEnabled = (kind === "node") || (kind === "subgraph") || (kind === "edge");
+    // Palette: Color applies to nodes, subgraphs, and edges (and to mixed/
+    // multi-subgraph by recoloring each kind in its own bucket); Shape only
+    // to nodes.
+    const colorEnabled = (kind === "node") || (kind === "subgraph") || (kind === "subgraphs") || (kind === "edge") || (kind === "mixed");
     const shapeEnabled = (kind === "node");
     if (colorPaletteEl) {
       for (const b of colorPaletteEl.querySelectorAll("button")) b.disabled = !colorEnabled;
@@ -4677,24 +4902,48 @@
     updateNotesPanel();
   }
 
-  function toggleClusterSelection(id) {
-    if (selectedClusterId === id) { deselectCluster(); return; }
+  function toggleClusterSelection(id, additive) {
+    if (additive) {
+      // Shift/Ctrl/Cmd+click: toggle membership without disturbing nodes
+      // already in the selection. Edges are mutually exclusive with nodes/
+      // clusters — additive cluster-click drops them.
+      deselectEdge();
+      if (selectedClusterIds.has(id)) {
+        selectedClusterIds.delete(id);
+        if (clusterMap[id]) clusterMap[id].g.classList.remove("selected");
+      } else {
+        selectedClusterIds.add(id);
+        if (clusterMap[id]) clusterMap[id].g.classList.add("selected");
+      }
+      updateToolbarState();
+      const nN = selectedNodeIds.size, nC = selectedClusterIds.size;
+      if (nC === 0 && nN === 0) setStatus("");
+      else if (nN === 0 && nC === 1) setStatus(__("editor.status.selected_subgraph", [...selectedClusterIds][0]));
+      else setStatus(__("editor.status.selected_n", nN + nC));
+      broadcastSelection();
+      return;
+    }
+    // Plain click: replace selection with [id]; clicking the only-selected cluster deselects.
+    if (selectedClusterIds.size === 1 && selectedClusterIds.has(id) && selectedNodeIds.size === 0) {
+      deselectCluster(); return;
+    }
     deselectNode();
     deselectEdge();
-    if (selectedClusterId && clusterMap[selectedClusterId]) {
-      clusterMap[selectedClusterId].g.classList.remove("selected");
+    for (const cid of selectedClusterIds) {
+      if (clusterMap[cid]) clusterMap[cid].g.classList.remove("selected");
     }
-    selectedClusterId = id;
-    clusterMap[id].g.classList.add("selected");
+    selectedClusterIds.clear();
+    selectedClusterIds.add(id);
+    if (clusterMap[id]) clusterMap[id].g.classList.add("selected");
     updateToolbarState();
     setStatus(__("editor.status.selected_subgraph", id));
     broadcastSelection();
   }
   function deselectCluster() {
-    if (selectedClusterId && clusterMap[selectedClusterId]) {
-      clusterMap[selectedClusterId].g.classList.remove("selected");
+    for (const cid of selectedClusterIds) {
+      if (clusterMap[cid]) clusterMap[cid].g.classList.remove("selected");
     }
-    selectedClusterId = null;
+    selectedClusterIds.clear();
     updateToolbarState();
     broadcastSelection();
   }
@@ -4777,11 +5026,11 @@
   async function applyPaletteColor(color) {
     if (!requireValidSource("apply color")) return;
     // Selection dispatch: edge takes priority (it can only be solo-selected),
-    // then nodes, then a single subgraph.
+    // then the union of selected nodes + selected subgraphs. Each id is
+    // routed to its own bucket (nodeStyles vs subgraphStyles) inside the loop.
     const edgeSelected = selectedEdgeKeys.size > 0;
     const ids = edgeSelected ? [...selectedEdgeKeys]
-              : (selectedNodeIds.size > 0 ? [...selectedNodeIds]
-                : (selectedClusterId ? [selectedClusterId] : []));
+              : [...selectedNodeIds, ...selectedClusterIds];
     if (!ids.length) { setStatus(__("editor.err.select_node_or_subgraph"), true); return; }
     let next = currentSource, sourceChanged = false, anyDeleted = false, applied = 0;
     // Edges only have a line + label: use the palette's most saturated value
@@ -4953,7 +5202,7 @@
     if (!requireValidSource("add node")) return;
     _editNodeOriginalId = null;
     setNodeModalMode(false);
-    _addNodeTargetSubgraph = selectedClusterId || null;
+    _addNodeTargetSubgraph = (selectedClusterIds.size === 1 ? [...selectedClusterIds][0] : null);
     document.getElementById("addNodeModal").classList.remove("hidden");
     document.getElementById("modalError").textContent = "";
     const hint = document.getElementById("addNodeSubgraphHint");
@@ -5718,9 +5967,11 @@
   function currentSelection() {
     const nodes = [...selectedNodeIds];
     const edges = [...selectedEdgeKeys];
-    const cluster = selectedClusterId || null;
-    if (nodes.length === 0 && edges.length === 0 && !cluster) return null;
-    return { nodes, edges, cluster };
+    const clusters = [...selectedClusterIds];
+    if (nodes.length === 0 && edges.length === 0 && clusters.length === 0) return null;
+    // `cluster` (single string) is kept for backward compat with peers running
+    // the older client; new clients prefer `clusters` (array).
+    return { nodes, edges, clusters, cluster: clusters[0] || null };
   }
 
   async function sendSelection(force) {
@@ -5863,8 +6114,13 @@
       for (const nid of (sel.nodes || [])) {
         drawNodeOrClusterRing(overlay, nodeMap[nid], color, slotFor("n:" + nid));
       }
-      if (sel.cluster && clusterMap[sel.cluster]) {
-        drawNodeOrClusterRing(overlay, clusterMap[sel.cluster], color, slotFor("c:" + sel.cluster));
+      // Prefer `clusters` (new clients); fall back to single `cluster` (older).
+      const peerClusters = Array.isArray(sel.clusters) ? sel.clusters
+                         : (sel.cluster ? [sel.cluster] : []);
+      for (const cid of peerClusters) {
+        if (clusterMap[cid]) {
+          drawNodeOrClusterRing(overlay, clusterMap[cid], color, slotFor("c:" + cid));
+        }
       }
       for (const ek of (sel.edges || [])) {
         const e = findEdgeByKey(ek);
@@ -6462,7 +6718,7 @@
       if (connectingState === "move-target") { cancelMoveMode(); return; }
       if (connectingState) { cancelConnectMode(); return; }
       if (selectedNodeIds.size > 0) { deselectNode(); setStatus(""); }
-      if (selectedClusterId) { deselectCluster(); setStatus(""); }
+      if (selectedClusterIds.size > 0) { deselectCluster(); setStatus(""); }
       if (selectedEdgeKeys.size > 0) { deselectEdge(); setStatus(""); }
       return;
     }
@@ -6511,7 +6767,7 @@
       deselectNode();
       setStatus("");
     }
-    if (!e.target.closest("g.cluster") && selectedClusterId) {
+    if (!e.target.closest("g.cluster") && selectedClusterIds.size > 0) {
       deselectCluster();
       setStatus("");
     }

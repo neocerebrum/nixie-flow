@@ -4196,6 +4196,31 @@
     if (!viewState) return;
     svgEl.setAttribute("viewBox",
       `${viewState.x} ${viewState.y} ${viewState.width} ${viewState.height}`);
+    updateSelectionHaloScale(svgEl);
+  }
+
+  // The selection halo filter uses feMorphology with `radius` in user units,
+  // so a fixed 2/1 px halo disappears when the viewBox is zoomed out. Keep
+  // the halo at a constant *screen* pixel size by scaling the morphology
+  // radii inversely with the current zoom (user-units per screen-pixel).
+  // Called from applyViewState — fires on every pan/zoom / wheel / pinch /
+  // resize. Cheap: two attribute writes.
+  const HALO_OUTER_PX = 4;
+  const HALO_INNER_PX = 2;
+  function updateSelectionHaloScale(svgEl) {
+    if (!viewState) return;
+    const rect = svgEl.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    // preserveAspectRatio="xMidYMid meet" → uniform scale = min(rect/view).
+    const scale = Math.min(rect.width / viewState.width, rect.height / viewState.height);
+    if (!isFinite(scale) || scale <= 0) return;
+    const u = 1 / scale; // user units per screen pixel
+    const filt = document.getElementById("aq-sel-outline");
+    if (!filt) return;
+    const dOuter = filt.querySelector('feMorphology[result="dOuter"]');
+    const dInner = filt.querySelector('feMorphology[result="dInner"]');
+    if (dOuter) dOuter.setAttribute("radius", String(HALO_OUTER_PX * u));
+    if (dInner) dInner.setAttribute("radius", String(HALO_INNER_PX * u));
   }
   // preserveAspectRatio="xMidYMid meet" scales the viewBox uniformly to fit
   // the rect: scale = min(rect.w/vb.w, rect.h/vb.h), then centers it. The
@@ -6445,15 +6470,25 @@
     // (markers extend beyond the path bbox). userSpaceOnUse with a region
     // larger than any plausible diagram side-steps both — browsers clip
     // internally to the visible area so the perf cost is negligible.
+    // Double-ring "knockout" halo: a 1px black inner ring against a 1px white
+    // outer ring. On dark backgrounds the white outer ring contrasts; on light
+    // backgrounds the black inner ring contrasts — at least one is always
+    // visible without resorting to mix-blend-mode (which would also invert
+    // the element's own colour). The original SourceGraphic is composited on
+    // top last so the user's edge / node colour stays untouched.
     svg.innerHTML = `
       <defs>
         <filter id="aq-sel-outline" filterUnits="userSpaceOnUse"
                 x="-100000" y="-100000" width="200000" height="200000">
-          <feMorphology in="SourceGraphic" operator="dilate" radius="2" result="dilated"/>
-          <feFlood flood-color="#000"/>
-          <feComposite in2="dilated" operator="in" result="outline"/>
+          <feMorphology in="SourceGraphic" operator="dilate" radius="2" result="dOuter"/>
+          <feMorphology in="SourceGraphic" operator="dilate" radius="1" result="dInner"/>
+          <feFlood flood-color="#fff" result="white"/>
+          <feComposite in="white" in2="dOuter" operator="in" result="ringOuter"/>
+          <feFlood flood-color="#000" result="black"/>
+          <feComposite in="black" in2="dInner" operator="in" result="ringInner"/>
           <feMerge>
-            <feMergeNode in="outline"/>
+            <feMergeNode in="ringOuter"/>
+            <feMergeNode in="ringInner"/>
             <feMergeNode in="SourceGraphic"/>
           </feMerge>
         </filter>

@@ -435,7 +435,7 @@ return [
     'js.editor.move_btn_hint'           => 'Move selection: click a subgraph as target (or the background for root)',
     'js.editor.color_reset'             => 'Reset color (remove style)',
     'js.editor.palette_group.nodes'       => 'Nodes',
-    'js.editor.palette_group.subgraphs'   => 'Subgraphs',
+    'js.editor.palette_group.subgraphs'   => 'Groups',
     'js.editor.palette_group.edges'       => 'Edges',
     'js.editor.palette_channel.background' => 'Background',
     'js.editor.palette_channel.border'    => 'Border',

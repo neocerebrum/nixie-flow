@@ -435,7 +435,7 @@ return [
     'js.editor.move_btn_hint'           => 'Auswahl verschieben: Subgraph als Ziel anklicken (oder den Hintergrund für Root)',
     'js.editor.color_reset'             => 'Farbe zurücksetzen (Style entfernen)',
     'js.editor.palette_group.nodes'       => 'Knoten',
-    'js.editor.palette_group.subgraphs'   => 'Subgraphen',
+    'js.editor.palette_group.subgraphs'   => 'Gruppen',
     'js.editor.palette_group.edges'       => 'Kanten',
     'js.editor.palette_channel.background' => 'Hintergrund',
     'js.editor.palette_channel.border'    => 'Rahmen',

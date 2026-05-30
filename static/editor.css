@@ -117,6 +117,10 @@ body { margin: 0; overflow: hidden; display: flex; flex-direction: column; }
 .pp-swatch { width: 20px; height: 20px; border-radius: 4px; border: 1px solid #3a4551; }
 .pp-channel-name { font-size: 13px; color: #d8dee9; flex: 1; }
 .pp-hex { font-family: ui-monospace, monospace; font-size: 12px; color: #8b97a6; text-transform: uppercase; }
+.pp-link { display: inline-flex; align-items: center; gap: 5px; font-size: 11px;
+           color: #8b97a6; cursor: pointer; user-select: none; }
+.pp-link input { accent-color: #88c0d0; margin: 0; cursor: pointer; }
+.pp-channel.pp-disabled .pp-sliders { opacity: .4; pointer-events: none; }
 .pp-sliders { display: flex; gap: 14px; }
 .pp-slider { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 3px; }
 .pp-slider .pp-ch { font-size: 11px; color: #6f7a88; }
@@ -557,17 +561,27 @@ body.deleting g.cluster:hover > path:first-of-type {
 }
 .lock-viewers .peer-follow-ind .icon { width: 12px; height: 12px; }
 
-/* Edge labels readability */
+/* Edge labels readability. The selectors are duplicated for g.expanded-raise:
+   when a collapsible subgraph is expanded, raiseExpandedEntities() moves its
+   edges (and labels) out of g.edgeLabels into the raise layer, so without the
+   mirrored rules those labels fall back to Mermaid's semi-transparent default.
+   The raise-layer text rule is scoped to g.edgeLabel so it doesn't recolor
+   raised node labels. */
 #diagram g.edgeLabels foreignObject .labelBkg,
 #diagram g.edgeLabels foreignObject span.edgeLabel,
-#diagram g.edgeLabels foreignObject p {
+#diagram g.edgeLabels foreignObject p,
+#diagram g.expanded-raise g.edgeLabel foreignObject .labelBkg,
+#diagram g.expanded-raise g.edgeLabel foreignObject span.edgeLabel,
+#diagram g.expanded-raise g.edgeLabel foreignObject p {
     background-color: #3a4551 !important;
     color: #eceff4 !important;
     padding: 2px 6px !important;
     border-radius: 3px !important;
 }
 #diagram g.edgeLabels g.label > rect,
-#diagram g.edgeLabels rect.edgeLabel {
+#diagram g.edgeLabels rect.edgeLabel,
+#diagram g.expanded-raise g.edgeLabel g.label > rect,
+#diagram g.expanded-raise g.edgeLabel rect.edgeLabel {
     fill: #3a4551 !important;
     stroke: none !important;
     opacity: 1 !important;
@@ -575,7 +589,9 @@ body.deleting g.cluster:hover > path:first-of-type {
     ry: 3px !important;
 }
 #diagram g.edgeLabels text,
-#diagram g.edgeLabels tspan { fill: #eceff4 !important; }
+#diagram g.edgeLabels tspan,
+#diagram g.expanded-raise g.edgeLabel text,
+#diagram g.expanded-raise g.edgeLabel tspan { fill: #eceff4 !important; }
 
 /* Modals (editor-specific shapes/buttons) */
 #shapeGrid {

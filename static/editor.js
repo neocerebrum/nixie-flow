@@ -233,7 +233,10 @@
     }),
     edges: PALETTE_BASE.map((p) => {
       const vivid = shiftHsl(p.fill, 0.30, 0.04);
-      return { stroke: vivid, color: vivid };
+      // labelBg defaults to the legacy fixed backdrop so applying an edge
+      // preset looks identical to before until the user opts into a custom /
+      // line-linked background. bgLink = true makes labelBg track the stroke.
+      return { stroke: vivid, color: vivid, labelBg: "#3a4551", bgLink: false };
     }),
   };
   const PALETTE_GROUPS = ["nodes", "subgraphs", "edges"];
@@ -241,7 +244,7 @@
   const PALETTE_CHANNELS = {
     nodes:     [["fill", "background"], ["stroke", "border"], ["color", "text"]],
     subgraphs: [["fill", "background"], ["stroke", "border"], ["color", "text"]],
-    edges:     [["stroke", "line"], ["color", "label"]],
+    edges:     [["stroke", "line"], ["color", "label"], ["labelBg", "label_bg"]],
   };
 
   // Normalize a stored palettes object: must have all three groups as arrays of
@@ -257,6 +260,10 @@
           const merged = {};
           for (const [prop] of PALETTE_CHANNELS[g]) {
             merged[prop] = cssColorToHex(p[prop]) || def[prop];
+          }
+          if (g === "edges") {
+            merged.bgLink = typeof p.bgLink === "boolean" ? p.bgLink : def.bgLink;
+            if (merged.bgLink) merged.labelBg = merged.stroke;
           }
           return merged;
         });
@@ -788,6 +795,7 @@
     svgEl.setAttribute("preserveAspectRatio", "xMidYMid meet");
 
     indexNodesAndEdges(svgEl);
+    padEdgeLabelBackgrounds(svgEl);
     reorderClustersByContainment(svgEl);
     offsetArrowMarkers(svgEl);
     applyVisualStyles(svgEl);
@@ -1006,7 +1014,45 @@
       const props = edgeStyles[edgeKey(e)];
       if (!props) continue;
       if (props.stroke) e.path.style.stroke = props.stroke;
-      if (props.color && e.label) paintLabelText(e.label, props);
+      paintEdgeLabel(e.label, props);
+    }
+  }
+
+  // Edge label text + background. The defaults in editor.css are declared
+  // `!important` (a fixed dark backdrop + light text for readability), so a
+  // per-edge override has to be set inline WITH priority to win the cascade —
+  // inline `!important` beats an author-stylesheet `!important`.
+  function paintEdgeLabel(labelG, props) {
+    if (!labelG || !props) return;
+    if (props.color) {
+      for (const t of labelG.querySelectorAll("text, tspan")) {
+        t.style.setProperty("fill", props.color, "important");
+      }
+    }
+    if (props.labelBg) {
+      for (const r of labelG.querySelectorAll("rect")) {
+        r.style.setProperty("fill", props.labelBg, "important");
+      }
+    }
+  }
+
+  // Mermaid sizes each edge-label background rect tight to the text bbox, so the
+  // text touches the left/right edges. Widen every rect symmetrically by
+  // EDGE_LABEL_PAD_X on each side (x -= pad, width += 2·pad); the text is
+  // unchanged and stays centered, so it gains equal horizontal breathing room.
+  // Idempotent via a dataset flag — the fast restyle path reuses padded rects.
+  const EDGE_LABEL_PAD_X = 6;
+  function padEdgeLabelBackgrounds(svgEl) {
+    const rects = svgEl.querySelectorAll(
+      "g.edgeLabels g.label > rect, g.edgeLabels rect.edgeLabel");
+    for (const r of rects) {
+      if (r.dataset.padded) continue;
+      const x = parseFloat(r.getAttribute("x")) || 0;
+      const w = parseFloat(r.getAttribute("width")) || 0;
+      if (!w) continue;
+      r.setAttribute("x", x - EDGE_LABEL_PAD_X);
+      r.setAttribute("width", w + EDGE_LABEL_PAD_X * 2);
+      r.dataset.padded = "1";
     }
   }
 
@@ -3885,72 +3931,50 @@
     return { ok: false, error: `edge ${src}→${tgt} #${ordinal} not found` };
   }
 
-  // Open inline editor at the curve midpoint to add/edit/remove an edge label.
-  // Works for edges with or without an existing label.
-  async function startEdgeLabelEdit(edge) {
+  // Edit an edge label via a small modal (text field + Cancel/Save), mirroring
+  // the node/rename modals. Works for edges with or without an existing label
+  // (empty value removes the label). The edge being edited and its original
+  // text are stashed while the modal is open.
+  let _editEdgeLabelEdge = null;
+  let _editEdgeLabelInitial = "";
+
+  function startEdgeLabelEdit(edge) {
     if (!requireValidSource("edit edge label")) return;
-    const path = edge.path;
-    let screenX, screenY;
-    try {
-      const len = path.getTotalLength();
-      const pt = path.getPointAtLength(len / 2);
-      const ctm = path.getScreenCTM();
-      if (!ctm) return;
-      screenX = pt.x * ctm.a + pt.y * ctm.c + ctm.e;
-      screenY = pt.x * ctm.b + pt.y * ctm.d + ctm.f;
-    } catch (_) {
-      return;
-    }
     const initialText = edge.label
       ? getLabelText(findLabelTextElement(edge.label) || edge.label)
       : "";
-    const input = document.createElement("input");
-    input.type = "text";
+    _editEdgeLabelEdge = edge;
+    _editEdgeLabelInitial = initialText;
+    const input = document.getElementById("editEdgeLabelInput");
     input.value = initialText;
     input.placeholder = __("editor.edge_label_placeholder");
-    Object.assign(input.style, {
-      position: "fixed",
-      left: `${screenX - 80}px`,
-      top: `${screenY - 14}px`,
-      minWidth: "160px",
-      height: "28px",
-      fontSize: "14px", padding: "2px 6px",
-      border: "2px solid #5e81ac", background: "#1c242e",
-      color: "#eceff4", zIndex: "1000", borderRadius: "3px", fontFamily: "inherit",
-    });
-    document.body.appendChild(input);
+    document.getElementById("editEdgeLabelModal").classList.remove("hidden");
     input.focus(); input.select();
-    let done = false;
-    function cleanup() {
-      input.removeEventListener("keydown", onKey);
-      input.removeEventListener("blur", onBlur);
-      if (input.parentNode) input.parentNode.removeChild(input);
-    }
-    function cancel() { if (done) return; done = true; cleanup(); }
-    async function commit() {
-      if (done) return;
-      done = true;
-      const newText = input.value;
-      cleanup();
-      if (newText === initialText) return;
-      const result = rewriteEdgeLabelInSource(currentSource, edge.source, edge.target, edge.ordinal, newText);
-      if (!result.ok) { setStatus(__("editor.err.edit_rejected", result.error), true); return; }
-      currentSource = result.source;
-      markDirtySource();
-      await renderDiagram();
-      pushHistory();
-      const lbl = `${edge.source}→${edge.target}`;
-      if (newText === "") setStatus(`${lbl}: label removed`);
-      else if (initialText === "") setStatus(`${lbl}: + "${newText}"`);
-      else setStatus(`${lbl}: "${initialText}" → "${newText}"`);
-    }
-    function onKey(e) {
-      if (e.key === "Enter") { e.preventDefault(); commit(); }
-      else if (e.key === "Escape") { e.preventDefault(); cancel(); }
-    }
-    function onBlur() { commit(); }
-    input.addEventListener("keydown", onKey);
-    input.addEventListener("blur", onBlur);
+  }
+
+  function closeEditEdgeLabelModal() {
+    document.getElementById("editEdgeLabelModal").classList.add("hidden");
+    _editEdgeLabelEdge = null;
+  }
+
+  async function submitEditEdgeLabelModal() {
+    const edge = _editEdgeLabelEdge;
+    if (!edge) { closeEditEdgeLabelModal(); return; }
+    const initialText = _editEdgeLabelInitial;
+    const newText = document.getElementById("editEdgeLabelInput").value;
+    closeEditEdgeLabelModal();
+    if (newText === initialText) return;
+    if (!requireValidSource("edit edge label")) return;
+    const result = rewriteEdgeLabelInSource(currentSource, edge.source, edge.target, edge.ordinal, newText);
+    if (!result.ok) { setStatus(__("editor.err.edit_rejected", result.error), true); return; }
+    currentSource = result.source;
+    markDirtySource();
+    await renderDiagram();
+    pushHistory();
+    const lbl = `${edge.source}→${edge.target}`;
+    if (newText === "") setStatus(`${lbl}: label removed`);
+    else if (initialText === "") setStatus(`${lbl}: + "${newText}"`);
+    else setStatus(`${lbl}: "${initialText}" → "${newText}"`);
   }
 
   async function applyToggleEdgeStyle() {
@@ -6184,7 +6208,8 @@
       if (!reset) {
         if (edgeSelected) {
           const pr = palettes.edges[slot];
-          props = { stroke: pr.stroke, color: pr.color };
+          const labelBg = pr.bgLink ? pr.stroke : pr.labelBg;
+          props = { stroke: pr.stroke, color: pr.color, labelBg };
         } else {
           const pr = (isSubgraph ? palettes.subgraphs : palettes.nodes)[slot];
           props = { fill: pr.fill, stroke: pr.stroke, color: pr.color };
@@ -6333,7 +6358,7 @@
       values[prop] = pr[prop];
       hsv[prop] = rgbToHsv(hexToRgb(pr[prop]));
     }
-    presetEdit = { group, slot, values, hsv };
+    presetEdit = { group, slot, values, hsv, bgLink: !!pr.bgLink };
     if (presetTitleEl) {
       presetTitleEl.textContent =
         `${__("editor.palette_group." + group)} · ${PALETTE_NAMES[slot]}`;
@@ -6370,6 +6395,22 @@
         `<span class="pp-swatch"></span>` +
         `<span class="pp-channel-name">${__("editor.palette_channel." + key)}</span>` +
         `<span class="pp-hex"></span>`;
+      // Edge label-background channel: an opt-in "link to line" toggle that
+      // makes the background track the stroke colour (channel goes read-only).
+      if (presetEdit.group === "edges" && prop === "labelBg") {
+        const link = document.createElement("label");
+        link.className = "pp-link";
+        link.innerHTML =
+          `<input type="checkbox"${presetEdit.bgLink ? " checked" : ""}>` +
+          `<span>${__("editor.palette_channel.link_to_line")}</span>`;
+        link.querySelector("input").addEventListener("change", (ev) => {
+          presetEdit.bgLink = ev.target.checked;
+          if (presetEdit.bgLink) presetEdit.values.labelBg = presetEdit.values.stroke;
+          applyBgLinkState();
+          updatePresetPreview();
+        });
+        head.appendChild(link);
+      }
       wrap.appendChild(head);
       // H/S/V on a single row: letter on top, slider below, value beneath.
       const sliders = document.createElement("div");
@@ -6387,6 +6428,11 @@
           presetEdit.values[prop] = rgbToHex(hsvToRgb(presetEdit.hsv[prop]));
           row.querySelector(".pp-val").textContent = fmtHsv(k, +input.value);
           paintPresetChannel(wrap, prop);
+          // While linked, the background mirrors live edits to the line colour.
+          if (presetEdit.group === "edges" && presetEdit.bgLink && prop === "stroke") {
+            presetEdit.values.labelBg = presetEdit.values.stroke;
+            applyBgLinkState();
+          }
           updatePresetPreview();
         });
         sliders.appendChild(row);
@@ -6395,6 +6441,25 @@
       presetChannelsEl.appendChild(wrap);
       paintPresetChannel(wrap, prop);
     }
+    if (presetEdit.group === "edges") applyBgLinkState();
+  }
+
+  // Reflect the bg-link flag on the labelBg channel: disable its sliders and
+  // resync them to the (mirrored) stroke colour when linked.
+  function applyBgLinkState() {
+    const wrap = presetChannelsEl.querySelector('.pp-channel[data-prop="labelBg"]');
+    if (!wrap) return;
+    const linked = !!presetEdit.bgLink;
+    wrap.classList.toggle("pp-disabled", linked);
+    presetEdit.hsv.labelBg = rgbToHsv(hexToRgb(presetEdit.values.labelBg));
+    const hsv = presetEdit.hsv.labelBg;
+    for (const input of wrap.querySelectorAll("input[data-ch]")) {
+      input.disabled = linked;
+      const k = input.dataset.ch;
+      input.value = Math.round(hsv[k]);
+      input.parentElement.querySelector(".pp-val").textContent = fmtHsv(k, hsv[k]);
+    }
+    paintPresetChannel(wrap, "labelBg");
   }
 
   function paintPresetChannel(wrap, prop) {
@@ -6424,11 +6489,12 @@
     if (!presetPreviewEl || !presetEdit) return;
     const v = presetEdit.values;
     if (presetEdit.group === "edges") {
+      const bg = presetEdit.bgLink ? v.stroke : v.labelBg;
       presetPreviewEl.style.background = "";
       presetPreviewEl.style.border = "none";
       presetPreviewEl.innerHTML =
         `<span class="pp-edge-line" style="background:${v.stroke}"></span>` +
-        `<span class="pp-edge-label" style="color:${v.color}">Abc</span>`;
+        `<span class="pp-edge-label" style="color:${v.color};background:${bg}">Abc</span>`;
     } else {
       presetPreviewEl.innerHTML = `<span style="color:${v.color}">Abc</span>`;
       presetPreviewEl.style.background = v.fill;
@@ -6443,6 +6509,11 @@
     let changed = false;
     for (const [prop] of PALETTE_CHANNELS[group]) {
       if (target[prop] !== values[prop]) { target[prop] = values[prop]; changed = true; }
+    }
+    if (group === "edges") {
+      const link = !!presetEdit.bgLink;
+      if (target.bgLink !== link) { target.bgLink = link; changed = true; }
+      if (link && target.labelBg !== target.stroke) { target.labelBg = target.stroke; changed = true; }
     }
     closePresetEditor();
     if (!changed) return;
@@ -6503,9 +6574,15 @@
       const store = edgeStyles[idOrKey] || {};
       const cs = e.path ? getComputedStyle(e.path) : null;
       const stroke = store.stroke || (cs && cssColorToHex(cs.stroke)) || "#88c0d0";
+      let labelBg = store.labelBg;
+      if (!labelBg && e.label) {
+        const r = e.label.querySelector("rect");
+        if (r) labelBg = cssColorToHex(getComputedStyle(r).fill);
+      }
       return {
         stroke,
         color: store.color || (e.label && readLabelHex(e.label)) || stroke,
+        labelBg: labelBg || stroke,
         fill: stroke,
       };
     }
@@ -8032,6 +8109,15 @@
   document.getElementById("renameTitleInput").addEventListener("keydown", (e) => {
     if (e.key === "Enter") { e.preventDefault(); submitRenameModal(); }
     else if (e.key === "Escape") { e.preventDefault(); closeRenameModal(); }
+  });
+
+  document.getElementById("editEdgeLabelCancelBtn").addEventListener("click", closeEditEdgeLabelModal);
+  document.getElementById("editEdgeLabelOkBtn").addEventListener("click", submitEditEdgeLabelModal);
+  document.getElementById("editEdgeLabelModal").querySelector(".modal-backdrop")
+    .addEventListener("click", closeEditEdgeLabelModal);
+  document.getElementById("editEdgeLabelInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); submitEditEdgeLabelModal(); }
+    else if (e.key === "Escape") { e.preventDefault(); closeEditEdgeLabelModal(); }
   });
 
   document.getElementById("historyCloseBtn").addEventListener("click", closeHistoryModal);

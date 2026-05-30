@@ -186,6 +186,22 @@
     </div>
 </div>
 
+<!-- Modal: edit edge label -->
+<div id="editEdgeLabelModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-box">
+        <h2><?= __('editor.modal.edge_label.title') ?></h2>
+        <label class="field">
+            <span><?= __('editor.modal.edge_label.field') ?></span>
+            <input id="editEdgeLabelInput" type="text" autocomplete="off">
+        </label>
+        <div class="modal-buttons">
+            <button id="editEdgeLabelCancelBtn"><?= __('common.cancel') ?></button>
+            <button id="editEdgeLabelOkBtn" class="primary"><?= __('common.save') ?></button>
+        </div>
+    </div>
+</div>
+
 <!-- Modal: palette preset editor -->
 <div id="palettePresetModal" class="modal hidden">
     <div class="modal-backdrop"></div>

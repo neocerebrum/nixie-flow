@@ -2531,6 +2531,14 @@
     return outermostCollapsedAncestor(id, owners) || id;
   }
 
+  // True when an edge endpoint is a node/subgraph hidden inside a collapsed
+  // capsule — i.e. it resolves to a different (ancestor) box. The edge attaches
+  // to that box, so the hidden endpoint must show no anchor hotspots / bend
+  // handle (there's no visible shape there to anchor to).
+  function isEndpointHidden(id) {
+    return effectiveEndpoint(id) !== id;
+  }
+
   // ── Edge hotspots & bend handles ────────────────────────────────────────
 
   // Render the hotspot overlay for the currently selected edge. No-op when
@@ -2554,8 +2562,11 @@
     const sn = endpointInfo(edge.source);
     const tn = endpointInfo(edge.target);
     if (!sn || !tn) return;
-    const sAnchors = anchorsForShape(sn);
-    const tAnchors = anchorsForShape(tn);
+    // An endpoint hidden inside a collapsed capsule has no visible shape — the
+    // edge attaches to the box instead — so it gets no anchor hotspots. Handles
+    // each side independently (one, both, or neither may be hidden).
+    const sAnchors = isEndpointHidden(edge.source) ? [] : anchorsForShape(sn);
+    const tAnchors = isEndpointHidden(edge.target) ? [] : anchorsForShape(tn);
     if (sAnchors.length === 0 && tAnchors.length === 0) return;
     const SVG_NS = "http://www.w3.org/2000/svg";
     const overlay = document.createElementNS(SVG_NS, "g");
@@ -2571,8 +2582,10 @@
   // Compute the world endpoints used by rerouteEdge — shared by the bend
   // handle render + drag init so the handles sit exactly where the path does.
   function edgeWorldEndpoints(edge) {
-    const sn = endpointInfo(edge.source);
-    const tn = endpointInfo(edge.target);
+    // Mirror rerouteEdge: route to the collapsed box, not the hidden node, so
+    // the handles sit on the actual drawn curve.
+    const sn = endpointInfo(effectiveEndpoint(edge.source));
+    const tn = endpointInfo(effectiveEndpoint(edge.target));
     if (!sn || !tn) return null;
     const sT = getWorldTranslate(sn.g);
     const tT = getWorldTranslate(tn.g);
@@ -2594,8 +2607,12 @@
   // cluster normals but no explicit bend entry. Returns null when the edge
   // would be a straight line (no anchors, no clusters).
   function autoCurveCps(edge) {
-    const sn = endpointInfo(edge.source);
-    const tn = endpointInfo(edge.target);
+    // Mirror rerouteEdge: resolve to the collapsed box when an endpoint is
+    // hidden, so the displayed curve handles match the actual path.
+    const srcId = effectiveEndpoint(edge.source);
+    const tgtId = effectiveEndpoint(edge.target);
+    const sn = endpointInfo(srcId);
+    const tn = endpointInfo(tgtId);
     if (!sn || !tn) return null;
     const sT = getWorldTranslate(sn.g);
     const tT = getWorldTranslate(tn.g);
@@ -2605,8 +2622,8 @@
     const anchors = edgeAnchors[edgeKey(edge)] || {};
     const sAnchor = anchors.source ? anchorPoint(sn, anchors.source) : null;
     const tAnchor = anchors.target ? anchorPoint(tn, anchors.target) : null;
-    const sIsCluster = !!clusterMap[edge.source];
-    const tIsCluster = !!clusterMap[edge.target];
+    const sIsCluster = !!clusterMap[srcId];
+    const tIsCluster = !!clusterMap[tgtId];
     if (!sIsCluster && !tIsCluster && !sAnchor && !tAnchor) return null;
     const sBoundary = sAnchor || findShapeBoundary(sn, dx, dy);
     const tBoundary = tAnchor || findShapeBoundary(tn, -dx, -dy);
@@ -2656,6 +2673,12 @@
     if (!canWrite) return;
     const edge = findEdgeByKey(soleKey);
     if (!edge) return;
+    // A handle whose endpoint node is hidden inside a collapsed capsule has no
+    // visible shape to sit on, so suppress it. If both ends are hidden there's
+    // nothing to show at all.
+    const sHidden = isEndpointHidden(edge.source);
+    const tHidden = isEndpointHidden(edge.target);
+    if (sHidden && tHidden) return;
     const ep = edgeWorldEndpoints(edge);
     if (!ep) return;
     const { sxW, syW, txW, tyW } = ep;
@@ -2696,8 +2719,8 @@
       ln.setAttribute("x2", x2); ln.setAttribute("y2", y2);
       return ln;
     };
-    overlay.appendChild(mkTangent(sxW, syW, c1.x, c1.y));
-    overlay.appendChild(mkTangent(txW, tyW, c2.x, c2.y));
+    if (!sHidden) overlay.appendChild(mkTangent(sxW, syW, c1.x, c1.y));
+    if (!tHidden) overlay.appendChild(mkTangent(txW, tyW, c2.x, c2.y));
 
     const mkHandle = (which, cp, isStraight) => {
       const hit = document.createElementNS(SVG_NS, "circle");
@@ -2737,8 +2760,8 @@
       hit.addEventListener("dblclick", resetBend);
       dot.addEventListener("dblclick", resetBend);
     };
-    mkHandle(1, c1, isStraight1);
-    mkHandle(2, c2, isStraight2);
+    if (!sHidden) mkHandle(1, c1, isStraight1);
+    if (!tHidden) mkHandle(2, c2, isStraight2);
   }
 
   // Screen-space snap threshold (px) for n→0 when Ctrl/Cmd is held — mirrors

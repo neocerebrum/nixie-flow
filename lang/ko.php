@@ -142,6 +142,8 @@ return [
     'editor.move_title'         => '선택 항목 이동: 대상 서브그래프를 클릭하세요 (배경 클릭 시 루트로 이동)',
     'editor.move_label'         => '서브그래프로 이동',
     'editor.delete_title'       => '선택 항목 삭제 (노드, 엣지 또는 서브그래프)',
+    'editor.modal.subgraph.collapsible'      => '접기 가능',
+    'editor.modal.subgraph.collapsible_hint' => ' (단일 상자로 접을 수 있음)',
     'editor.notes'              => '메모',
     'editor.notes_empty'        => '메모를 편집하려면 노드 또는 서브그래프를 선택하세요.',
     'editor.notes_placeholder'  => '선택된 요소에 대한 메모를 여기에 작성하세요. 소스에 %% 주석으로 저장됩니다 (Claude에서도 볼 수 있습니다).',

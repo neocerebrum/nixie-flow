@@ -145,6 +145,8 @@ return [
     'editor.move_title'         => 'Sposta selezione: clicca un subgraph come destinazione (o lo sfondo per la root)',
     'editor.move_label'         => 'Sposta nella subgraph',
     'editor.delete_title'       => 'Elimina la selezione (nodo, edge o subgraph)',
+    'editor.modal.subgraph.collapsible'      => 'Collassabile',
+    'editor.modal.subgraph.collapsible_hint' => ' (può essere ridotto a un singolo box)',
     'editor.notes'              => 'Note',
     'editor.notes_empty'        => 'Seleziona un nodo o un subgraph per modificarne le note.',
     'editor.notes_placeholder'  => 'Scrivi qui le note per l\'elemento selezionato. Sono salvate nel sorgente come commenti %% (visibili anche da Claude).',

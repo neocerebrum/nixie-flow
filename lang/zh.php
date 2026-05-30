@@ -142,6 +142,8 @@ return [
     'editor.move_title'         => '移动选中项：点击一个子图作为目标（或点击背景移至根层级）',
     'editor.move_label'         => '移入子图',
     'editor.delete_title'       => '删除选中项（节点、连线或子图）',
+    'editor.modal.subgraph.collapsible'      => '可折叠',
+    'editor.modal.subgraph.collapsible_hint' => '（可折叠为单个方块）',
     'editor.notes'              => '备注',
     'editor.notes_empty'        => '选择一个节点或子图以编辑其备注。',
     'editor.notes_placeholder'  => '在此处为选中的元素添加备注。备注将以 %% 注释的形式保存在源码中（Claude 也可见）。',

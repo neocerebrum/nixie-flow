@@ -157,6 +157,10 @@
             <input id="subgraphTitleInput" type="text" autocomplete="off">
         </label>
         <div id="subgraphMembersInfo" class="modal-info"></div>
+        <label class="field-check hidden" id="subgraphCollapsibleField">
+            <input id="subgraphCollapsibleInput" type="checkbox">
+            <span><?= __('editor.modal.subgraph.collapsible') ?><small><?= __('editor.modal.subgraph.collapsible_hint') ?></small></span>
+        </label>
         <div id="subgraphModalError"></div>
         <div class="modal-buttons">
             <button id="subgraphCancelBtn"><?= __('common.cancel') ?></button>

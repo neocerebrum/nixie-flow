@@ -145,6 +145,8 @@ return [
     'editor.move_title'         => 'Mover seleção: clique em um subgraph como destino (ou no fundo para a raiz)',
     'editor.move_label'         => 'Mover para subgraph',
     'editor.delete_title'       => 'Excluir a seleção (nó, edge ou subgraph)',
+    'editor.modal.subgraph.collapsible'      => 'Recolhível',
+    'editor.modal.subgraph.collapsible_hint' => ' (pode ser reduzido a uma única caixa)',
     'editor.notes'              => 'Notas',
     'editor.notes_empty'        => 'Selecione um nó ou subgraph para editar suas notas.',
     'editor.notes_placeholder'  => 'Escreva aqui as notas para o elemento selecionado. Elas são salvas no fonte como comentários %% (também visíveis para o Claude).',

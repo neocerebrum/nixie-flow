@@ -145,6 +145,8 @@ return [
     'editor.move_title'         => 'Auswahl verschieben: Subgraph als Ziel anklicken (oder den Hintergrund für Root)',
     'editor.move_label'         => 'In Subgraph verschieben',
     'editor.delete_title'       => 'Auswahl löschen (Knoten, Edge oder Subgraph)',
+    'editor.modal.subgraph.collapsible'      => 'Einklappbar',
+    'editor.modal.subgraph.collapsible_hint' => ' (kann zu einem einzelnen Kasten reduziert werden)',
     'editor.notes'              => 'Notizen',
     'editor.notes_empty'        => 'Wählen Sie einen Knoten oder Subgraph aus, um dessen Notizen zu bearbeiten.',
     'editor.notes_placeholder'  => 'Schreiben Sie hier Notizen zum ausgewählten Element. Sie werden in der Quelle als %%-Kommentare gespeichert (auch für Claude sichtbar).',

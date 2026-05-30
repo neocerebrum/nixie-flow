@@ -451,6 +451,13 @@ table.data th.actions { text-align: right; }
 .modal-box .field { display: block; margin-bottom: 12px; font-size: 0.9rem; color: var(--fg); }
 .modal-box .field > span { display: block; margin-bottom: 4px; }
 .modal-box .field > span small { color: var(--muted); font-weight: normal; }
+/* Inline checkbox row (label + checkbox on one line), e.g. subgraph "Collapsible". */
+.modal-box .field-check {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 12px; font-size: 0.9rem; color: var(--fg); cursor: pointer;
+}
+.modal-box .field-check input { width: auto; margin: 0; }
+.modal-box .field-check small { color: var(--muted); font-weight: normal; }
 .modal-box input[type=text] {
     width: 100%; padding: 6px 8px;
     background: var(--bg); color: var(--fg);

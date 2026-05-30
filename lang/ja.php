@@ -142,6 +142,8 @@ return [
     'editor.move_title'         => '選択を移動: 移動先のサブグラフをクリック（または背景でルートへ）',
     'editor.move_label'         => 'サブグラフに移動',
     'editor.delete_title'       => '選択を削除（ノード、エッジ、またはサブグラフ）',
+    'editor.modal.subgraph.collapsible'      => '折りたたみ可能',
+    'editor.modal.subgraph.collapsible_hint' => '（単一のボックスに折りたためます）',
     'editor.notes'              => 'メモ',
     'editor.notes_empty'        => 'ノードまたはサブグラフを選択してメモを編集してください。',
     'editor.notes_placeholder'  => '選択した要素のメモをここに記入してください。ソースに %% コメントとして保存されます（Claudeからも参照可能）。',

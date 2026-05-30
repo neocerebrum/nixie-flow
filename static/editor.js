@@ -312,6 +312,18 @@
   // live in nodeStyles/subgraphStyles/edgeStyles) — it only changes future
   // clicks. See normalizePalettes / DEFAULT_PALETTES.
   let palettes = normalizePalettes(bootstrap.layout && bootstrap.layout.palettes);
+  // Collapsible subgraphs (human-side only — never encoded in the Mermaid
+  // source). `collapsibleIds` = subgraphs the user marked as collapsible;
+  // `collapsedIds` ⊆ collapsibleIds = those currently shown collapsed. Both are
+  // persisted in the layout JSON as arrays (Sets don't JSON-serialize) so the
+  // collapse state is remembered across reloads and travels to collaborators.
+  // `collapseDisplace` is transient (never persisted): per just-expanded id it
+  // records how far each surrounding node was pushed to "make space", so a
+  // later collapse can reverse it exactly. The saved `positions` always hold
+  // the collapsed-baseline layout — expansion displacement is recomputed.
+  let collapsibleIds = new Set((bootstrap.layout && bootstrap.layout.collapsibleIds) || []);
+  let collapsedIds   = new Set((bootstrap.layout && bootstrap.layout.collapsedIds) || []);
+  let collapseDisplace = {};
   // Promote legacy quadratic bends to cubic on initial load (idempotent).
   // `migrateAllBends` is a function declaration so it's hoisted within this IIFE.
   migrateAllBends();
@@ -328,6 +340,8 @@
       positions, edgeAnchors, edgeBend,
       nodeStyles, subgraphStyles, edgeStyles,
       palettes,
+      collapsibleIds: [...collapsibleIds],
+      collapsedIds: [...collapsedIds],
     };
   }
   let currentRevisionId = bootstrap.revision_id;
@@ -594,6 +608,8 @@
       subgraphStyles: JSON.parse(JSON.stringify(subgraphStyles)),
       edgeStyles: JSON.parse(JSON.stringify(edgeStyles)),
       palettes: JSON.parse(JSON.stringify(palettes)),
+      collapsibleIds: [...collapsibleIds],
+      collapsedIds: [...collapsedIds],
     });
     if (history.length > HISTORY_CAP) {
       history = history.slice(history.length - HISTORY_CAP);
@@ -617,6 +633,8 @@
     nodeStyles = JSON.parse(JSON.stringify(snap.nodeStyles || {}));
     subgraphStyles = JSON.parse(JSON.stringify(snap.subgraphStyles || {}));
     edgeStyles = JSON.parse(JSON.stringify(snap.edgeStyles || {}));
+    collapsibleIds = new Set(snap.collapsibleIds || []);
+    collapsedIds = new Set(snap.collapsedIds || []);
     palettes = normalizePalettes(snap.palettes);
     currentPaletteGroup = null; // force swatch rebuild — colors may have changed
     renderActivePalette();
@@ -718,9 +736,17 @@
     reorderClustersByContainment(svgEl);
     offsetArrowMarkers(svgEl);
     applyVisualStyles(svgEl);
+    applyCollapsibleClasses(svgEl);
     applySavedPositions();
+    applyExpansionSpacing();
     updateAllClusterBounds();
+    applyCollapsedState(svgEl);
+    // Second pass: expanded ancestors re-fit around any now-shrunk nested boxes
+    // (the guard in updateClusterBounds leaves collapsed boxes at their fixed
+    // size). Harmless single no-op cost when nothing is collapsed.
+    if (collapsedIds.size > 0) updateAllClusterBounds();
     rerouteAllEdges();
+    raiseExpandedEntities(svgEl);
     recomputeViewBoxFromNodes(svgEl);
     attachDragHandlers(svgEl);
     attachClusterHandlers(svgEl);
@@ -743,6 +769,7 @@
     }
     updateToolbarState();
     applyNoteTooltips();
+    renderCollapseButtons();
     // SVG was rebuilt — repaint peer-selection overlay so external selections
     // stay visible across remote-poll reloads.
     if (typeof renderPeerSelections === "function") renderPeerSelections();
@@ -910,6 +937,44 @@
       if (props.stroke) e.path.style.stroke = props.stroke;
       if (props.color && e.label) paintLabelText(e.label, props);
     }
+  }
+
+  // Tag collapsible/collapsed clusters with CSS classes so they read as a
+  // distinct object class (a dashed accent outline while expanded, a node-like
+  // box once collapsed). Pure marking — hiding members / shrinking the box is
+  // done later in applyCollapsedState. Stale ids (subgraph removed via source
+  // edits) are pruned so the buckets don't accumulate orphans.
+  function applyCollapsibleClasses(svgEl) {
+    let pruned = false;
+    for (const id of [...collapsibleIds]) {
+      if (!clusterMap[id]) { collapsibleIds.delete(id); collapsedIds.delete(id); pruned = true; }
+    }
+    for (const id of [...collapsedIds]) {
+      if (!collapsibleIds.has(id)) { collapsedIds.delete(id); pruned = true; }
+    }
+    if (pruned) markDirtyLayout();
+    for (const id of Object.keys(clusterMap)) {
+      const c = clusterMap[id];
+      if (!c || !c.g) continue;
+      c.g.classList.toggle("collapsible", collapsibleIds.has(id));
+      c.g.classList.toggle("collapsed", collapsedIds.has(id));
+    }
+  }
+
+  // Set / clear the "collapsible" flag on a subgraph id. Unmarking a currently-
+  // collapsed subgraph also expands it so we never leave a hidden-but-unmarkable
+  // box behind. Returns true if the flag changed. Persistence / re-render is the
+  // caller's responsibility (the edit-subgraph modal batches it with the rest).
+  function setSubgraphCollapsible(id, on) {
+    const was = collapsibleIds.has(id);
+    if (on === was) return false;
+    if (on) {
+      collapsibleIds.add(id);
+    } else {
+      collapsibleIds.delete(id);
+      collapsedIds.delete(id);
+    }
+    return true;
   }
 
   // Paint the primitive shape children of a node group (rect, polygon, circle,
@@ -1617,8 +1682,13 @@
   }
 
   function rerouteEdge(edge) {
-    const sn = endpointInfo(edge.source);
-    const tn = endpointInfo(edge.target);
+    // If an endpoint is inside a collapsed subgraph, attach to that box instead
+    // of the (hidden) node. effectiveEndpoint is identity when nothing relevant
+    // is collapsed, so normal routing is unaffected.
+    const srcId = effectiveEndpoint(edge.source);
+    const tgtId = effectiveEndpoint(edge.target);
+    const sn = endpointInfo(srcId);
+    const tn = endpointInfo(tgtId);
     if (!sn || !tn) return;
     const sT = getWorldTranslate(sn.g);
     const tT = getWorldTranslate(tn.g);
@@ -1640,8 +1710,8 @@
     const eFrame = getElementParentTranslate(edge.path);
     const sx = sxW - eFrame.x, sy = syW - eFrame.y;
     const tx = txW - eFrame.x, ty = tyW - eFrame.y;
-    const sIsCluster = !!clusterMap[edge.source];
-    const tIsCluster = !!clusterMap[edge.target];
+    const sIsCluster = !!clusterMap[srcId];
+    const tIsCluster = !!clusterMap[tgtId];
     const bend = edgeBend[edgeKey(edge)] || null;
     let labelX, labelY;
     if (bend) {
@@ -1702,6 +1772,619 @@
   function rerouteAllEdges() {
     for (const e of edges) rerouteEdge(e);
     renderEdgeHotspots();
+  }
+
+  // ── Collapse/expand buttons ───────────────────────────────────────────────
+  // One SVG overlay group at the <svg> root holding a small button per visible
+  // collapsible subgraph, glued to the box's top-right corner. World coords are
+  // used so the overlay tracks pan/zoom automatically (same trick as
+  // g.edge-hotspots / g.edge-bend); the button is counter-scaled by the current
+  // screen CTM so it keeps a constant on-screen size at any zoom level. Rebuilt
+  // on every render and after any in-place box geometry change (drag).
+  const COLLAPSE_BTN_SIZE = 22; // on-screen px (square)
+  const COLLAPSE_BTN_INSET = 0; // on-screen px from the box's top-right corner (0 = flush to border)
+
+  function renderCollapseButtons() {
+    const svgEl = diagramEl && diagramEl.querySelector("svg");
+    if (!svgEl) return;
+    const old = svgEl.querySelector(":scope > g.collapse-buttons");
+    if (old) old.remove();
+    if (!canWrite) return;
+    if (collapsibleIds.size === 0) return;
+    const ctm = svgEl.getScreenCTM();
+    const scale = ctm ? ctm.a : 1;          // world→screen factor (uniform)
+    const sizeW = COLLAPSE_BTN_SIZE / scale; // button side in world units
+    const insetW = COLLAPSE_BTN_INSET / scale;
+    const SVG_NS = "http://www.w3.org/2000/svg";
+    const overlay = document.createElementNS(SVG_NS, "g");
+    overlay.setAttribute("class", "collapse-buttons");
+    svgEl.appendChild(overlay);
+    for (const id of collapsibleIds) {
+      const c = clusterMap[id];
+      if (!c) continue;
+      // Skip boxes hidden inside an outer collapsed ancestor (Phase 5). For now
+      // the hidden check is cheap: an offsetParent-less / display:none g.
+      if (isHiddenByCollapsedAncestor(id)) continue;
+      const box = getClusterRectWorldBbox(c);
+      if (!box) continue;
+      const collapsed = collapsedIds.has(id);
+      const x = box.maxX - sizeW - insetW;
+      const y = box.minY + insetW;
+      const g = document.createElementNS(SVG_NS, "g");
+      g.setAttribute("class", "collapse-btn");
+      g.setAttribute("data-sg-id", id);
+      const rect = document.createElementNS(SVG_NS, "rect");
+      rect.setAttribute("class", "collapse-btn-bg");
+      rect.setAttribute("x", x); rect.setAttribute("y", y);
+      rect.setAttribute("width", sizeW); rect.setAttribute("height", sizeW);
+      rect.setAttribute("rx", 3 / scale);
+      const use = document.createElementNS(SVG_NS, "use");
+      use.setAttribute("href", collapsed ? "#icon-maximize" : "#icon-minimize");
+      const pad = sizeW * 0.22;
+      use.setAttribute("x", x + pad); use.setAttribute("y", y + pad);
+      use.setAttribute("width", sizeW - 2 * pad); use.setAttribute("height", sizeW - 2 * pad);
+      use.setAttribute("class", "collapse-btn-icon");
+      g.appendChild(rect);
+      g.appendChild(use);
+      overlay.appendChild(g);
+      const onDown = (ev) => {
+        if (connectingState) return;
+        if (ev.pointerType === "mouse" && ev.button !== 0) return;
+        // Beat the cluster-drag handler (which only bails on g.node).
+        ev.stopPropagation();
+        ev.preventDefault();
+        toggleCollapse(id);
+      };
+      g.addEventListener("pointerdown", onDown);
+    }
+  }
+
+  // True when `id` (cluster) lives inside another subgraph that is currently
+  // collapsed, so its own button/box is not visible. Builds the owner chain for
+  // both nodes and nested subgraphs.
+  function isHiddenByCollapsedAncestor(id) {
+    if (collapsedIds.size === 0) return false;
+    const owners = computeNodeSubgraphOwners(currentSource);
+    for (const cid of Object.keys(clusterMap)) {
+      for (const sgId of (clusterMap[cid].directSubgraphs || [])) {
+        if (owners[sgId] === undefined) owners[sgId] = cid;
+      }
+    }
+    let cur = owners[id];
+    while (cur) {
+      if (collapsedIds.has(cur)) return true;
+      cur = owners[cur];
+    }
+    return false;
+  }
+
+  // Toggle the collapsed state of a collapsible subgraph, then re-render: the
+  // render pipeline (applyCollapsedState) does the actual hide/shrink/reattach.
+  // The COLLAPSED layout is canonical (what positions{} stores / saves); EXPAND
+  // is a transient "make space" view. So expanding computes how far to push the
+  // surrounding nodes outward and records it in collapseDisplace[id]; collapsing
+  // discards that record. The push itself is reapplied to live translates every
+  // render by applyExpansionSpacing and is NEVER written to positions{}.
+  function toggleCollapse(id) {
+    if (!collapsibleIds.has(id) || !clusterMap[id]) return;
+    if (collapsedIds.has(id)) {
+      // → expand: snapshot how far to push surrounding nodes (measured now,
+      // while members are still at their collapsed-baseline positions).
+      collapsedIds.delete(id);
+      collapseDisplace[id] = computeExpansionDisplacement(id);
+    } else {
+      // → collapse: surrounding nodes return to baseline; drop the snapshot.
+      collapsedIds.add(id);
+      delete collapseDisplace[id];
+    }
+    markDirtyLayout();
+    pushHistory();
+    renderDiagram();
+  }
+
+  // World bbox of a subgraph's member nodes computed from cached half-extents
+  // (nodeMap centerLocal/halfW/halfH) rather than getBBox — so it works even
+  // while the members are display:none (collapsed). Returns null if empty.
+  function membersWorldBbox(members) {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let any = false;
+    for (const mid of members) {
+      const n = nodeMap[mid];
+      if (!n) continue;
+      const t = getWorldTranslate(n.g);
+      const cx = t.x + n.centerLocal.x, cy = t.y + n.centerLocal.y;
+      if (cx - n.halfW < minX) minX = cx - n.halfW;
+      if (cy - n.halfH < minY) minY = cy - n.halfH;
+      if (cx + n.halfW > maxX) maxX = cx + n.halfW;
+      if (cy + n.halfH > maxY) maxY = cy + n.halfH;
+      any = true;
+    }
+    return any ? { minX, minY, maxX, maxY } : null;
+  }
+
+  // Compute how far each surrounding node should move to "make space" when the
+  // subgraph `id` expands from its collapsed box to its full size. Nodes above
+  // the box center move up by (expandedH−collapsedH)/2, below move down, left
+  // move left, right move right (the user's spec). Members of `id` stay put.
+  // Returns { nodeId: {dx, dy} } in world units (translation deltas, so they're
+  // frame-invariant and can be added directly to any node's transform).
+  function computeExpansionDisplacement(id) {
+    const c = clusterMap[id];
+    if (!c) return {};
+    const bb = membersWorldBbox(c.members);
+    if (!bb) return {};
+    const pd = c.padding || { left: 16, top: 16, right: 16, bottom: 16 };
+    // Expanded box extents; top padding is larger (title room) so the box —
+    // collapsed and expanded alike — is centered at cxW/cyW, matching
+    // applyCollapsedState (NOT the raw members-bbox center).
+    const expW = (bb.maxX - bb.minX) + pd.left + pd.right;
+    const expH = (bb.maxY - bb.minY) + pd.top + pd.bottom;
+    const cx = (bb.minX + bb.maxX) / 2 + (pd.right - pd.left) / 2;
+    const cy = (bb.minY + bb.maxY) / 2 + (pd.bottom - pd.top) / 2;
+    const cw = collapsedBoxWidth(c);
+    const dX = Math.max(0, expW / 2 - cw / 2);
+    const dY = Math.max(0, expH / 2 - COLLAPSED_BOX_H / 2);
+    // Zones use the COLLAPSED box edges (what the user sees and positions nodes
+    // around), so a node just outside the small box gets the full push and lands
+    // just outside the expanded box — symmetric on both sides, no overlaps.
+    const left = cx - cw / 2, right = cx + cw / 2;
+    const top = cy - COLLAPSED_BOX_H / 2, bottom = cy + COLLAPSED_BOX_H / 2;
+    // Push zones, decided by where a node sits relative to the expanded box:
+    //   • beyond right edge (any Y)  → push right  (horizontal only)
+    //   • beyond left edge  (any Y)  → push left   (horizontal only)
+    //   • above top / below bottom, but within [left,right] → push vertically
+    //   • INSIDE the footprint (within [left,right] AND [top,bottom]) → push
+    //     along the dominant axis (single-axis, no diagonals). These are the
+    //     nearby nodes that would otherwise be overlapped by the growing box:
+    //     because collapsed members keep their full internal layout, the
+    //     expanded footprint is already large and centered on the box, so a
+    //     visually-close node can fall inside it and must still make room.
+    // Corners (beyond a side edge AND above/below) fall into the horizontal
+    // zones, so they move only horizontally — no diagonal pushes.
+    const out = {};
+    for (const nid of Object.keys(nodeMap)) {
+      if (c.members.has(nid)) continue;
+      const n = nodeMap[nid];
+      const t = getWorldTranslate(n.g);
+      const ncx = t.x + n.centerLocal.x, ncy = t.y + n.centerLocal.y;
+      let ddx = 0, ddy = 0;
+      if (ncx > right) ddx = dX;
+      else if (ncx < left) ddx = -dX;
+      else if (ncy < top) ddy = -dY;       // within horizontal range, above
+      else if (ncy > bottom) ddy = dY;     // within horizontal range, below
+      else {
+        // Inside the collapsed box (rare): push out along the axis on which the
+        // node is proportionally farther from the box center.
+        const nx = (ncx - cx) / (cw / 2 || 1);
+        const ny = (ncy - cy) / (COLLAPSED_BOX_H / 2 || 1);
+        if (Math.abs(nx) >= Math.abs(ny)) ddx = (nx >= 0 ? dX : -dX);
+        else ddy = (ny >= 0 ? dY : -dY);
+      }
+      if (ddx || ddy) out[nid] = { dx: ddx, dy: ddy };
+    }
+    return out;
+  }
+
+  // Reapply the transient expansion displacement (recorded per expanded
+  // subgraph) on top of the baseline positions set by applySavedPositions.
+  // Runs every render; never touches positions{}. Stale entries for a
+  // now-collapsed subgraph are dropped.
+  function applyExpansionSpacing() {
+    for (const sgId of Object.keys(collapseDisplace)) {
+      if (collapsedIds.has(sgId) || !clusterMap[sgId]) {
+        delete collapseDisplace[sgId];
+        continue;
+      }
+      const d = collapseDisplace[sgId];
+      for (const nid of Object.keys(d)) {
+        const n = nodeMap[nid];
+        if (!n) continue;
+        const t = getNodeTranslate(n.g);
+        setNodeTranslate(n.g, t.x + d[nid].dx, t.y + d[nid].dy);
+      }
+    }
+  }
+
+  // Sum of every active (non-collapsed) subgraph's displacement for one node.
+  // Subtracted on drag-commit so the saved baseline excludes the transient push.
+  function totalExpansionDelta(nodeId) {
+    let dx = 0, dy = 0;
+    for (const sgId of Object.keys(collapseDisplace)) {
+      if (collapsedIds.has(sgId)) continue;
+      const e = collapseDisplace[sgId][nodeId];
+      if (e) { dx += e.dx; dy += e.dy; }
+    }
+    return { dx, dy };
+  }
+
+  // Frame offset (world − local) for each node currently moved into the z-raise
+  // layer; rebuilt by raiseExpandedEntities each render. Empty when nothing is
+  // raised. See computeBaselinePosition.
+  let _raiseFrameOffset = {};
+
+  // The value to store in positions{} for a node after a drag: convert its live
+  // translate back to the collapsed-baseline LOCAL frame by removing (a) the
+  // z-raise frame offset (if the node is in the identity raise layer) and (b) the
+  // transient expansion displacement. Identity when nothing is raised/expanded.
+  function computeBaselinePosition(id, liveTranslate) {
+    const off = _raiseFrameOffset[id] || { x: 0, y: 0 };
+    const d = totalExpansionDelta(id);
+    return { x: liveTranslate.x - off.x - d.dx, y: liveTranslate.y - off.y - d.dy };
+  }
+
+  // ── Collapsed-state rendering ─────────────────────────────────────────────
+  // Collapsed capsule box (world units; the diagram isn't zoomed at layout time
+  // so 1 world unit ≈ 1 px at fit). Width ADAPTS to the title like a normal node
+  // (see collapsedBoxWidth); COLLAPSED_BOX_W is only the fallback seed. Height is
+  // fixed — titles are single-line.
+  const COLLAPSED_BOX_W = 150;
+  const COLLAPSED_BOX_H = 54;
+  const COLLAPSED_MIN_W = 80;        // smallest box (very short titles)
+  const COLLAPSED_PAD_X = 14;        // breathing room each side of the title
+  const COLLAPSED_BTN_RESERVE = 26;  // right strip kept clear for the button
+  // Width that fits the title + side padding + the expand-button strip, floored
+  // at COLLAPSED_MIN_W. Cached on the cluster (_collapsedW) so it survives a
+  // moment when the label can't be measured (e.g. at expand time).
+  function collapsedBoxWidth(c) {
+    let textW = 0;
+    if (c && c.label) {
+      let lbb; try { lbb = c.label.getBBox(); } catch (_) { lbb = null; }
+      if (lbb && lbb.width > 0) textW = lbb.width;
+    }
+    if (textW <= 0) return (c && c._collapsedW) || COLLAPSED_BOX_W;
+    const w = Math.max(COLLAPSED_MIN_W,
+      Math.round(textW + COLLAPSED_PAD_X * 2 + COLLAPSED_BTN_RESERVE));
+    if (c) c._collapsedW = w;
+    return w;
+  }
+
+  // True if `id` (a cluster id) sits inside another subgraph that is currently
+  // collapsed — walk the source-derived owner chain. Used to skip inner boxes
+  // whose ancestor already hides them.
+  function hasCollapsedAncestor(id, owners) {
+    let cur = owners[id];
+    while (cur) {
+      if (collapsedIds.has(cur)) return true;
+      cur = owners[cur];
+    }
+    return false;
+  }
+
+  // For a node/subgraph id, return the OUTERMOST collapsed ancestor subgraph id
+  // (the box an external edge should reattach to), or null if none of its
+  // ancestors are collapsed. Walks the full owner chain and keeps the last hit.
+  function outermostCollapsedAncestor(id, owners) {
+    let cur = owners[id], outer = null;
+    while (cur) {
+      if (collapsedIds.has(cur)) outer = cur;
+      cur = owners[cur];
+    }
+    return outer;
+  }
+
+  // Apply collapsed visuals after layout: hide member nodes + intra-box edges,
+  // shrink each collapsed cluster's bg to a fixed node-sized rect centered on
+  // its current box center, and recenter the title. Reattachment of crossing
+  // edges to the box is handled in rerouteEdge via effectiveEndpoint(); this
+  // function only deals with visibility + box geometry. Idempotent: it first
+  // clears any hidden flags from a previous pass.
+  function applyCollapsedState(svgEl) {
+    // 1) Reset visibility from any previous render pass.
+    for (const id of Object.keys(nodeMap)) nodeMap[id].g.style.display = "";
+    for (const e of edges) {
+      if (e.path) e.path.style.display = "";
+      if (e.hitPath) e.hitPath.style.display = "";
+      if (e.label) e.label.style.display = "";
+    }
+    for (const id of Object.keys(clusterMap)) {
+      const c = clusterMap[id];
+      if (c && c.g) c.g.style.display = "";
+    }
+    if (collapsedIds.size === 0) return;
+
+    const owners = computeNodeSubgraphOwners(currentSource);
+    // Subgraph→parent owner chain (computeNodeSubgraphOwners only covers nodes).
+    // Build it from each cluster's direct subgraph children.
+    for (const cid of Object.keys(clusterMap)) {
+      for (const sgId of (clusterMap[cid].directSubgraphs || [])) {
+        if (owners[sgId] === undefined) owners[sgId] = cid;
+      }
+    }
+    window.__collapseOwners = owners; // shared with effectiveEndpoint this render
+
+    // 2) Process collapsed boxes outermost-first so an inner collapsed box that
+    //    lives under an outer collapsed box is simply hidden with the rest.
+    const collapsed = [...collapsedIds].filter(id => clusterMap[id]);
+    collapsed.sort((a, b) =>
+      (clusterMap[b].members.size || 0) - (clusterMap[a].members.size || 0));
+
+    for (const id of collapsed) {
+      const c = clusterMap[id];
+      // Skip if an outer collapsed ancestor already hides this whole subtree.
+      if (hasCollapsedAncestor(id, owners)) { c.g.style.display = "none"; continue; }
+      // Box center = center of the EXPANDED box this subgraph would have, so
+      // collapse and expand are concentric (expand grows from / collapse shrinks
+      // to the same point). The expanded box = members bbox + padding, exactly
+      // as updateClusterBounds computes it; the top padding is larger (room for
+      // the title), so centering on the raw members bbox instead would make the
+      // box expand off-center toward a corner. Derived from the members' (saved)
+      // positions via cached extents, so it works while members are hidden.
+      const mb = membersWorldBbox(c.members);
+      const box = mb || getClusterRectWorldBbox(c);
+      if (!box) continue;
+      const pd = c.padding || { left: 0, top: 0, right: 0, bottom: 0 };
+      const exLeft = box.minX - pd.left, exRight = box.maxX + pd.right;
+      const exTop = box.minY - pd.top, exBottom = box.maxY + pd.bottom;
+      const cxW = (exLeft + exRight) / 2;
+      const cyW = (exTop + exBottom) / 2;
+      // Hide every member node + any nested cluster <g>.
+      for (const mid of c.members) {
+        if (nodeMap[mid]) nodeMap[mid].g.style.display = "none";
+      }
+      for (const cid of Object.keys(clusterMap)) {
+        if (cid === id) continue;
+        if (c.members.has(cid) || isDescendantSubgraph(cid, id, owners)) {
+          clusterMap[cid].g.style.display = "none";
+        }
+      }
+      // Shrink the bg to the fixed box, centered on cxW/cyW. Keep the SAME bg
+      // origin convention as updateClusterBounds (bg.x = pad.rx, bg.y = pad.ry):
+      // that function positions the g assuming bg.x/y equal rx/ry and never
+      // rewrites them, so zeroing them here would make a later expand land off by
+      // (rx,ry) — the "shifts right/down on expand" bug. With a consistent origin
+      // the box is concentric across collapse/expand cycles.
+      const rx = pd.rx || 0, ry = pd.ry || 0;
+      const boxW = collapsedBoxWidth(c);
+      const halfW = boxW / 2, halfH = COLLAPSED_BOX_H / 2;
+      const parentW = getWorldTranslate(c.g.parentNode);
+      const gx = cxW - halfW - rx - parentW.x;
+      const gy = cyW - halfH - ry - parentW.y;
+      setNodeTranslate(c.g, gx, gy);
+      c.bg.setAttribute("x", rx);
+      c.bg.setAttribute("y", ry);
+      c.bg.setAttribute("width", boxW);
+      c.bg.setAttribute("height", COLLAPSED_BOX_H);
+      // Center the title in the area left of the button strip.
+      if (c.label) {
+        let lbb; try { lbb = c.label.getBBox(); } catch (_) { lbb = null; }
+        if (lbb) {
+          setNodeTranslate(c.label,
+            rx + (boxW - COLLAPSED_BTN_RESERVE) / 2 - (lbb.x + lbb.width / 2),
+            ry + halfH - (lbb.y + lbb.height / 2));
+        }
+      }
+    }
+
+    // 3) Hide edges that are fully internal to a collapsed box (both endpoints
+    //    resolve to the SAME collapsed ancestor). Crossing edges stay visible
+    //    and get reattached by rerouteEdge.
+    for (const e of edges) {
+      const sEff = outermostCollapsedAncestor(e.source, owners) || e.source;
+      const tEff = outermostCollapsedAncestor(e.target, owners) || e.target;
+      if (sEff === tEff && collapsedIds.has(sEff)) {
+        if (e.path) e.path.style.display = "none";
+        if (e.hitPath) e.hitPath.style.display = "none";
+        if (e.label) e.label.style.display = "none";
+      }
+    }
+  }
+
+  // Build a complete owner chain (node→parent subgraph AND subgraph→parent
+  // subgraph) from the current source + clusterMap. computeNodeSubgraphOwners
+  // only covers nodes, so we add the subgraph→parent links.
+  function buildOwnerChain() {
+    const owners = computeNodeSubgraphOwners(currentSource);
+    for (const cid of Object.keys(clusterMap)) {
+      for (const sgId of (clusterMap[cid].directSubgraphs || [])) {
+        if (owners[sgId] === undefined) owners[sgId] = cid;
+      }
+    }
+    return owners;
+  }
+  function hasAncestorIn(id, owners, set) {
+    let cur = owners[id];
+    while (cur) { if (set.has(cur)) return true; cur = owners[cur]; }
+    return false;
+  }
+
+  // Raise EXPANDED collapsible subgraphs — with everything they contain — above
+  // the rest of the diagram (the user's model: the expanded entity becomes the
+  // focus, on top of all; everything else is left untouched).
+  //
+  // Mermaid scatters a subgraph's pieces across DOM layers (bg in g.clusters,
+  // members in g.nodes, internal edges in g.edgePaths) and across nested roots,
+  // so there's no single subtree node to bump. Instead we move every piece into
+  // one identity-transform <g class="expanded-raise"> appended last under the
+  // <svg> (top of paint order). Each cluster bg / member node keeps its place by
+  // having its transform rewritten to its full world translate (the raise layer
+  // has no transform, so a child's own transform IS its world position). Edges
+  // are moved then re-routed: rerouteEdge derives geometry from the live
+  // endpoints + the path's parent frame, so once the path sits in the (identity)
+  // raise layer it recomputes correctly. The whole SVG is rebuilt each render,
+  // so nothing needs un-raising.
+  //
+  // Paint order inside the raise layer follows natural nesting (see below): each
+  // cluster's bg then the edges it owns, outermost-first, with all member nodes
+  // last — so an inner expanded capsule paints above the OUTER capsule's edges
+  // that merely cross it, while edges connecting INTO a box still sit above it.
+  function raiseExpandedEntities(svgEl) {
+    if (collapsibleIds.size === 0) return;
+    const expandedSet = new Set([...collapsibleIds].filter(id =>
+      clusterMap[id] && !collapsedIds.has(id)));
+    if (expandedSet.size === 0) return;
+    const owners = buildOwnerChain();
+    // Drop expanded boxes that are themselves hidden inside a collapsed ancestor.
+    for (const id of [...expandedSet]) {
+      let cur = owners[id], hidden = false;
+      while (cur) { if (collapsedIds.has(cur)) { hidden = true; break; } cur = owners[cur]; }
+      if (hidden) expandedSet.delete(id);
+    }
+    if (expandedSet.size === 0) return;
+
+    // Clusters to raise: any expanded box + any cluster nested inside one.
+    const raiseClusterIds = Object.keys(clusterMap).filter(cid =>
+      expandedSet.has(cid) || hasAncestorIn(cid, owners, expandedSet));
+    const raiseClusterIdSet = new Set(raiseClusterIds);
+    // Nodes to raise: any node whose owner chain enters an expanded box.
+    const raiseNodeIds = Object.keys(nodeMap).filter(nid =>
+      hasAncestorIn(nid, owners, expandedSet));
+    const raiseNodeSet = new Set(raiseNodeIds);
+    // Edges to raise: at least one endpoint inside the expanded entity — both
+    // fully-internal edges AND edges coming from outside INTO an internal
+    // node/subgraph, so the latter aren't hidden behind the raised box. An
+    // endpoint can be a node (in raiseNodeSet) or a subgraph id that is itself
+    // raised (e.g. an edge that targets a nested subgraph directly).
+    const isRaisedEndpoint = (eid) =>
+      raiseNodeSet.has(eid) || raiseClusterIdSet.has(eid);
+    const raiseEdges = edges.filter(e =>
+      isRaisedEndpoint(e.source) || isRaisedEndpoint(e.target));
+
+    // Capture world translates BEFORE moving anything (a move only affects
+    // descendants, and none of these elements contains another in this list).
+    // Also record each node's FRAME OFFSET = world − local = the world translate
+    // of its original parent. Moving a node into the identity raise layer makes
+    // its getNodeTranslate read world coords; a later drag-commit subtracts this
+    // offset to convert back to the original (nested) local frame that
+    // positions{}/applySavedPositions use — otherwise a nested raised node would
+    // be saved in world coords and reappear shifted by the wrapper offset.
+    _raiseFrameOffset = {};
+    const clusterWorld = {};
+    for (const cid of raiseClusterIds) clusterWorld[cid] = getWorldTranslate(clusterMap[cid].g);
+    const nodeWorld = {};
+    for (const nid of raiseNodeIds) {
+      const w = getWorldTranslate(nodeMap[nid].g);
+      const l = getNodeTranslate(nodeMap[nid].g);
+      nodeWorld[nid] = w;
+      _raiseFrameOffset[nid] = { x: w.x - l.x, y: w.y - l.y };
+    }
+
+    const SVG_NS = "http://www.w3.org/2000/svg";
+    const layer = document.createElementNS(SVG_NS, "g");
+    layer.setAttribute("class", "expanded-raise");
+    svgEl.appendChild(layer);
+
+    // Paint order inside the raise layer must mimic natural nesting z-order, or
+    // an OUTER capsule's edges paint above an INNER expanded capsule (edges
+    // "passing over" a nested box). Compute each raised cluster's nesting depth,
+    // then assign every raised edge to its OWNER = the deepest raised cluster
+    // reached by either endpoint. Emitting, outermost-first, each cluster's bg
+    // followed by the edges it owns means: an edge merely CROSSING a deeper box
+    // (no endpoint inside it) stays owned by the shallower box and paints UNDER
+    // the deeper one, while an edge connecting INTO a box paints above it.
+    const clusterDepth = {};
+    for (const cid of raiseClusterIds) {
+      let d = 0, cur = owners[cid];
+      while (cur) { if (raiseClusterIdSet.has(cur)) d++; cur = owners[cur]; }
+      clusterDepth[cid] = d;
+    }
+    const deepestRaisedCluster = (eid) => {
+      if (raiseClusterIdSet.has(eid)) return eid;
+      let cur = owners[eid];
+      while (cur) { if (raiseClusterIdSet.has(cur)) return cur; cur = owners[cur]; }
+      return null;
+    };
+    const edgesByOwner = {};
+    for (const e of raiseEdges) {
+      const cs = deepestRaisedCluster(e.source), ct = deepestRaisedCluster(e.target);
+      const ds = cs ? clusterDepth[cs] : -1;
+      const dt = ct ? clusterDepth[ct] : -1;
+      const owner = (ds >= dt ? cs : ct) || cs || ct;
+      (edgesByOwner[owner] = edgesByOwner[owner] || []).push(e);
+    }
+    // 1) per cluster, outermost-first: bg then the edges it owns.
+    raiseClusterIds.sort((a, b) => clusterDepth[a] - clusterDepth[b]);
+    for (const cid of raiseClusterIds) {
+      const g = clusterMap[cid].g;
+      layer.appendChild(g);
+      setNodeTranslate(g, clusterWorld[cid].x, clusterWorld[cid].y);
+      for (const e of (edgesByOwner[cid] || [])) {
+        if (e.path) layer.appendChild(e.path);
+        if (e.hitPath) layer.appendChild(e.hitPath);
+        if (e.label) layer.appendChild(e.label);
+      }
+    }
+    // 2) member nodes on top of all bgs/edges.
+    for (const nid of raiseNodeIds) {
+      const g = nodeMap[nid].g;
+      layer.appendChild(g);
+      setNodeTranslate(g, nodeWorld[nid].x, nodeWorld[nid].y);
+    }
+    // Re-route raised edges now that endpoints + paths share the identity frame.
+    for (const e of raiseEdges) rerouteEdge(e);
+  }
+
+  // Position a collapsed cluster's box: shrink the bg to the fixed collapsed
+  // size, centered on the center of the EXPANDED box this subgraph would have so
+  // collapse/expand are concentric. Derived from the members' live world
+  // positions (works while they're display:none), so it stays correct whenever
+  // the members move — including mid-drag, where it's called directly (the full
+  // applyCollapsedState pass doesn't run during a drag).
+  function placeCollapsedBox(c) {
+    if (!c || !c.bg) return;
+    const mb = membersWorldBbox(c.members);
+    const box = mb || getClusterRectWorldBbox(c);
+    if (!box) return;
+    const pd = c.padding || { left: 0, top: 0, right: 0, bottom: 0 };
+    // Expanded box = members bbox + padding (top padding larger for the title),
+    // so center on that — not the raw members bbox — to stay concentric.
+    const cxW = (box.minX - pd.left + box.maxX + pd.right) / 2;
+    const cyW = (box.minY - pd.top + box.maxY + pd.bottom) / 2;
+    // Keep updateClusterBounds' bg-origin convention (bg.x=rx, bg.y=ry); zeroing
+    // them would offset a later expand by (rx,ry).
+    const rx = pd.rx || 0, ry = pd.ry || 0;
+    const boxW = collapsedBoxWidth(c);
+    const halfW = boxW / 2, halfH = COLLAPSED_BOX_H / 2;
+    const parentW = getWorldTranslate(c.g.parentNode);
+    setNodeTranslate(c.g, cxW - halfW - rx - parentW.x, cyW - halfH - ry - parentW.y);
+    c.bg.setAttribute("x", rx);
+    c.bg.setAttribute("y", ry);
+    c.bg.setAttribute("width", boxW);
+    c.bg.setAttribute("height", COLLAPSED_BOX_H);
+    if (c.label) {
+      let lbb; try { lbb = c.label.getBBox(); } catch (_) { lbb = null; }
+      if (lbb) {
+        setNodeTranslate(c.label,
+          rx + (boxW - COLLAPSED_BTN_RESERVE) / 2 - (lbb.x + lbb.width / 2),
+          ry + halfH - (lbb.y + lbb.height / 2));
+      }
+    }
+  }
+
+  // Re-place every currently-visible collapsed box from its members' live
+  // positions, and reroute their incident edges. Called during drags so a
+  // collapsed child box follows when its (expanded) parent — or any ancestor —
+  // is moved; the full render pass that normally repositions it doesn't run
+  // mid-drag.
+  function repositionVisibleCollapsedBoxes() {
+    if (collapsedIds.size === 0) return;
+    for (const id of collapsedIds) {
+      const c = clusterMap[id];
+      if (!c || !c.g || c.g.style.display === "none") continue;
+      placeCollapsedBox(c);
+      if (c.incomingEdges) for (const e of c.incomingEdges) rerouteEdge(e);
+      if (c.outgoingEdges) for (const e of c.outgoingEdges) rerouteEdge(e);
+    }
+  }
+
+  // True if subgraph `cid` is nested (at any depth) inside subgraph `ancestorId`.
+  function isDescendantSubgraph(cid, ancestorId, owners) {
+    let cur = owners[cid];
+    while (cur) {
+      if (cur === ancestorId) return true;
+      cur = owners[cur];
+    }
+    return false;
+  }
+
+  // Resolve an edge endpoint id to the box it should actually attach to: if the
+  // endpoint is inside a collapsed subgraph, that's the outermost collapsed
+  // ancestor; otherwise the endpoint itself. Used by rerouteEdge so crossing
+  // edges terminate on the collapsed box instead of a hidden node.
+  function effectiveEndpoint(id) {
+    if (collapsedIds.size === 0) return id;
+    const owners = window.__collapseOwners;
+    if (!owners) return id;
+    return outermostCollapsedAncestor(id, owners) || id;
   }
 
   // Render the hotspot overlay for the currently selected edge. No-op when
@@ -2083,6 +2766,9 @@
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const id of ids) {
       const g = nodeMap[id].g;
+      // Hidden inside a collapsed subgraph — excluded so collapsing shrinks the
+      // fit instead of reserving empty space for the members.
+      if (g.style.display === "none") continue;
       let bb;
       try { bb = g.getBBox(); } catch (_) { continue; }
       const t = g.transform.baseVal.consolidate();
@@ -2094,6 +2780,18 @@
       if (y1 < minY) minY = y1;
       if (x2 > maxX) maxX = x2;
       if (y2 > maxY) maxY = y2;
+    }
+    // Collapsed subgraph boxes aren't in nodeMap; include their visible bg rects
+    // so a fully-collapsed region still contributes to the fit.
+    for (const cid of collapsedIds) {
+      const c = clusterMap[cid];
+      if (!c || !c.g || c.g.style.display === "none") continue;
+      const b = getClusterRectWorldBbox(c);
+      if (!b) continue;
+      if (b.minX < minX) minX = b.minX;
+      if (b.minY < minY) minY = b.minY;
+      if (b.maxX > maxX) maxX = b.maxX;
+      if (b.maxY > maxY) maxY = b.maxY;
     }
     if (minX === Infinity) return;
     const pad = 30;
@@ -2129,11 +2827,15 @@
     return any ? { minX, minY, maxX, maxY } : null;
   }
 
-  // World bbox of a cluster's bg rect, in current SVG state. The bg's x/y
-  // is g-local; we add the g's translate to lift it into world coords.
+  // World bbox of a cluster's bg rect, in current SVG state. The bg's x/y is
+  // g-local; we lift it into TRUE world coords via getWorldTranslate, which
+  // walks the full ancestor chain. Critical for NESTED subgraphs: Mermaid wraps
+  // a nested cluster in an extra <g class="root" transform="…"> that
+  // getNodeTranslate (own transform only) would miss, anchoring the box at the
+  // wrong origin (phantom margin) and breaking tracking when it moves.
   function getClusterRectWorldBbox(c) {
     if (!c || !c.bg || c.bg.tagName.toLowerCase() !== "rect") return null;
-    const t = getNodeTranslate(c.g);
+    const t = getWorldTranslate(c.g);
     const rx = parseFloat(c.bg.getAttribute("x")) || 0;
     const ry = parseFloat(c.bg.getAttribute("y")) || 0;
     const rw = parseFloat(c.bg.getAttribute("width")) || 0;
@@ -2141,10 +2843,13 @@
     return { minX: t.x + rx, minY: t.y + ry, maxX: t.x + rx + rw, maxY: t.y + ry + rh };
   }
 
-  // Bbox a cluster should *enclose with padding*: union of direct child
-  // node bboxes plus nested cluster rects. Computing this from direct
-  // children — instead of every recursively-nested node — keeps the
-  // outer cluster's margins symmetric when nested clusters move.
+  // Bbox a cluster should *enclose with padding*, in TRUE world coords: union
+  // of direct child node bboxes plus nested cluster rects. Everything is lifted
+  // via getWorldTranslate so direct nodes and nested sub-clusters (which sit
+  // under an extra wrapper <g>) are measured in the SAME frame — the old code
+  // mixed getNodeTranslate for nodes with a shallow translate for sub-clusters,
+  // so a nested subgraph was placed at the wrong offset. updateClusterBounds
+  // converts this back into the cluster's parent frame before writing.
   function computeClusterDirectChildrenBbox(clusterId) {
     const c = clusterMap[clusterId];
     if (!c) return null;
@@ -2162,7 +2867,7 @@
       if (!n) continue;
       let bb;
       try { bb = n.g.getBBox(); } catch (_) { continue; }
-      const t = getNodeTranslate(n.g);
+      const t = getWorldTranslate(n.g);
       include({ minX: bb.x + t.x, minY: bb.y + t.y, maxX: bb.x + t.x + bb.width, maxY: bb.y + t.y + bb.height });
     }
     for (const sgId of (c.directSubgraphs || [])) {
@@ -2176,11 +2881,21 @@
     const c = clusterMap[clusterId];
     if (!c || !c.bg || !c.padding) return;
     if (c.bg.tagName.toLowerCase() !== "rect") return;
+    // A collapsed cluster has its members hidden; its box is a fixed node-sized
+    // rect placed by applyCollapsedState, so don't re-grow it from (empty)
+    // children here.
+    if (collapsedIds.has(clusterId)) return;
     const mb = computeClusterDirectChildrenBbox(clusterId);
     if (!mb) return;
     const pad = c.padding;
-    const newCx = mb.minX - pad.left - pad.rx;
-    const newCy = mb.minY - pad.top - pad.ry;
+    // mb is in world coords; the cluster's transform is interpreted in its
+    // PARENT's frame, so subtract the parent's world offset. Top-level clusters
+    // have their direct nodes in the same frame as the parent, so this cancels
+    // out (identical to the old behaviour); nested clusters get the wrapper <g>
+    // offset correctly accounted for.
+    const parentW = getWorldTranslate(c.g.parentNode);
+    const newCx = mb.minX - pad.left - pad.rx - parentW.x;
+    const newCy = mb.minY - pad.top - pad.ry - parentW.y;
     const newW = (mb.maxX - mb.minX) + pad.left + pad.right;
     const newH = (mb.maxY - mb.minY) + pad.top + pad.bottom;
     setNodeTranslate(c.g, newCx, newCy);
@@ -2233,7 +2948,7 @@
       const target = c.bg || c.g;
       target.style.cursor = "pointer";
       target.style.pointerEvents = "auto";
-      target.addEventListener("pointerdown", (ev) => {
+      const onClusterPointerDown = (ev) => {
         if (ev.target.closest("g.node")) return;
         // Mouse: ignore non-primary buttons. Touch/pen: button is 0 only on
         // the primary contact, which is what we want.
@@ -2276,7 +2991,17 @@
         if (connectingState === "move-target") { handleMoveTargetClick(id); return; }
         if (connectingState) return;
         startClusterDrag(ev, svgEl, id);
-      });
+      };
+      target.addEventListener("pointerdown", onClusterPointerDown);
+      // The title sits on top of the bg and would otherwise swallow the press,
+      // leaving only a thin grabbable border (worst on a fixed-size collapsed
+      // capsule). Let a press on the title drag the box too; dblclick-to-rename
+      // is wired separately on the label text and still fires.
+      if (c.label) {
+        c.label.style.pointerEvents = "auto";
+        c.label.style.cursor = "pointer";
+        c.label.addEventListener("pointerdown", onClusterPointerDown);
+      }
     }
   }
 
@@ -2345,6 +3070,9 @@
         if (gc.c.incomingEdges) for (const e of gc.c.incomingEdges) rerouteEdge(e);
         if (gc.c.outgoingEdges) for (const e of gc.c.outgoingEdges) rerouteEdge(e);
       }
+      // Collapsed child boxes follow their moved members during the drag.
+      repositionVisibleCollapsedBoxes();
+      renderCollapseButtons();
     }
     function onUp(e) {
       if (e && e.pointerId !== pointerId) return;
@@ -2361,7 +3089,10 @@
       for (const m of memberStates) {
         const t = getNodeTranslate(m.n.g);
         if (t.x !== m.originX || t.y !== m.originY) {
-          positions[m.id] = { x: t.x, y: t.y };
+          // Save the collapsed-baseline LOCAL position: strip the z-raise frame
+          // offset (for nested raised nodes) and any transient expansion push so
+          // positions{} stays the canonical (collapsed) layout.
+          positions[m.id] = computeBaselinePosition(m.id, t);
           changed++;
         }
       }
@@ -2563,6 +3294,8 @@
         if (gc.c.incomingEdges) for (const e of gc.c.incomingEdges) rerouteEdge(e);
         if (gc.c.outgoingEdges) for (const e of gc.c.outgoingEdges) rerouteEdge(e);
       }
+      repositionVisibleCollapsedBoxes();
+      renderCollapseButtons();
       n.g.classList.toggle("snapping", !!(snap.snapX || snap.snapY));
       if (snap.snapX || snap.snapY) {
         const parts = [];
@@ -2580,7 +3313,8 @@
       if (moved) {
         for (const gs of groupStates) {
           const gt = getNodeTranslate(gs.n.g);
-          positions[gs.id] = { x: gt.x, y: gt.y };
+          // Strip z-raise frame offset + transient expansion → collapsed baseline.
+          positions[gs.id] = computeBaselinePosition(gs.id, gt);
         }
         markDirtyLayout();
         pushHistory();
@@ -4035,6 +4769,10 @@
     document.getElementById("subgraphModalError").textContent = "";
     document.getElementById("subgraphIdInput").value = "";
     document.getElementById("subgraphTitleInput").value = "";
+    // The collapsible flag is a property of an existing subgraph — only offered
+    // when editing, hidden during creation.
+    document.getElementById("subgraphCollapsibleField").classList.add("hidden");
+    document.getElementById("subgraphCollapsibleInput").checked = false;
     const where = parentId ? ` (nested in ${parentId})` : "";
     document.getElementById("subgraphMembersInfo").textContent =
       `${ids.length} nodes${where}: ${ids.join(", ")}`;
@@ -4054,6 +4792,8 @@
     document.getElementById("subgraphIdInput").value = subgraphId;
     document.getElementById("subgraphTitleInput").value = title;
     document.getElementById("subgraphMembersInfo").textContent = "";
+    document.getElementById("subgraphCollapsibleField").classList.remove("hidden");
+    document.getElementById("subgraphCollapsibleInput").checked = collapsibleIds.has(subgraphId);
     setTimeout(() => {
       const inp = document.getElementById("subgraphIdInput");
       inp.focus(); inp.select();
@@ -4119,6 +4859,15 @@
       markDirtyLayout();
     }
     if (newId !== oldId) renameIdInEdgeAnchors(oldId, newId);
+    // Carry the collapsible/collapsed flags across a rename, then apply the
+    // checkbox value to the (possibly new) id.
+    if (newId !== oldId) {
+      if (collapsibleIds.has(oldId)) { collapsibleIds.delete(oldId); collapsibleIds.add(newId); }
+      if (collapsedIds.has(oldId)) { collapsedIds.delete(oldId); collapsedIds.add(newId); }
+    }
+    if (setSubgraphCollapsible(newId, document.getElementById("subgraphCollapsibleInput").checked)) {
+      markDirtyLayout();
+    }
     if (selectedClusterIds.has(oldId)) {
       selectedClusterIds.delete(oldId);
       selectedClusterIds.add(newId);
@@ -4492,6 +5241,9 @@
     svgEl.setAttribute("viewBox",
       `${viewState.x} ${viewState.y} ${viewState.width} ${viewState.height}`);
     updateSelectionHaloScale(svgEl);
+    // Collapse buttons are sized in world units counter-scaled to the zoom, so
+    // they need a rebuild whenever the viewBox changes to stay constant on-screen.
+    renderCollapseButtons();
   }
 
   // The selection halo filter uses feMorphology with `radius` in user units,

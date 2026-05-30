@@ -373,6 +373,14 @@ body.deleting-edge g.edgeLabels > g:hover .edgeLabel { outline: 2px solid #bf616
 g.cluster:hover > rect:first-of-type,
 g.cluster:hover > polygon:first-of-type,
 g.cluster:hover > path:first-of-type { filter: brightness(1.15); }
+/* Collapsible subgraphs (human-side macroblocks): a marked-but-expanded cluster
+   gets a dashed accent outline so the object class is recognizable. The
+   collapsed node-like look + per-box buttons land in later phases. */
+g.cluster.collapsible:not(.collapsed) > rect:first-of-type,
+g.cluster.collapsible:not(.collapsed) > polygon:first-of-type,
+g.cluster.collapsible:not(.collapsed) > path:first-of-type {
+    stroke-dasharray: 6 4;
+}
 g.cluster.selected > rect:first-of-type,
 g.cluster.selected > polygon:first-of-type,
 g.cluster.selected > path:first-of-type {
@@ -455,6 +463,23 @@ body.deleting g.cluster:hover > path:first-of-type {
 #diagram g.edge-bend .edge-bend-dot.snapping {
     fill: #c0392b;
     stroke: #c0392b;
+}
+
+/* Collapse/expand buttons — one per visible collapsible subgraph, glued to the
+   box's top-right corner. Sized in world units (counter-scaled to zoom) so the
+   on-screen size stays constant. The icon inherits color via currentColor. */
+#diagram g.collapse-buttons { pointer-events: none; }
+#diagram g.collapse-buttons .collapse-btn { pointer-events: all; cursor: pointer; }
+#diagram g.collapse-buttons .collapse-btn-bg {
+    fill: rgba(46, 52, 64, 0.92);
+    stroke: #88c0d0;
+    stroke-width: 1px;
+    transition: fill 80ms ease-out;
+}
+#diagram g.collapse-buttons .collapse-btn:hover .collapse-btn-bg { fill: #5e81ac; }
+#diagram g.collapse-buttons .collapse-btn-icon {
+    color: #eceff4;
+    pointer-events: none;
 }
 
 /* Peer selections (other viewers' current selection, shared via presence).

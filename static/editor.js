@@ -2035,10 +2035,17 @@
     return any ? { minX, minY, maxX, maxY } : null;
   }
 
-  // Compute how far each surrounding node should move to "make space" when the
-  // subgraph `id` expands from its collapsed box to its full size. Nodes above
-  // the box center move up by (expandedH−collapsedH)/2, below move down, left
-  // move left, right move right (the user's spec). Members of `id` stay put.
+  // Compute how far the surrounding layout should move to "make space" when the
+  // subgraph `id` expands from its collapsed box to its full size. Beyond the
+  // box center: above → up by (expandedH−collapsedH)/2, below → down, left →
+  // left, right → right. Members of `id` stay put.
+  //
+  // Granularity is the top-level SIBLING UNIT, not the bare node: every
+  // non-member node is grouped under its outermost ancestor subgraph that
+  // doesn't contain `id` (or itself, if a free node), and the whole unit gets
+  // ONE delta decided from the unit's own footprint — so a sibling subgraph or
+  // capsule makes way rigidly instead of deforming. A collapsed sibling is
+  // measured by its VISIBLE small box, not its spread-out hidden members.
   // Returns { nodeId: {dx, dy} } in world units (translation deltas, so they're
   // frame-invariant and can be added directly to any node's transform).
   function computeExpansionDisplacement(id) {
@@ -2074,26 +2081,58 @@
     //     visually-close node can fall inside it and must still make room.
     // Corners (beyond a side edge AND above/below) fall into the horizontal
     // zones, so they move only horizontally — no diagonal pushes.
-    const out = {};
+    // Decide the push for a unit whose footprint center is (ncx, ncy).
+    const pushFor = (ncx, ncy) => {
+      if (ncx > right) return { dx: dX, dy: 0 };
+      if (ncx < left) return { dx: -dX, dy: 0 };
+      if (ncy < top) return { dx: 0, dy: -dY };   // within horizontal range, above
+      if (ncy > bottom) return { dx: 0, dy: dY };  // within horizontal range, below
+      // Inside the collapsed box (rare): push out along the dominant axis.
+      const nx = (ncx - cx) / (cw / 2 || 1);
+      const ny = (ncy - cy) / (COLLAPSED_BOX_H / 2 || 1);
+      if (Math.abs(nx) >= Math.abs(ny)) return { dx: nx >= 0 ? dX : -dX, dy: 0 };
+      return { dx: 0, dy: ny >= 0 ? dY : -dY };
+    };
+    // World footprint of a sibling unit: a collapsed capsule by its visible box,
+    // an expanded subgraph by its members+padding box, a free node by its rect.
+    const unitBbox = (u) => {
+      if (clusterMap[u]) {
+        if (collapsedIds.has(u)) return collapsedBoxWorldBbox(clusterMap[u]);
+        const mb = membersWorldBbox(clusterMap[u].members);
+        if (!mb) return getClusterRectWorldBbox(clusterMap[u]);
+        const p = clusterMap[u].padding || { left: 0, top: 0, right: 0, bottom: 0 };
+        return { minX: mb.minX - p.left, minY: mb.minY - p.top, maxX: mb.maxX + p.right, maxY: mb.maxY + p.bottom };
+      }
+      const n = nodeMap[u];
+      if (!n) return null;
+      const t = getWorldTranslate(n.g);
+      const ux = t.x + n.centerLocal.x, uy = t.y + n.centerLocal.y;
+      return { minX: ux - n.halfW, minY: uy - n.halfH, maxX: ux + n.halfW, maxY: uy + n.halfH };
+    };
+    // Map a node to its sibling unit: the outermost ancestor subgraph that does
+    // NOT contain `id`, or the node itself when it has no such ancestor.
+    const owners = buildOwnerChain();
+    const ancC = new Set([id]);
+    for (let cur = owners[id]; cur; cur = owners[cur]) ancC.add(cur);
+    const unitOf = (nid) => {
+      let unit = nid;
+      for (let cur = owners[nid]; cur; cur = owners[cur]) if (!ancC.has(cur)) unit = cur;
+      return unit;
+    };
+    // Group non-member nodes by unit, then push each unit as a whole.
+    const groups = {};
     for (const nid of Object.keys(nodeMap)) {
       if (c.members.has(nid)) continue;
-      const n = nodeMap[nid];
-      const t = getWorldTranslate(n.g);
-      const ncx = t.x + n.centerLocal.x, ncy = t.y + n.centerLocal.y;
-      let ddx = 0, ddy = 0;
-      if (ncx > right) ddx = dX;
-      else if (ncx < left) ddx = -dX;
-      else if (ncy < top) ddy = -dY;       // within horizontal range, above
-      else if (ncy > bottom) ddy = dY;     // within horizontal range, below
-      else {
-        // Inside the collapsed box (rare): push out along the axis on which the
-        // node is proportionally farther from the box center.
-        const nx = (ncx - cx) / (cw / 2 || 1);
-        const ny = (ncy - cy) / (COLLAPSED_BOX_H / 2 || 1);
-        if (Math.abs(nx) >= Math.abs(ny)) ddx = (nx >= 0 ? dX : -dX);
-        else ddy = (ny >= 0 ? dY : -dY);
-      }
-      if (ddx || ddy) out[nid] = { dx: ddx, dy: ddy };
+      const u = unitOf(nid);
+      (groups[u] = groups[u] || []).push(nid);
+    }
+    const out = {};
+    for (const u of Object.keys(groups)) {
+      const ub = unitBbox(u);
+      if (!ub) continue;
+      const d = pushFor((ub.minX + ub.maxX) / 2, (ub.minY + ub.maxY) / 2);
+      if (!d.dx && !d.dy) continue;
+      for (const nid of groups[u]) out[nid] = { dx: d.dx, dy: d.dy };
     }
     return out;
   }
@@ -2492,6 +2531,22 @@
           ry + halfH - (lbb.y + lbb.height / 2));
       }
     }
+  }
+
+  // World bbox of a collapsed capsule's VISIBLE box, derived from its members
+  // so it's correct even before applyCollapsedState lays the box out (e.g. the
+  // load-time spacing reconstruction runs before that pass). Mirrors
+  // placeCollapsedBox: box centred on the members-bbox-plus-padding centre,
+  // sized collapsedBoxWidth × COLLAPSED_BOX_H.
+  function collapsedBoxWorldBbox(c) {
+    if (!c) return null;
+    const mb = membersWorldBbox(c.members) || getClusterRectWorldBbox(c);
+    if (!mb) return null;
+    const pd = c.padding || { left: 0, top: 0, right: 0, bottom: 0 };
+    const cxW = (mb.minX - pd.left + mb.maxX + pd.right) / 2;
+    const cyW = (mb.minY - pd.top + mb.maxY + pd.bottom) / 2;
+    const halfW = collapsedBoxWidth(c) / 2, halfH = COLLAPSED_BOX_H / 2;
+    return { minX: cxW - halfW, minY: cyW - halfH, maxX: cxW + halfW, maxY: cyW + halfH };
   }
 
   // Re-place every currently-visible collapsed box from its members' live

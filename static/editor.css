@@ -418,6 +418,7 @@ body.deleting g.cluster:hover > path:first-of-type {
     fill: rgba(46, 52, 64, 0.85);
     stroke: #88c0d0;
     stroke-width: 1.5px;
+    vector-effect: non-scaling-stroke;
     transition: r 80ms ease-out, fill 80ms ease-out, stroke 80ms ease-out;
 }
 #diagram g.edge-hotspots .hotspot:hover {
@@ -445,6 +446,7 @@ body.deleting g.cluster:hover > path:first-of-type {
     stroke: #4c566a;
     stroke-width: 1px;
     stroke-dasharray: 3 3;
+    vector-effect: non-scaling-stroke;
     opacity: 0.7;
 }
 #diagram g.edge-bend .edge-bend-hit {
@@ -459,6 +461,7 @@ body.deleting g.cluster:hover > path:first-of-type {
     fill: rgba(46, 52, 64, 0.85);
     stroke: #88c0d0;
     stroke-width: 1.5px;
+    vector-effect: non-scaling-stroke;
     transition: fill 80ms ease-out, stroke 80ms ease-out;
 }
 #diagram g.edge-bend .edge-bend-dot:hover { fill: #88c0d0; }
@@ -469,6 +472,52 @@ body.deleting g.cluster:hover > path:first-of-type {
 #diagram g.edge-bend .edge-bend-dot.snapping {
     fill: #c0392b;
     stroke: #c0392b;
+}
+
+/* Edge endpoint handles: amber rings sitting on the two real edge endpoints of
+   the selected edge. Drag one onto another node/subgraph to reconnect that end.
+   Amber (not the frost blue of the bend dots) so the two affordances read as
+   different operations even though both live on the selected edge. */
+#diagram g.edge-endpoints { pointer-events: none; }
+#diagram g.edge-endpoints .edge-endpoint-hit {
+    pointer-events: all;
+    cursor: grab;
+    fill: transparent;
+    stroke: none;
+}
+#diagram g.edge-endpoints .edge-endpoint-dot {
+    pointer-events: all;
+    cursor: grab;
+    fill: rgba(46, 52, 64, 0.85);
+    stroke: #d08770;
+    stroke-width: 2.5px;
+    vector-effect: non-scaling-stroke;
+    transition: fill 80ms ease-out, stroke 80ms ease-out;
+}
+#diagram g.edge-endpoints .edge-endpoint-dot:hover { fill: #d08770; }
+body.reconnecting { cursor: grabbing; }
+body.reconnecting #diagram path.flowchart-link.selected { opacity: 0.4; }
+#diagram .edge-reconnect-ghost {
+    pointer-events: none;
+    fill: none;
+    stroke: #d08770;
+    stroke-width: 2px;
+    stroke-dasharray: 6 4;
+    vector-effect: non-scaling-stroke;
+    opacity: 0.9;
+}
+/* Valid drop target highlight while dragging an endpoint. */
+.node.reconnect-target > rect:first-of-type,
+.node.reconnect-target > polygon:first-of-type,
+.node.reconnect-target > path:first-of-type,
+.node.reconnect-target > circle:first-of-type,
+.node.reconnect-target > ellipse:first-of-type,
+g.cluster.reconnect-target > rect:first-of-type,
+g.cluster.reconnect-target > polygon:first-of-type,
+g.cluster.reconnect-target > path:first-of-type {
+    stroke: #a3be8c !important;
+    stroke-width: 3px !important;
+    stroke-dasharray: none !important;
 }
 
 /* Collapse/expand buttons — one per visible collapsible subgraph, glued to the

@@ -2642,6 +2642,25 @@
 
   // ── Edge hotspots & bend handles ────────────────────────────────────────
 
+  // Overlay handles (anchor hotspots, bend handles, endpoint handles) live in
+  // the svg's viewBox space, so a fixed world-unit radius shrinks on screen as
+  // you zoom out — making the small curvature handles on long edges unclickable.
+  // We size them in screen pixels instead: world radius = px × (world units per
+  // screen pixel). renderEdgeHotspots is rebuilt on every pan/zoom (from
+  // applyViewState) so these stay constant on-screen. Strokes use
+  // vector-effect:non-scaling-stroke (CSS) so they don't need rescaling here.
+  function overlayUnitsPerPx(svgEl) {
+    if (!viewState) return 1;
+    const rect = svgEl.getBoundingClientRect();
+    if (!rect.width || !rect.height) return 1;
+    const upp = Math.max(viewState.width / rect.width, viewState.height / rect.height);
+    return (isFinite(upp) && upp > 0) ? upp : 1;
+  }
+  // On-screen handle sizes (px). Multiplied by overlayUnitsPerPx at draw time.
+  const HOTSPOT_HIT_PX = 9, HOTSPOT_DOT_PX = 4, HOTSPOT_DOT_ACTIVE_PX = 5.5;
+  const BEND_HIT_PX = 11, BEND_DOT_PX = 5;
+  const ENDPOINT_HIT_PX = 12, ENDPOINT_DOT_PX = 6.5;
+
   // Render the hotspot overlay for the currently selected edge. No-op when
   // nothing is selected or the source/target shapes don't support anchors.
   // World coords live in the svg's top-level user space, so we append at the
@@ -2652,6 +2671,7 @@
     const old = svgEl.querySelector(":scope > g.edge-hotspots");
     if (old) old.remove();
     renderEdgeBendHandle();
+    renderEdgeEndpointHandles();
     // Anchor hotspots / bend handles only make sense on a single edge — on
     // multi-select they'd be ambiguous and crowd the canvas.
     const soleKey = singleEdgeKey();
@@ -2823,17 +2843,18 @@
     if (!sHidden) overlay.appendChild(mkTangent(sxW, syW, c1.x, c1.y));
     if (!tHidden) overlay.appendChild(mkTangent(txW, tyW, c2.x, c2.y));
 
+    const u = overlayUnitsPerPx(svgEl);
     const mkHandle = (which, cp, isStraight) => {
       const hit = document.createElementNS(SVG_NS, "circle");
       hit.setAttribute("class", "edge-bend-hit");
       hit.setAttribute("data-cp", String(which));
       hit.setAttribute("cx", cp.x); hit.setAttribute("cy", cp.y);
-      hit.setAttribute("r", 10);
+      hit.setAttribute("r", BEND_HIT_PX * u);
       const dot = document.createElementNS(SVG_NS, "circle");
       dot.setAttribute("class", "edge-bend-dot" + (isStraight ? " straight" : ""));
       dot.setAttribute("data-cp", String(which));
       dot.setAttribute("cx", cp.x); dot.setAttribute("cy", cp.y);
-      dot.setAttribute("r", 5);
+      dot.setAttribute("r", BEND_DOT_PX * u);
       overlay.appendChild(hit);
       overlay.appendChild(dot);
       const start = (ev) => {
@@ -2969,8 +2990,197 @@
     document.addEventListener("pointercancel", onUp);
   }
 
+  // Draggable handles sitting on the actual edge endpoints. Grabbing one and
+  // dropping it on a different node/subgraph reconnects that end of the edge
+  // (rewrites the Mermaid line in place). A handle whose endpoint is hidden
+  // inside a collapsed capsule has no visible shape to sit on, so it's
+  // suppressed — same rule as the bend handles.
+  function renderEdgeEndpointHandles() {
+    const svgEl = diagramEl && diagramEl.querySelector("svg");
+    if (!svgEl) return;
+    const old = svgEl.querySelector(":scope > g.edge-endpoints");
+    if (old) old.remove();
+    const soleKey = singleEdgeKey();
+    if (!soleKey) return;
+    if (!canWrite) return;
+    const edge = findEdgeByKey(soleKey);
+    if (!edge) return;
+    const ep = edgeWorldEndpoints(edge);
+    if (!ep) return;
+    const sHidden = isEndpointHidden(edge.source);
+    const tHidden = isEndpointHidden(edge.target);
+    if (sHidden && tHidden) return;
+    const SVG_NS = "http://www.w3.org/2000/svg";
+    const u = overlayUnitsPerPx(svgEl);
+    const overlay = document.createElementNS(SVG_NS, "g");
+    overlay.setAttribute("class", "edge-endpoints");
+    svgEl.appendChild(overlay);
+    const mk = (which, x, y) => {
+      const hit = document.createElementNS(SVG_NS, "circle");
+      hit.setAttribute("class", "edge-endpoint-hit");
+      hit.setAttribute("data-end", which);
+      hit.setAttribute("cx", x); hit.setAttribute("cy", y);
+      hit.setAttribute("r", ENDPOINT_HIT_PX * u);
+      const dot = document.createElementNS(SVG_NS, "circle");
+      dot.setAttribute("class", "edge-endpoint-dot");
+      dot.setAttribute("data-end", which);
+      dot.setAttribute("cx", x); dot.setAttribute("cy", y);
+      dot.setAttribute("r", ENDPOINT_DOT_PX * u);
+      overlay.appendChild(hit);
+      overlay.appendChild(dot);
+      const start = (ev) => {
+        if (connectingState) return;
+        if (!lockHeldByMe()) return;
+        if (ev.pointerType === "mouse" && ev.button !== 0) return;
+        ev.stopPropagation();
+        ev.preventDefault();
+        beginEndpointDrag(ev, soleKey, which);
+      };
+      hit.addEventListener("pointerdown", start);
+      dot.addEventListener("pointerdown", start);
+    };
+    // Pull each handle a little back along the edge's tangent (toward its bend
+    // control point) so it never sits under the endpoint's anchor hotspot and
+    // stays grabbable even when the edge terminates on/near a pinned anchor.
+    // The inset is clamped to a fraction of the edge length so the two handles
+    // can't cross on a short edge.
+    const { sxW, syW, txW, tyW } = ep;
+    let c1, c2;
+    if (edgeBend[soleKey]) {
+      const b = edgeBend[soleKey];
+      c1 = bendCpWorld(sxW, syW, txW, tyW, b, 1);
+      c2 = bendCpWorld(sxW, syW, txW, tyW, b, 2);
+    } else {
+      const auto = autoCurveCps(edge);
+      if (auto) { c1 = auto.c1; c2 = auto.c2; }
+      else {
+        c1 = bendCpWorld(sxW, syW, txW, tyW, BEND_DEFAULT, 1);
+        c2 = bendCpWorld(sxW, syW, txW, tyW, BEND_DEFAULT, 2);
+      }
+    }
+    const chord = Math.hypot(txW - sxW, tyW - syW) || 1;
+    const inset = Math.min(ENDPOINT_HANDLE_INSET_PX * u, chord * 0.3);
+    const along = (px, py, cx, cy) => {
+      const dx = cx - px, dy = cy - py, d = Math.hypot(dx, dy) || 1;
+      return { x: px + (dx / d) * inset, y: py + (dy / d) * inset };
+    };
+    const sP = along(sxW, syW, c1.x, c1.y);
+    const tP = along(txW, tyW, c2.x, c2.y);
+    if (!sHidden) mk("source", sP.x, sP.y);
+    if (!tHidden) mk("target", tP.x, tP.y);
+  }
+  // Screen-px inset pulling an endpoint reconnect handle back along the edge
+  // (scaled by overlayUnitsPerPx at draw time, like the handle radii).
+  const ENDPOINT_HANDLE_INSET_PX = 20;
+
+  function beginEndpointDrag(downEv, key, which) {
+    const svgEl = diagramEl && diagramEl.querySelector("svg");
+    if (!svgEl) return;
+    const edge = findEdgeByKey(key);
+    if (!edge) return;
+    const ep = edgeWorldEndpoints(edge);
+    if (!ep) return;
+    // The opposite end stays pinned; the ghost line runs from it to the cursor.
+    const fixed = which === "source"
+      ? { x: ep.txW, y: ep.tyW } : { x: ep.sxW, y: ep.syW };
+    const oldId = which === "source" ? edge.source : edge.target;
+    const SVG_NS = "http://www.w3.org/2000/svg";
+    const ghost = document.createElementNS(SVG_NS, "line");
+    ghost.setAttribute("class", "edge-reconnect-ghost");
+    ghost.setAttribute("x1", fixed.x); ghost.setAttribute("y1", fixed.y);
+    ghost.setAttribute("x2", which === "source" ? ep.sxW : ep.txW);
+    ghost.setAttribute("y2", which === "source" ? ep.syW : ep.tyW);
+    svgEl.appendChild(ghost);
+    document.body.classList.add("reconnecting");
+
+    let hoverId = null; // currently-highlighted valid drop target, or null
+    const targetG = (id) => (nodeMap[id] && nodeMap[id].g) || (clusterMap[id] && clusterMap[id].g) || null;
+    const clearHover = () => {
+      if (hoverId) {
+        const g = targetG(hoverId);
+        if (g) g.classList.remove("reconnect-target");
+        hoverId = null;
+      }
+    };
+
+    const onMove = (ev) => {
+      ev.preventDefault();
+      const p = screenToSvg(svgEl, ev.clientX, ev.clientY);
+      ghost.setAttribute("x2", p.x); ghost.setAttribute("y2", p.y);
+      const id = nodeOrClusterAt(p.x, p.y);
+      const valid = id && id !== oldId;
+      if (id !== hoverId) {
+        clearHover();
+        if (valid) {
+          const g = targetG(id);
+          if (g) { g.classList.add("reconnect-target"); hoverId = id; }
+        }
+      }
+      setStatus(valid
+        ? __("editor.reconnect_to", id)
+        : __("editor.reconnect_hint"), false);
+    };
+    const onUp = () => {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      document.removeEventListener("pointercancel", onUp);
+      if (ghost.parentNode) ghost.parentNode.removeChild(ghost);
+      document.body.classList.remove("reconnecting");
+      const target = hoverId;
+      clearHover();
+      if (target) {
+        commitReconnect(edge, which, target);
+      } else {
+        // No valid drop — snap back: rebuild the handles where they were.
+        renderEdgeHotspots();
+        setStatus("");
+      }
+    };
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+    document.addEventListener("pointercancel", onUp);
+  }
+
+  // Persist an endpoint reconnect: rewrite the source line, migrate the edge's
+  // layout buckets (bend/style transfer; the moved side's compass anchor is
+  // dropped since it's invalid on the new shape), re-render and re-select.
+  async function commitReconnect(edge, which, newId) {
+    const oldSrc = edge.source, oldTgt = edge.target, ord = edge.ordinal;
+    const res = reconnectEndpointInSource(currentSource, oldSrc, oldTgt, ord, which, newId);
+    if (!res.ok) { setStatus(`reconnect: ${res.error}`, true); renderEdgeHotspots(); return; }
+    const newSrc = which === "source" ? newId : oldSrc;
+    const newTgt = which === "target" ? newId : oldTgt;
+    // New ordinal = count of existing edges already on that pair (document
+    // order); good enough for the common single-edge-per-pair case.
+    const newOrdinal = edges.filter((e) => e !== edge && e.source === newSrc && e.target === newTgt).length;
+    const oldKey = `${oldSrc}|${oldTgt}|${ord}`;
+    const newKey = `${newSrc}|${newTgt}|${newOrdinal}`;
+    if (oldKey !== newKey) {
+      for (const bucket of [edgeBend, edgeStyles]) {
+        if (bucket[oldKey] !== undefined) { bucket[newKey] = bucket[oldKey]; delete bucket[oldKey]; }
+      }
+      if (edgeAnchors[oldKey]) {
+        const a = { ...edgeAnchors[oldKey] };
+        if (which === "source") delete a.source; else delete a.target;
+        if (Object.keys(a).length) edgeAnchors[newKey] = a;
+        delete edgeAnchors[oldKey];
+      }
+    }
+    currentSource = res.source;
+    markDirtySource();
+    markDirtyLayout();
+    deselectNode();
+    deselectCluster();
+    selectedEdgeKeys.clear();
+    selectedEdgeKeys.add(newKey);
+    await renderDiagram();
+    pushHistory();
+    setStatus(__("editor.op.reconnected"));
+  }
+
   function drawHotspotSet(overlay, n, T, list, endpoint, activeName) {
     const SVG_NS = "http://www.w3.org/2000/svg";
+    const u = overlayUnitsPerPx(overlay.ownerSVGElement);
     for (const name of list) {
       const pt = anchorPoint(n, name);
       if (!pt) continue;
@@ -2980,13 +3190,13 @@
       hit.setAttribute("class", "hotspot-hit");
       hit.setAttribute("cx", cx);
       hit.setAttribute("cy", cy);
-      hit.setAttribute("r", 9);
+      hit.setAttribute("r", HOTSPOT_HIT_PX * u);
       // Visible dot.
       const dot = document.createElementNS(SVG_NS, "circle");
       dot.setAttribute("class", "hotspot" + (name === activeName ? " active" : ""));
       dot.setAttribute("cx", cx);
       dot.setAttribute("cy", cy);
-      dot.setAttribute("r", name === activeName ? 5.5 : 4);
+      dot.setAttribute("r", (name === activeName ? HOTSPOT_DOT_ACTIVE_PX : HOTSPOT_DOT_PX) * u);
       const onClick = (ev) => {
         ev.stopPropagation();
         ev.preventDefault();
@@ -3113,6 +3323,33 @@
     const rw = parseFloat(c.bg.getAttribute("width")) || 0;
     const rh = parseFloat(c.bg.getAttribute("height")) || 0;
     return { minX: t.x + rx, minY: t.y + ry, maxX: t.x + rx + rw, maxY: t.y + ry + rh };
+  }
+
+  // Topmost node/subgraph whose world AABB contains the point — used as the
+  // drop hit-test for edge-endpoint reconnection. Nodes win over clusters (they
+  // render on top); among clusters the innermost (smallest area) wins so you
+  // can target a nested subgraph. Endpoints hidden inside a collapsed capsule
+  // are skipped — their visible owner is the capsule box, which is itself a
+  // (non-hidden) cluster and gets picked instead.
+  function nodeOrClusterAt(wx, wy) {
+    for (const [id, n] of Object.entries(nodeMap)) {
+      if (isEndpointHidden(id)) continue;
+      let bb; try { bb = n.g.getBBox(); } catch (_) { continue; }
+      const t = getWorldTranslate(n.g);
+      if (wx >= t.x + bb.x && wx <= t.x + bb.x + bb.width &&
+          wy >= t.y + bb.y && wy <= t.y + bb.y + bb.height) return id;
+    }
+    let best = null, bestArea = Infinity;
+    for (const [id, c] of Object.entries(clusterMap)) {
+      if (isEndpointHidden(id)) continue;
+      const bb = getClusterRectWorldBbox(c);
+      if (!bb) continue;
+      if (wx >= bb.minX && wx <= bb.maxX && wy >= bb.minY && wy <= bb.maxY) {
+        const area = (bb.maxX - bb.minX) * (bb.maxY - bb.minY);
+        if (area < bestArea) { bestArea = area; best = id; }
+      }
+    }
+    return best;
   }
 
   // Bbox a cluster should *enclose with padding*, in TRUE world coords: union
@@ -4504,6 +4741,65 @@
     return { ok: false, error: `edge ${src}→${tgt} #${ordinal} not found` };
   }
 
+  // Mask bracket/pipe-label spans with a same-length sentinel run so token
+  // positions in the original line stay aligned, but label/shape text can't be
+  // mistaken for a node ref. Mirrors the stripping set used by edge deletion.
+  function maskBracketSpans(line) {
+    return line
+      .replace(/\|[^|\n]*\|/g, (m) => "\0".repeat(m.length))
+      .replace(/\[[^\]\n]*\]/g, (m) => "\0".repeat(m.length))
+      .replace(/\([^)\n]*\)/g, (m) => "\0".repeat(m.length))
+      .replace(/\{[^}\n]*\}/g, (m) => "\0".repeat(m.length));
+  }
+
+  // Replace one endpoint id token (the source-side or target-side node ref) on
+  // a single edge line with newId, preserving the connector + label verbatim.
+  // For src===tgt self-loops the source picks the first ref, target the last.
+  // A shape decl glued to the moved endpoint (e.g. `B[End]`) is dropped — the
+  // new endpoint is already declared elsewhere, so keeping its label here would
+  // be a stray re-declaration. Returns null if the token isn't found.
+  function replaceEndpointToken(line, src, tgt, which, newId) {
+    const token = which === "source" ? src : tgt;
+    const masked = maskBracketSpans(line);
+    const re = new RegExp(`\\b${regexEscape(token)}\\b`, "g");
+    const idxs = [];
+    let m;
+    while ((m = re.exec(masked))) idxs.push(m.index);
+    if (!idxs.length) return null;
+    const at = which === "source" ? idxs[0] : idxs[idxs.length - 1];
+    let end = at + token.length;
+    const close = { "[": "]", "(": ")", "{": "}" }[line[end]];
+    if (close) {
+      const ci = line.indexOf(close, end + 1);
+      if (ci !== -1) end = ci + 1;
+    }
+    return line.slice(0, at) + newId + line.slice(end);
+  }
+
+  // Move one end of an existing edge to a different node/subgraph by rewriting
+  // its Mermaid line in place (keeps arrow style, label, and line position —
+  // unlike delete+re-add). `which` is "source" or "target". Locates the edge by
+  // the same ordinal scan as deleteEdgeFromSource.
+  function reconnectEndpointInSource(source, src, tgt, ordinal, which, newId) {
+    const sEsc = regexEscape(src), tEsc = regexEscape(tgt);
+    const edgeRe = new RegExp(`\\b${sEsc}\\b\\s*${EDGE_CONN}\\s*\\b${tEsc}\\b`);
+    const lines = source.split("\n");
+    let matched = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const stripped = stripEdgeLabels(lines[i])
+        .replace(/\[[^\]\n]*\]/g, " ")
+        .replace(/\([^)\n]*\)/g, " ")
+        .replace(/\{[^}\n]*\}/g, " ");
+      if (!edgeRe.test(stripped)) continue;
+      if (matched !== ordinal) { matched++; continue; }
+      const nl = replaceEndpointToken(lines[i], src, tgt, which, newId);
+      if (nl == null) return { ok: false, error: `endpoint token not found` };
+      lines[i] = nl;
+      return { ok: true, source: lines.join("\n") };
+    }
+    return { ok: false, error: `edge ${src}→${tgt} #${ordinal} not found` };
+  }
+
   function deleteNodeFromSource(source, id) {
     const idRe = new RegExp(`\\b${regexEscape(id)}\\b`);
     function stripLabels(line) {
@@ -5503,6 +5799,10 @@
     // Collapse buttons are sized in world units counter-scaled to the zoom, so
     // they need a rebuild whenever the viewBox changes to stay constant on-screen.
     renderCollapseButtons();
+    // Edge overlay handles (hotspots / bend / endpoints) are likewise sized in
+    // screen px, so rebuild them on zoom to keep them clickable at any scale.
+    // No-op (fast early return) unless a single edge is selected.
+    renderEdgeHotspots();
   }
 
   // The selection halo filter uses feMorphology with `radius` in user units,

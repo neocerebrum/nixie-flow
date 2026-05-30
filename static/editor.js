@@ -13,6 +13,61 @@
 (function () {
   "use strict";
 
+  /* ─────────────────────────────────────────────────────────────────────
+   * SECTION MAP  (line numbers approximate — search the `// ── <name>` banner)
+   *
+   *     85  Constants
+   *    127  Color math (hex ↔ rgb ↔ hsl, luminance)
+   *    270  DOM refs
+   *    313  State
+   *    439  Phase 3: collaboration state
+   *    457  API helper (Plesk quirk: always send body + CT)
+   *    487  Validity / parse status
+   *    595  CodeMirror wrapper
+   *    653  Undo / Redo
+   *    719  Export
+   *    777  Render
+   *    873  Index / SVG helpers
+   *    971  Visual styles & painting
+   *   1111  Translate helpers & saved positions
+   *   1277  Shape geometry & anchors
+   *   1574  Arrow markers, bends & edge routing
+   *   1840  Collapse/expand buttons
+   *   2124  Collapsed-state rendering
+   *   2499  Edge hotspots & bend handles
+   *   2874  Cluster bounds & viewbox
+   *   3053  Drag handlers
+   *   3456  Label editing
+   *   3954  Align / Distribute selected nodes
+   *   4113  Notes (per-element comments)
+   *   4277  Add/delete node/edge
+   *   5021  Edge/node delete actions
+   *   5161  Connect mode (ghost edge)
+   *   5262  Move-to-subgraph: pick a target subgraph (or root) for the current
+   *   5356  Pan / zoom
+   *   5822  Selection / palette
+   *   6123  Contextual palette row
+   *   6201  Preset editor modal
+   *   6340  Eyedropper
+   *   6471  Shape change
+   *   6521  Add Node modal
+   *   6697  Save (atomic POST + optimistic locking)
+   *   6699  Autosave (PATCH /draft)
+   *   6832  Reload (discard local)
+   *   6878  Polling for remote changes
+   *   6917  UI: history modal
+   *   7009  UI: rename modal
+   *   7045  UI: conflict modal
+   *   7075  UI: remote update banner
+   *   7102  UI: toast
+   *   7118  Phase 3: presence + scepter + edit-request + share
+   *   7317  Selection broadcast (presence side-channel)
+   *   7770  Share modal
+   *   7842  Wiring
+   *   7932  Side-panel prefs (localStorage)
+   *   8147  Init
+   * ───────────────────────────────────────────────────────────────────── */
+
   const _t = window.__i18n || {};
   function __(key, ...args) {
     let s = _t[key] !== undefined ? _t[key] : key;
@@ -777,30 +832,44 @@
     setSourceValidity(true);
   }
 
-  // Set a native SVG <title> child on each node/cluster that has a note,
-  // so hovering shows the decoded text as a browser-native tooltip after
-  // the usual hover delay. Removes the title when the note is gone.
-  function applyNoteTooltips() {
-    function setTitle(g, text) {
-      let existing = g.querySelector(":scope > title");
-      if (!text) {
-        if (existing) existing.remove();
-        return;
-      }
-      if (!existing) {
-        existing = document.createElementNS("http://www.w3.org/2000/svg", "title");
-        g.insertBefore(existing, g.firstChild);
-      }
-      existing.textContent = text;
+  // Set/replace/remove a native SVG <title> child on an element so hovering
+  // shows the text as a browser-native tooltip after the usual hover delay.
+  function setNoteTitle(g, text) {
+    if (!g) return;
+    let existing = g.querySelector(":scope > title");
+    if (!text) {
+      if (existing) existing.remove();
+      return;
     }
+    if (!existing) {
+      existing = document.createElementNS("http://www.w3.org/2000/svg", "title");
+      g.insertBefore(existing, g.firstChild);
+    }
+    existing.textContent = text;
+  }
+
+  // Set a native SVG <title> child on each node/cluster that has a note.
+  function applyNoteTooltips() {
     for (const id of Object.keys(nodeMap)) {
       const enc = findNoteForId(currentSource, id);
-      setTitle(nodeMap[id].g, enc ? decodeNote(enc) : null);
+      setNoteTitle(nodeMap[id].g, enc ? decodeNote(enc) : null);
     }
     for (const id of Object.keys(clusterMap)) {
       const enc = findNoteForId(currentSource, id);
-      setTitle(clusterMap[id].g, enc ? decodeNote(enc) : null);
+      setNoteTitle(clusterMap[id].g, enc ? decodeNote(enc) : null);
     }
+  }
+
+  // Refresh just one element's tooltip live (no diagram re-render) — used after
+  // a note edit, which deliberately skips re-rendering. For a collapsed capsule
+  // the hover is owned by the collapse-hit rect on the overlay, so rebuild the
+  // overlay too (renderCollapseButtons re-reads the note onto the hit rect).
+  function refreshNoteTooltip(id) {
+    const enc = findNoteForId(currentSource, id);
+    const text = enc ? decodeNote(enc) : null;
+    const ref = (nodeMap[id] && nodeMap[id].g) || (clusterMap[id] && clusterMap[id].g);
+    setNoteTitle(ref, text);
+    if (clusterMap[id] && collapsedIds.has(id)) renderCollapseButtons();
   }
 
   async function safeRenderFromTextarea() {
@@ -912,6 +981,8 @@
       edgeIdx++;
     }
   }
+
+  // ── Visual styles & painting ────────────────────────────────────────────
 
   // Apply user-defined fills/strokes/text colors stored in the layout layer
   // (nodeStyles / subgraphStyles / edgeStyles). These directives used to live
@@ -1050,6 +1121,8 @@
       for (const g of gs) parent.insertBefore(g, anchor);
     }
   }
+
+  // ── Translate helpers & saved positions ─────────────────────────────────
 
   function extractNodeId(g) {
     const dataId = g.getAttribute("data-id");
@@ -1214,6 +1287,8 @@
     if (!t) return { x: 0, y: 0 };
     return { x: t.matrix.e, y: t.matrix.f };
   }
+
+  // ── Shape geometry & anchors ────────────────────────────────────────────
 
   function detectSvgShape(g) {
     // Mermaid can emit multiple polygons inside a single node. Composite shapes
@@ -1509,6 +1584,8 @@
     if (rx >= ry) return { x: Math.sign(lx) || 1, y: 0 };
     return { x: 0, y: Math.sign(ly) || 1 };
   }
+
+  // ── Arrow markers, bends & edge routing ─────────────────────────────────
 
   // Pull Mermaid's arrowhead markers backward along the line direction so the
   // arrow visibly sits past the node fill instead of being half-covered by it.
@@ -1808,6 +1885,62 @@
       const box = getClusterRectWorldBbox(c);
       if (!box) continue;
       const collapsed = collapsedIds.has(id);
+      // A collapsed capsule lives in the cluster layer, BELOW the edges, so an
+      // edge routed over it wins clicks (especially in the title's glyph gaps),
+      // selecting a hidden/irrelevant edge instead of the box. Lay a transparent
+      // hit rect over the whole box on this overlay (the last svg child, so it's
+      // on top): clicks anywhere on a collapsed capsule select/drag it and the
+      // edges behind are shielded. The button is appended AFTER, staying on top.
+      if (collapsed) {
+        const hit = document.createElementNS(SVG_NS, "rect");
+        hit.setAttribute("class", "collapse-hit");
+        hit.setAttribute("x", box.minX);
+        hit.setAttribute("y", box.minY);
+        hit.setAttribute("width", Math.max(0, box.maxX - box.minX));
+        hit.setAttribute("height", Math.max(0, box.maxY - box.minY));
+        hit.setAttribute("fill", "transparent");
+        hit.style.pointerEvents = "all";
+        hit.style.cursor = "pointer";
+        // The hit rect sits on top of the capsule, so it — not the cluster <g>
+        // below — is what the pointer hovers. Carry the note tooltip here too, or
+        // a collapsed capsule (especially a nested one, raised above its peers)
+        // shows no <title> on hover.
+        const noteEnc = findNoteForId(currentSource, id);
+        if (noteEnc) {
+          const t = document.createElementNS(SVG_NS, "title");
+          t.textContent = decodeNote(noteEnc);
+          hit.appendChild(t);
+        }
+        hit.addEventListener("pointerdown", (ev) => {
+          if (ev.pointerType === "mouse" && ev.button !== 0) return;
+          if (!ev.isPrimary) return;
+          if (connectingState === "edge-target") { ev.stopPropagation(); ev.preventDefault(); handleConnectClick(id); return; }
+          if (connectingState === "move-target") { ev.stopPropagation(); ev.preventDefault(); handleMoveTargetClick(id); return; }
+          if (connectingState) return;
+          ev.stopPropagation();
+          ev.preventDefault();
+          // Modifier held: add this capsule to the selection on pointerup.
+          if (ev.shiftKey || ev.ctrlKey || ev.metaKey) {
+            const pointerId = ev.pointerId;
+            const onUp = (e) => {
+              if (e && e.pointerId !== pointerId) return;
+              document.removeEventListener("pointerup", onUp);
+              document.removeEventListener("pointercancel", onUp);
+              toggleClusterSelection(id, true);
+            };
+            document.addEventListener("pointerup", onUp);
+            document.addEventListener("pointercancel", onUp);
+            return;
+          }
+          startClusterDrag(ev, svgEl, id);
+        });
+        hit.addEventListener("dblclick", (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          openEditSubgraphModal(id);
+        });
+        overlay.appendChild(hit);
+      }
       const x = box.maxX - sizeW - insetW;
       const y = box.minY + insetW;
       const g = document.createElementNS(SVG_NS, "g");
@@ -1970,6 +2103,17 @@
   // Runs every render; never touches positions{}. Stale entries for a
   // now-collapsed subgraph are dropped.
   function applyExpansionSpacing() {
+    // Reconstruct the push for any expanded collapsible that has no record yet.
+    // collapseDisplace isn't persisted, so after a (re)load every expanded box
+    // is missing it — without this, the box overlaps its neighbours, which were
+    // saved at the collapsed baseline and never get pushed out. Measure now,
+    // before applying anything below: nodes are still at the saved baseline
+    // (applySavedPositions just ran), so each box is computed from baseline —
+    // exactly as if the user had loaded it collapsed and expanded it by hand.
+    for (const id of collapsibleIds) {
+      if (collapsedIds.has(id) || !clusterMap[id]) continue;
+      if (!collapseDisplace[id]) collapseDisplace[id] = computeExpansionDisplacement(id);
+    }
     for (const sgId of Object.keys(collapseDisplace)) {
       if (collapsedIds.has(sgId) || !clusterMap[sgId]) {
         delete collapseDisplace[sgId];
@@ -2387,6 +2531,8 @@
     return outermostCollapsedAncestor(id, owners) || id;
   }
 
+  // ── Edge hotspots & bend handles ────────────────────────────────────────
+
   // Render the hotspot overlay for the currently selected edge. No-op when
   // nothing is selected or the source/target shapes don't support anchors.
   // World coords live in the svg's top-level user space, so we append at the
@@ -2760,6 +2906,8 @@
     pushHistory();
   }
 
+  // ── Cluster bounds & viewbox ────────────────────────────────────────────
+
   function recomputeViewBoxFromNodes(svgEl) {
     const ids = Object.keys(nodeMap);
     if (ids.length === 0) return;
@@ -2936,6 +3084,8 @@
     for (const e of n.incomingEdges) rerouteEdge(e);
     for (const e of n.outgoingEdges) rerouteEdge(e);
   }
+
+  // ── Drag handlers ───────────────────────────────────────────────────────
 
   function attachDragHandlers(svgEl) {
     for (const [id, n] of Object.entries(nodeMap)) {
@@ -4145,6 +4295,9 @@
     // Sync CodeMirror, but suppress its change handler — comments are pure
     // metadata so we skip the diagram re-render entirely.
     setSourceValue(currentSource);
+    // The re-render is skipped, so update this element's live tooltip directly,
+    // otherwise the new/edited note only appears after the next full render.
+    refreshNoteTooltip(id);
     // Use the typing-debounce autosave path so rapid edits coalesce.
     _typingFromCM = true;
     try { markDirtySource(); } finally { _typingFromCM = false; }
@@ -4903,6 +5056,8 @@
     setStatus(__("editor.op.subgraph_deleted", id));
   }
 
+  // ── Edge/node delete actions ────────────────────────────────────────────
+
   // Inserts an invisible thick-stroke "hit path" alongside each visible edge
   // path so clicks land easily even on thin or curved lines. The hit path's
   // `d` is kept in sync by rerouteEdge.
@@ -5040,6 +5195,8 @@
     if (kind === "edge") return deleteSelectedEdges();
     if (kind === "subgraph") return handleDeleteSubgraphClick([...selectedClusterIds][0]);
   }
+
+  // ── Connect mode (ghost edge) ───────────────────────────────────────────
 
   async function handleConnectClick(id) {
     if (connectingState !== "edge-target") return;
@@ -8015,7 +8172,7 @@
       deselectNode();
       setStatus("");
     }
-    if (!e.target.closest("g.cluster") && selectedClusterIds.size > 0) {
+    if (!e.target.closest("g.cluster, .collapse-hit") && selectedClusterIds.size > 0) {
       deselectCluster();
       setStatus("");
     }

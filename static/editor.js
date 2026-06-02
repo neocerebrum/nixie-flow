@@ -3936,12 +3936,16 @@
     }
     if (!winnerMatch) return { ok: false, error: `node ${nodeId}: declaration not found` };
     if (winnerCount > 1) return { ok: false, error: `node ${nodeId}: ambiguous (${winnerCount} match)` };
-    const err = validateLabelForShape(newLabel, newShape);
+    // An empty label would emit `id[]`, which Mermaid rejects (SQE parse
+    // error). Fall back to the id as the label — same convention as
+    // addNodeToSource — so clearing the label box never breaks the source.
+    const lbl = newLabel || nodeId;
+    const err = validateLabelForShape(lbl, newShape);
     if (err) return { ok: false, error: err };
     const m = winnerMatch;
     const before = source.slice(0, m.index);
     const after = source.slice(m.index + m[0].length);
-    const newDecl = `${nodeId}${m[1]}${newShape.open}${newLabel}${newShape.close}`;
+    const newDecl = `${nodeId}${m[1]}${newShape.open}${lbl}${newShape.close}`;
     return { ok: true, source: before + newDecl + after };
   }
 

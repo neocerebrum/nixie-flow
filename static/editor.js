@@ -277,6 +277,7 @@
   // ── DOM refs ─────────────────────────────────────────────────────────────
 
   const reloadBtn = document.getElementById("reloadBtn");
+  const tidyBtn = document.getElementById("tidyBtn");
   const resetBtn = document.getElementById("resetBtn");
   const addNodeBtn = document.getElementById("addNodeBtn");
   const addEdgeBtn = document.getElementById("addEdgeBtn");
@@ -3973,7 +3974,7 @@
   //   - subgraph member line (bare `oldId` on its own line)
   //   - edge operands (both sides, including chains like `A --> oldId --> B`)
   //   - per-element style line (`style oldId fill:…`)
-  //   - note line (`%% oldId free text`)
+  //   - note line (`%% [oldId] free text`, or legacy `%% oldId free text`)
   //
   // Lines that start with reserved tokens (`flowchart`/`graph`/`direction`)
   // are passed through untouched, so a `flowchart TD` header isn't smashed
@@ -3984,14 +3985,16 @@
     if (nodeMap[newId] || clusterMap[newId]) return { ok: false, error: __("editor.err.id_exists", newId) };
 
     const oldEsc = regexEscape(oldId);
-    const noteRe = new RegExp(`^(\\s*%%\\s+)${oldEsc}(\\s.*|\\s*)$`);
+    // Match both the canonical `%% [oldId] …` and the legacy bare `%% oldId …`;
+    // always re-emit in canonical bracketed form.
+    const noteRe = new RegExp(`^(\\s*%%\\s+)(?:\\[${oldEsc}\\]|${oldEsc})(\\s.*|\\s*)$`);
     const styleRe = new RegExp(`^(\\s*style\\s+)${oldEsc}(\\b.*)$`);
     const headerKeywordRe = /^\s*(flowchart|graph|direction)\b/i;
 
     const lines = source.split("\n").map(line => {
       if (headerKeywordRe.test(line)) return line;
       let m = line.match(noteRe);
-      if (m) return `${m[1]}${newId}${m[2]}`;
+      if (m) return `${m[1]}[${newId}]${m[2]}`;
       m = line.match(styleRe);
       if (m) return `${m[1]}${newId}${m[2]}`;
       return replaceIdOutsideLabels(line, oldId, newId);
@@ -4487,13 +4490,45 @@
   // ── Notes (per-element comments) ─────────────────────────────────────────
   //
   // Convention (also documented for Claude / human readers):
-  //   %% <id> <free text>
-  // where <id> is a node or subgraph id. Multi-line notes are encoded inline:
+  //   %% [<id>] <free text>
+  // where <id> is a node or subgraph id. The brackets make the note line
+  // unambiguous: a `%%` comment whose first token isn't a bracketed id (e.g. a
+  // section banner) is NOT a note. The legacy bare form `%% <id> <text>` is
+  // still READ for back-compat; everything we WRITE uses the bracketed form, so
+  // existing diagrams converge to canonical on the next edit that touches them.
+  // The note sits immediately after the element's declaration line so intent
+  // lives next to the thing it describes. Multi-line notes are encoded inline:
   //   - newline → \n  (literal backslash + 'n')
   //   - literal \  → \\
   // One %%-line per id; an empty/whitespace-only note removes the line.
 
-  const NOTE_RE = /^(\s*)%%\s+([A-Za-z_][\w]*)\s+(.*)$/;
+  // group 1: indent · group 2: bracketed id · group 3: bare (legacy) id · group 4: text
+  const NOTE_RE = /^(\s*)%%\s+(?:\[([A-Za-z_]\w*)\]|([A-Za-z_]\w*))(?:\s+(.*))?$/;
+
+  // Parse a single line as a note; returns { indent, id, text } or null.
+  function matchNote(line) {
+    const m = line.match(NOTE_RE);
+    if (!m) return null;
+    return { indent: m[1], id: m[2] || m[3], text: m[4] || "" };
+  }
+  // Serialize a note line in canonical bracketed form.
+  function formatNoteLine(indent, id, encoded) {
+    return `${indent}%% [${id}] ${encoded}`;
+  }
+  // Locate the declaration line of `id` (node decl or subgraph header) so a note
+  // can be placed adjacent to it. Returns { idx, indent } or null (edges-only id).
+  function findDeclLine(lines, id) {
+    const idEsc = regexEscape(id);
+    const nodeDeclRe = new RegExp(`^(\\s*)${idEsc}\\s*${NODE_SHAPE_BODY}(?:\\s*:::\\s*\\w+)?\\s*$`);
+    const sgHeaderRe = new RegExp(`^(\\s*)subgraph\\s+${idEsc}(?:\\s|\\[|$)`, "i");
+    for (let i = 0; i < lines.length; i++) {
+      let m = lines[i].match(nodeDeclRe);
+      if (m) return { idx: i, indent: m[1] };
+      m = lines[i].match(sgHeaderRe);
+      if (m) return { idx: i, indent: m[1] };
+    }
+    return null;
+  }
   let _notesAutosaveTimer = null;
   let _notesCurrentId = null;     // id of the element currently bound to the panel
   let _notesCurrentKind = null;   // 'node' | 'subgraph'
@@ -4520,38 +4555,40 @@
   }
 
   function findNoteForId(source, id) {
-    const lines = source.split("\n");
-    for (const line of lines) {
-      const m = line.match(NOTE_RE);
-      if (m && m[2] === id) return m[3];
+    for (const line of source.split("\n")) {
+      const m = matchNote(line);
+      if (m && m.id === id) return m.text;
     }
     return null;
   }
 
   // Returns the source with the note for `id` set to `encoded` (a single-line
   // already-encoded payload), or removed if `encoded` is empty/null. Updates
-  // the first matching line; appends at the end if none exists.
+  // the first matching line in place; a brand-new note is inserted immediately
+  // after the element's declaration line (or appended at end for edges-only ids
+  // with no standalone declaration).
   function upsertNoteInSource(source, id, encoded) {
     const lines = source.split("\n");
     let foundIdx = -1;
     let foundIndent = "";
     for (let i = 0; i < lines.length; i++) {
-      const m = lines[i].match(NOTE_RE);
-      if (m && m[2] === id) { foundIdx = i; foundIndent = m[1]; break; }
+      const m = matchNote(lines[i]);
+      if (m && m.id === id) { foundIdx = i; foundIndent = m.indent; break; }
     }
     const isEmpty = !encoded || encoded.length === 0;
-    if (foundIdx === -1) {
-      if (isEmpty) return source;
-      const newLine = `%% ${id} ${encoded}`;
-      if (!source.endsWith("\n")) source += "\n";
-      return source + newLine + "\n";
-    }
-    if (isEmpty) {
-      lines.splice(foundIdx, 1);
+    if (foundIdx !== -1) {
+      if (isEmpty) { lines.splice(foundIdx, 1); return lines.join("\n"); }
+      lines[foundIdx] = formatNoteLine(foundIndent, id, encoded);
       return lines.join("\n");
     }
-    lines[foundIdx] = `${foundIndent}%% ${id} ${encoded}`;
-    return lines.join("\n");
+    if (isEmpty) return source;
+    const decl = findDeclLine(lines, id);
+    if (decl) {
+      lines.splice(decl.idx + 1, 0, formatNoteLine(decl.indent, id, encoded));
+      return lines.join("\n");
+    }
+    if (!source.endsWith("\n")) source += "\n";
+    return source + formatNoteLine("", id, encoded) + "\n";
   }
 
   // Read the visible caption (rendered label) of a node or subgraph from the
@@ -4651,6 +4688,20 @@
     if (applyNoteEdit()) pushHistory();
   }
 
+  // Drop any pending (debounced) note autosave and unbind the panel from `ids`
+  // that are about to be deleted — otherwise a queued edit fires after the
+  // element is gone and resurrects the note as an orphan at end-of-file.
+  function discardPendingNoteFor(ids) {
+    if (_notesAutosaveTimer) {
+      clearTimeout(_notesAutosaveTimer);
+      _notesAutosaveTimer = null;
+    }
+    if (_notesCurrentId != null && ids.includes(_notesCurrentId)) {
+      _notesCurrentId = null;
+      _notesCurrentKind = null;
+    }
+  }
+
   // ── Add/delete node/edge ─────────────────────────────────────────────────
 
   function appendLineToSource(source, line) {
@@ -4662,6 +4713,9 @@
     let lastIdx = -1;
     for (let i = 0; i < lines.length; i++) if (regex.test(lines[i])) lastIdx = i;
     if (lastIdx === -1) return appendLineToSource(source, line);
+    // Don't split a declaration from its adjacent note: step past a note line
+    // that immediately follows the matched declaration.
+    if (lastIdx + 1 < lines.length && matchNote(lines[lastIdx + 1])) lastIdx++;
     lines.splice(lastIdx + 1, 0, line);
     return lines.join("\n");
   }
@@ -4709,8 +4763,8 @@
     if (!tgtExists) return { ok: false, error: `target '${tgt}' non esiste` };
     if (/[|\n]/.test(label)) return { ok: false, error: "edge label: niente | o newline" };
     const arrow = label ? `-->|${label}|` : `-->`;
-    const line = `    ${src} ${arrow} ${tgt}`;
-    return { ok: true, source: appendLineToSource(source, line) };
+    const body = `${src} ${arrow} ${tgt}`;
+    return { ok: true, source: placeEdgeCanonically(source, body, [src, tgt]) };
   }
 
   function stripEdgeLabels(line) {
@@ -4794,8 +4848,14 @@
       if (matched !== ordinal) { matched++; continue; }
       const nl = replaceEndpointToken(lines[i], src, tgt, which, newId);
       if (nl == null) return { ok: false, error: `endpoint token not found` };
-      lines[i] = nl;
-      return { ok: true, source: lines.join("\n") };
+      // Re-evaluate placement: the new endpoint may move the edge into/out of a
+      // subgraph or to the cross-module section. Pull the line out and re-home
+      // it for the new geometry (only this edge moves, not the whole file).
+      lines.splice(i, 1);
+      const newSrc = which === "source" ? newId : src;
+      const newTgt = which === "target" ? newId : tgt;
+      const relocated = placeEdgeCanonically(lines.join("\n"), nl.trim(), [newSrc, newTgt]);
+      return { ok: true, source: pruneEmptyRootBanners(relocated) };
     }
     return { ok: false, error: `edge ${src}→${tgt} #${ordinal} not found` };
   }
@@ -4821,6 +4881,8 @@
     const kept = [];
     let removedDecl = false, removedOther = 0;
     for (const line of source.split("\n")) {
+      const nm = matchNote(line);
+      if (nm && nm.id === id) { removedOther++; continue; }
       if (isSubgraphMarker(line)) { kept.push(line); continue; }
       if (!refsId(line)) { kept.push(line); continue; }
       if (isNodeDeclLineForId(line)) { removedDecl = true; continue; }
@@ -4858,6 +4920,7 @@
     let depth = 1;
     for (let i = headerIdx + 1; i < lines.length; i++) {
       const line = lines[i];
+      if (/^\s*%%/.test(line)) continue; // comments never declare membership
       const sgMatch = line.match(subgraphHeaderRe);
       if (sgMatch) {
         if (depth === 1) result.subgraphs.add(sgMatch[1]);
@@ -4890,6 +4953,7 @@
     let depth = 1;
     for (let i = headerIdx + 1; i < lines.length; i++) {
       const line = lines[i];
+      if (/^\s*%%/.test(line)) continue; // comments never declare membership
       if (anySubgraphRe.test(line)) { depth++; continue; }
       if (endRe.test(line)) { depth--; if (depth === 0) break; continue; }
       const matches = line.match(wordRe) || [];
@@ -4925,9 +4989,16 @@
       }
     }
     if (endIdx === -1) return { ok: false, error: `subgraph ${id}: 'end' not found` };
-    // Remove higher index first to keep the lower one valid.
-    lines.splice(endIdx, 1);
-    lines.splice(headerIdx, 1);
+    // Also drop the subgraph's own note line, wherever it sits.
+    let noteIdx = -1;
+    for (let i = 0; i < lines.length; i++) {
+      const m = matchNote(lines[i]);
+      if (m && m.id === id) { noteIdx = i; break; }
+    }
+    // Remove highest index first so the lower indices stay valid.
+    const toRemove = [endIdx, headerIdx];
+    if (noteIdx !== -1) toRemove.push(noteIdx);
+    toRemove.sort((a, b) => b - a).forEach(idx => lines.splice(idx, 1));
     return { ok: true, source: lines.join("\n") };
   }
 
@@ -4941,6 +5012,7 @@
       if (sg) { stack.push(sg[1]); continue; }
       if (/^\s*end\s*$/i.test(line)) { stack.pop(); continue; }
       if (!stack.length) continue;
+      if (/^\s*%%/.test(line)) continue; // comments never declare membership
       const stripped = line
         .replace(/\|[^|\n]*\|/g, " ")
         .replace(/\[[^\]\n]*\]/g, " ")
@@ -4973,6 +5045,21 @@
     const subgraphHeaderRe = /^\s*subgraph\b/i;
     const endRe = /^\s*end\s*$/i;
     const SHAPE_BODY = NODE_SHAPE_BODY;
+
+    // Pull out notes for every moved id up-front and reinsert them adjacent to
+    // the moved declaration at the very end, so intent travels with the element
+    // instead of being orphaned at the old location.
+    const movedNotes = {};
+    {
+      const idSet = new Set(ids);
+      const kept = [];
+      for (const line of source.split("\n")) {
+        const nm = matchNote(line);
+        if (nm && idSet.has(nm.id)) { movedNotes[nm.id] = nm.text; continue; }
+        kept.push(line);
+      }
+      source = kept.join("\n");
+    }
 
     function findSubgraphRange(lines, sgId) {
       const idEsc = regexEscape(sgId);
@@ -5101,14 +5188,23 @@
       if (!result) return { ok: false, error: `subgraph '${targetId}' not found` };
       lines = result;
     } else {
-      if (lines.length > 0 && lines[lines.length - 1] === "") {
+      // Move-to-root: drop the pieces above the trailing edge sections, not
+      // after them (declarations belong before the wiring).
+      const idx = rootContentInsertIndex(lines);
+      if (idx < lines.length) {
+        lines.splice(idx, 0, ...insertPieces);
+      } else if (lines.length > 0 && lines[lines.length - 1] === "") {
         lines.splice(lines.length - 1, 0, ...insertPieces);
       } else {
         lines.push(...insertPieces);
       }
     }
 
-    return { ok: true, source: lines.join("\n") };
+    let outSource = lines.join("\n");
+    for (const id of ids) {
+      if (movedNotes[id]) outSource = upsertNoteInSource(outSource, id, movedNotes[id]);
+    }
+    return { ok: true, source: outSource };
   }
 
   // Detect "legacy" sources where a node's standalone declaration sits at
@@ -5216,6 +5312,339 @@
     setStatus(__("editor.op.normalized", r.changed));
   }
 
+  // ── Tidy: canonicalize the whole source for AI legibility ─────────────────
+  // Non-destructive structural cleanup of an existing diagram. Topology,
+  // labels, edge operators and styles are preserved verbatim; only notes and
+  // redundant declarations are reorganized:
+  //   1. every note → canonical `%% [id]` form, placed immediately after its
+  //      element's declaration, deduped (one note per id, first wins);
+  //   2. node declarations that only have a bare-ref inside a subgraph get
+  //      pulled in (legacy pattern), and redundant bare-id member lines whose
+  //      full declaration exists elsewhere are dropped;
+  //   3. orphan notes (id is not a live node/subgraph) are collected and
+  //      removed — reported to the user, never silently dropped.
+  // Re-indent every line to reflect subgraph nesting depth (4 spaces/level).
+  // Mermaid ignores leading whitespace, so this only affects readability — it
+  // never changes the rendered diagram. Blank lines stay empty; a `subgraph`
+  // line sits at its parent's depth and bumps the depth for its body; the
+  // matching `end` drops back and aligns with its header.
+  function reindentSource(source, unit) {
+    unit = unit || "    ";
+    const sgRe = /^\s*subgraph\b/i;
+    const endRe = /^\s*end\s*$/i;
+    let depth = 0;
+    return source.split("\n").map(raw => {
+      const line = raw.trim();
+      if (line === "") return "";
+      if (endRe.test(line)) { depth = Math.max(0, depth - 1); return unit.repeat(depth) + line; }
+      if (sgRe.test(line)) { const out = unit.repeat(depth) + line; depth++; return out; }
+      return unit.repeat(depth) + line;
+    }).join("\n");
+  }
+
+  // Nesting path (outermost→innermost) for every node (from its decl) and every
+  // subgraph (its parent chain, excluding itself). Comment lines never count.
+  function computeNestingPaths(source) {
+    const sgHeaderRe = /^\s*subgraph\s+([A-Za-z_]\w*)/i;
+    const endRe = /^\s*end\s*$/i;
+    const declRe = new RegExp(`^\\s*([A-Za-z_]\\w*)\\s*${NODE_SHAPE_BODY}(?:\\s*:::\\s*\\w+)?\\s*$`);
+    const nodePath = {}, clusterPath = {};
+    const stack = [];
+    for (const line of source.split("\n")) {
+      const sg = line.match(sgHeaderRe);
+      if (sg) { clusterPath[sg[1]] = [...stack]; stack.push(sg[1]); continue; }
+      if (endRe.test(line)) { stack.pop(); continue; }
+      if (/^\s*%%/.test(line)) continue;
+      const dm = declRe.exec(line);
+      if (dm && !(dm[1] in nodePath)) nodePath[dm[1]] = [...stack];
+    }
+    return { nodePath, clusterPath };
+  }
+
+  // Innermost subgraph that contains every given id (the last id of the longest
+  // common prefix of their nesting paths), or null when they share no subgraph.
+  function innermostCommonSubgraph(ids, paths) {
+    const pathOf = (id) => paths.nodePath[id] || paths.clusterPath[id] || [];
+    const ps = ids.map(pathOf);
+    if (!ps.length) return null;
+    let prefix = ps[0];
+    for (let i = 1; i < ps.length; i++) {
+      const p = ps[i]; let k = 0;
+      while (k < prefix.length && k < p.length && prefix[k] === p[k]) k++;
+      prefix = prefix.slice(0, k);
+    }
+    return prefix.length ? prefix[prefix.length - 1] : null;
+  }
+
+  // Splice contentLines just before subgraph `sgId`'s matching `end` (in place).
+  // Returns true on success, false if the subgraph or its `end` isn't found.
+  function insertBeforeSubgraphEnd(lines, sgId, contentLines) {
+    const idEsc = regexEscape(sgId);
+    const headerRe = new RegExp(`^\\s*subgraph\\s+${idEsc}(\\s|\\[|$)`, "i");
+    const anySg = /^\s*subgraph\b/i, endRe = /^\s*end\s*$/i;
+    let h = -1;
+    for (let i = 0; i < lines.length; i++) if (headerRe.test(lines[i])) { h = i; break; }
+    if (h === -1) return false;
+    let d = 1, e = -1;
+    for (let i = h + 1; i < lines.length; i++) {
+      if (anySg.test(lines[i])) d++;
+      else if (endRe.test(lines[i])) { d--; if (d === 0) { e = i; break; } }
+    }
+    if (e === -1) return false;
+    lines.splice(e, 0, ...contentLines);
+    return true;
+  }
+
+  // Group edges for locality: an edge whose endpoints all live in the same
+  // subgraph is moved to the bottom of that subgraph's block; edges that cross
+  // subgraph boundaries are gathered into a "cross-module edges" section at the
+  // end of the file, under a banner. Relocating edge lines is render-safe —
+  // Mermaid doesn't care where an edge is declared. Each edge line is kept
+  // verbatim (only its position changes); a line is treated as an edge only
+  // when it references ≥2 known node/subgraph ids around a connector, so
+  // anything ambiguous (styles, bare nodes, unknown lines) stays put.
+  // Two root-level edge sections, distinguished by whether the edge crosses
+  // between modules or merely touches an un-grouped (root) node:
+  //   cross-module — both endpoints are inside subgraphs that share no ancestor;
+  //   external     — at least one endpoint sits at root (in no subgraph), i.e. a
+  //                  connection to the outside of every module (typically I/O).
+  const CROSS_EDGE_BANNER = "%% ─── cross-module edges ───";
+  const EXTERNAL_EDGE_BANNER = "%% ─── external edges ───";
+  const ROOT_EDGE_BANNERS = [CROSS_EDGE_BANNER, EXTERNAL_EDGE_BANNER];
+
+  // Index at which root-level declarations/subgraphs should be inserted: just
+  // before the trailing edge sections (cross-module/external banners), so
+  // declarations stay above the wiring. End-of-file when there are no banners.
+  function rootContentInsertIndex(lines) {
+    let idx = lines.findIndex(l => ROOT_EDGE_BANNERS.includes(l.trim()));
+    if (idx === -1) return lines.length;
+    while (idx > 0 && lines[idx - 1].trim() === "") idx--;
+    return idx;
+  }
+
+  // Pick the banner for an edge that has no innermost-common subgraph.
+  function rootEdgeBanner(ids, paths) {
+    const anyRoot = ids.some(id => (paths.nodePath[id] || paths.clusterPath[id] || []).length === 0);
+    return anyRoot ? EXTERNAL_EDGE_BANNER : CROSS_EDGE_BANNER;
+  }
+
+  // Endpoint node/subgraph ids referenced by an edge line, or null if the line
+  // isn't an edge (needs ≥2 known ids around a connector). Labels/shapes masked.
+  function edgeEndpointIds(line) {
+    const masked = stripEdgeLabels(line)
+      .replace(/\[[^\]\n]*\]/g, " ").replace(/\([^)\n]*\)/g, " ").replace(/\{[^}\n]*\}/g, " ");
+    if (!/[-=.~]{2,}/.test(masked)) return null;
+    const ids = (masked.match(/\b[A-Za-z_]\w*\b/g) || [])
+      .filter(w => w !== "subgraph" && w !== "end" && (nodeMap[w] || clusterMap[w]));
+    const uniq = [...new Set(ids)];
+    return uniq.length >= 2 ? uniq : null;
+  }
+
+  function regroupEdges(source) {
+    const sgHeaderRe = /^\s*subgraph\s+([A-Za-z_]\w*)/i;
+    const endRe = /^\s*end\s*$/i;
+    const paths = computeNestingPaths(source);
+
+    // Lift edge lines out (and drop any pre-existing banners so re-runs stay idempotent).
+    const kept = [];
+    const edges = [];
+    for (const line of source.split("\n")) {
+      if (ROOT_EDGE_BANNERS.includes(line.trim())) continue;
+      if (/^\s*%%/.test(line) || sgHeaderRe.test(line) || endRe.test(line)) { kept.push(line); continue; }
+      const ids = edgeEndpointIds(line);
+      if (ids) edges.push({ line: line.trim(), ids });
+      else kept.push(line);
+    }
+
+    const bySubgraph = {};
+    const crossEdges = [], externalEdges = [];
+    for (const e of edges) {
+      const owner = innermostCommonSubgraph(e.ids, paths);
+      if (owner) (bySubgraph[owner] = bySubgraph[owner] || []).push(e.line);
+      else if (rootEdgeBanner(e.ids, paths) === EXTERNAL_EDGE_BANNER) externalEdges.push(e.line);
+      else crossEdges.push(e.line);
+    }
+
+    const lines = kept;
+    for (const sgId of Object.keys(bySubgraph)) insertBeforeSubgraphEnd(lines, sgId, bySubgraph[sgId]);
+    if (crossEdges.length || externalEdges.length) {
+      while (lines.length && lines[lines.length - 1].trim() === "") lines.pop();
+      if (crossEdges.length) lines.push("", CROSS_EDGE_BANNER, ...crossEdges);
+      if (externalEdges.length) lines.push("", EXTERNAL_EDGE_BANNER, ...externalEdges);
+    }
+    return lines.join("\n");
+  }
+
+  // Insert a finished edge line `body` (no indent) at its canonical home in
+  // `source`: the bottom of the innermost subgraph containing both endpoints
+  // (indented to that depth), else the matching root-level section. Used by edge
+  // creation and reconnect so a single edge lands in the right place without
+  // re-running a full tidy over the whole file.
+  function placeEdgeCanonically(source, body, ids) {
+    const paths = computeNestingPaths(source);
+    const owner = innermostCommonSubgraph(ids, paths);
+    if (owner) {
+      const indent = "    ".repeat((paths.clusterPath[owner] || []).length + 1);
+      const lines = source.split("\n");
+      if (insertBeforeSubgraphEnd(lines, owner, [indent + body])) return lines.join("\n");
+    }
+    return appendRootEdge(source, body, rootEdgeBanner(ids, paths));
+  }
+
+  // Append a root-level edge into its banner section (creating the banner at
+  // end-of-file if it doesn't exist yet), keeping the section contiguous.
+  function appendRootEdge(source, body, banner) {
+    const lines = source.split("\n");
+    let b = -1;
+    for (let i = 0; i < lines.length; i++) if (lines[i].trim() === banner) { b = i; break; }
+    if (b === -1) {
+      // Keep section order cross-module → external: a brand-new cross-module
+      // section goes just before an existing external one; everything else
+      // (external, or cross-module with no external yet) appends at end-of-file.
+      if (banner === CROSS_EDGE_BANNER) {
+        const ext = lines.findIndex(l => l.trim() === EXTERNAL_EDGE_BANNER);
+        if (ext !== -1) {
+          lines.splice(ext, 0, banner, body, "");
+          return lines.join("\n");
+        }
+      }
+      while (lines.length && lines[lines.length - 1].trim() === "") lines.pop();
+      lines.push("", banner, body);
+      return lines.join("\n");
+    }
+    let i = b + 1;
+    while (i < lines.length) {
+      const t = lines[i].trim();
+      if (t === "" || /^subgraph\b/i.test(t) || /^end$/i.test(t) || /^%%/.test(t)) break;
+      i++;
+    }
+    lines.splice(i, 0, body);
+    return lines.join("\n");
+  }
+
+  // Drop any root-edge banner with no edge line under it (e.g. the last such
+  // edge was just moved elsewhere), so we never leave an empty section behind.
+  function pruneEmptyRootBanners(source) {
+    for (const banner of ROOT_EDGE_BANNERS) {
+      const lines = source.split("\n");
+      const b = lines.findIndex(l => l.trim() === banner);
+      if (b === -1) continue;
+      let hasEdge = false;
+      for (let i = b + 1; i < lines.length; i++) {
+        const t = lines[i].trim();
+        if (t === "") continue;
+        if (/^%%/.test(t) || /^subgraph\b/i.test(t) || /^end$/i.test(t)) break;
+        hasEdge = true; break;
+      }
+      if (hasEdge) continue;
+      lines.splice(b, 1);
+      while (lines.length && lines[lines.length - 1].trim() === "") lines.pop();
+      source = lines.join("\n");
+    }
+    return source;
+  }
+
+  // After a node's subgraph membership changes (subgraph create / move in/out),
+  // re-evaluate every edge incident to any of `ids`: an edge that became
+  // internal drops into its subgraph, one that started crossing moves to the
+  // right root section, and so on. Only edges touching `ids` move — everything
+  // else stays where it is.
+  function relocateEdgesTouching(source, ids) {
+    const idSet = new Set(ids);
+    const sgHeaderRe = /^\s*subgraph\b/i, endRe = /^\s*end\s*$/i;
+    const kept = [], moved = [];
+    for (const line of source.split("\n")) {
+      if (/^\s*%%/.test(line) || sgHeaderRe.test(line) || endRe.test(line)) { kept.push(line); continue; }
+      const eids = edgeEndpointIds(line);
+      if (eids && eids.some(x => idSet.has(x))) moved.push({ body: line.trim(), ids: eids });
+      else kept.push(line);
+    }
+    if (!moved.length) return source;
+    let out = kept.join("\n");
+    for (const e of moved) out = placeEdgeCanonically(out, e.body, e.ids);
+    return pruneEmptyRootBanners(out);
+  }
+
+  function tidySource(source) {
+    const liveIds = new Set([...Object.keys(nodeMap), ...Object.keys(clusterMap)]);
+
+    // 1. Lift out every note line; keep the first note text seen per id.
+    const noteText = {};
+    source = source.split("\n").filter(line => {
+      const m = matchNote(line);
+      if (!m) return true;
+      if (noteText[m.id] === undefined) noteText[m.id] = m.text;
+      return false;
+    }).join("\n");
+
+    // 2a. Move legacy bare-ref declarations inside their owning subgraph.
+    let movedDecls = 0;
+    const norm = normalizeLegacyBareRefs(source);
+    if (norm.ok) { source = norm.source; movedDecls = norm.changed; }
+
+    // 2b. Drop redundant bare-id lines whose full declaration exists elsewhere.
+    let removedBare = 0;
+    {
+      const declRe = new RegExp(`^\\s*([A-Za-z_]\\w*)\\s*${NODE_SHAPE_BODY}(?:\\s*:::\\s*\\w+)?\\s*$`);
+      const ls = source.split("\n");
+      const declIds = new Set();
+      for (const l of ls) { const m = declRe.exec(l); if (m) declIds.add(m[1]); }
+      const bareRe = /^\s*([A-Za-z_]\w*)\s*$/;
+      const kept = [];
+      for (const l of ls) {
+        const m = bareRe.exec(l);
+        if (m && m[1] !== "end" && m[1] !== "subgraph" && declIds.has(m[1])) { removedBare++; continue; }
+        kept.push(l);
+      }
+      source = kept.join("\n");
+    }
+
+    // 3. Reinsert notes adjacent for live ids; collect orphans for the report.
+    const orphans = [];
+    let placedNotes = 0;
+    for (const id of Object.keys(noteText)) {
+      const text = noteText[id];
+      if (!liveIds.has(id)) { if (text) orphans.push({ id, text }); continue; }
+      if (!text) continue;
+      source = upsertNoteInSource(source, id, text);
+      placedNotes++;
+    }
+
+    // 4. Group edges by locality (internal → into subgraph; cross-module → section).
+    source = regroupEdges(source);
+
+    // 5. Re-indent to reflect nesting depth (purely cosmetic, render-safe).
+    source = reindentSource(source);
+
+    return { source, placedNotes, movedDecls, removedBare, orphans };
+  }
+
+  async function applyTidy() {
+    if (!requireValidSource("tidy")) return;
+    const r = tidySource(currentSource);
+    const changed = r.source !== currentSource;
+    if (!changed && r.orphans.length === 0) {
+      setStatus(__("editor.op.tidy_clean"));
+      return;
+    }
+    // Orphan notes carry authorial intent — confirm before discarding them.
+    if (r.orphans.length > 0) {
+      const list = r.orphans.map(o => o.id).join(", ");
+      const ok = await confirmDialog(__("editor.tidy_orphans_confirm", r.orphans.length, list), {
+        title: __("editor.tidy_title"),
+        confirmLabel: __("editor.tidy"),
+        cancelLabel: __("common.cancel"),
+        danger: true,
+      });
+      if (!ok) return;
+    }
+    currentSource = r.source;
+    markDirtySource();
+    await renderDiagram();
+    pushHistory();
+    setStatus(__("editor.op.tidied", r.placedNotes, r.movedDecls + r.removedBare, r.orphans.length));
+  }
+
   function addSubgraphToSource(source, id, title, memberIds, parentId) {
     if (!/^[A-Za-z_][\w]*$/.test(id)) return { ok: false, error: __("editor.err.id_invalid", id) };
     if (nodeMap[id] || clusterMap[id]) return { ok: false, error: __("editor.err.id_exists", id) };
@@ -5223,10 +5652,20 @@
     const head = title ? `subgraph ${id} [${title}]` : `subgraph ${id}`;
     const blockLines = [head, ...memberIds.map(m => `    ${m}`), "end"];
 
-    // Root-level: just append the block.
+    // Root-level: insert the block above the trailing edge sections (declarations
+    // belong before the wiring), or append at end when there are none.
     if (!parentId) {
-      if (source.length && !source.endsWith("\n")) source += "\n";
-      return { ok: true, source: source + blockLines.join("\n") + "\n" };
+      const lines = source.split("\n");
+      const idx = rootContentInsertIndex(lines);
+      if (idx >= lines.length) {
+        if (source.length && !source.endsWith("\n")) source += "\n";
+        return { ok: true, source: source + blockLines.join("\n") + "\n" };
+      }
+      // idx sits at the blank line preceding the banners (if any); add our own
+      // separator blank only when none is already there.
+      const pieces = (lines[idx] || "").trim() === "" ? blockLines : [...blockLines, ""];
+      lines.splice(idx, 0, ...pieces);
+      return { ok: true, source: lines.join("\n") };
     }
 
     // Nested: locate parent's range, strip member lines from its direct body
@@ -5373,7 +5812,14 @@
     const title = titleRaw.trim();
     const result = addSubgraphToSource(currentSource, idRaw, title, ids, parent);
     if (!result.ok) { errorEl.textContent = result.error; return; }
-    currentSource = result.source;
+    // addSubgraphToSource lists members as bare ids while their full
+    // declarations stay where they were (duplicate bare refs). Pull the real
+    // declarations into the new subgraph — this de-dups the bare refs and
+    // carries each member's note along with it.
+    const moved = moveToSubgraphInSource(result.source, ids, idRaw);
+    // Members changed subgraph: re-home every edge touching them (a now-internal
+    // edge drops into the new subgraph, others re-bucket cross-module/external).
+    currentSource = moved.ok ? relocateEdgesTouching(moved.source, ids) : result.source;
     markDirtySource();
     deselectNode();
     closeAddSubgraphModal();
@@ -5435,6 +5881,7 @@
   async function handleDeleteSubgraphClick(id) {
     if (!await confirmDialog(__("editor.delete_subgraph_confirm", id),
       { confirmLabel: __("common.delete"), danger: true })) return;
+    discardPendingNoteFor([id]);
     let result = deleteSubgraphFromSource(currentSource, id);
     if (!result.ok) { setStatus(`delete subgraph: ${result.error}`, true); return; }
     let next = result.source;
@@ -5564,6 +6011,7 @@
     const label = ids.length === 1 ? `node '${ids[0]}'` : `${ids.length} nodes`;
     if (!await confirmDialog(__("editor.delete_node_confirm", label),
       { confirmLabel: __("common.delete"), danger: true })) return;
+    discardPendingNoteFor(ids);
     let next = currentSource, ok = 0, errs = [];
     for (const id of ids) {
       const r = deleteNodeFromSource(next, id);
@@ -5761,7 +6209,8 @@
     }
     const result = moveToSubgraphInSource(currentSource, ids, targetId);
     if (!result.ok) { setStatus(`move: ${result.error}`, true); return; }
-    currentSource = result.source;
+    // Membership changed: re-home edges touching the moved nodes per new geometry.
+    currentSource = relocateEdgesTouching(result.source, ids);
     markDirtySource();
     await renderDiagram();
     // After Mermaid re-layout, derive a fresh local translate for each
@@ -8342,6 +8791,7 @@
     await reloadFromServer();
   });
   resetBtn.addEventListener("click", resetLayout);
+  if (tidyBtn) tidyBtn.addEventListener("click", applyTidy);
   addNodeBtn.addEventListener("click", openAddNodeModal);
   addEdgeBtn.addEventListener("click", startConnectMode);
   if (toggleEdgeStyleBtn) {

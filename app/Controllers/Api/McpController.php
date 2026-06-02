@@ -216,20 +216,24 @@ final class McpController
     /**
      * Per-element notes are stored as Mermaid comments, one line per element:
      *
-     *     %% <id> <free text>
+     *     %% [<id>] <free text>
      *
-     * where <id> is a node id or subgraph id. Multi-line notes are encoded
-     * inline: literal newline → `\n` (two characters: backslash + n), literal
-     * backslash → `\\`. At most one note line per id; the line may appear
-     * anywhere in the source. Mermaid ignores `%%` lines, so notes do not
+     * where <id> is a node id or subgraph id. The brackets make the note line
+     * unambiguous (a `%%` comment whose first token isn't a bracketed id is an
+     * ordinary comment, not a note). The legacy bare form `%% <id> <text>` is
+     * still recognised for back-compat. The note sits immediately after the
+     * element's declaration line. Multi-line notes are encoded inline: literal
+     * newline → `\n` (two characters: backslash + n), literal backslash → `\\`.
+     * At most one note line per id. Mermaid ignores `%%` lines, so notes do not
      * affect the rendered diagram. Read these comments to recover authorial
      * intent for a node/subgraph; write/update them by adding or rewriting
-     * the matching `%% <id> ...` line.
+     * the matching `%% [<id>] ...` line.
      */
     private const NOTES_CONVENTION_DOC =
-        "Per-element notes are stored as Mermaid comments using the convention `%% <id> <text>` (one line per node/subgraph id). "
+        "Per-element notes are stored as Mermaid comments using the convention `%% [<id>] <text>` (one line per node/subgraph id, placed right after the element's declaration). "
+        . "The legacy bare form `%% <id> <text>` (no brackets) is still recognised for back-compat. "
         . "Multi-line notes are encoded inline: newline → `\\n` (literal backslash + n), backslash → `\\\\`. "
-        . "At most one such line per id; absence = no note. These comments are authored via the Aquata editor's notes panel and convey authorial intent — read them, and preserve/update them when rewriting the source (do not strip `%% <id> ...` lines unless you want to delete the corresponding note).";
+        . "At most one such line per id; absence = no note. These comments are authored via the Aquata editor's notes panel and convey authorial intent — read them, and preserve/update them when rewriting the source (do not strip `%% [<id>] ...` lines unless you want to delete the corresponding note).";
 
     /** @return array<int, array<string, mixed>> */
     private function toolDefinitions(): array

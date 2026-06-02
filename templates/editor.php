@@ -31,6 +31,7 @@
         <button id="exportPngBtn" class="ed-tb-iconlabel" title="<?= __('editor.export_png') ?>" aria-label="<?= __('editor.export_png') ?>"><svg class="icon"><use href="#icon-download"/></svg>PNG</button>
         <button id="resetBtn" class="ed-tb-icon" title="<?= __('editor.reset_layout') ?>" aria-label="<?= __('editor.reset_layout') ?>"><svg class="icon"><use href="#icon-reset"/></svg></button>
         <button id="reloadBtn" class="ed-tb-icon" title="<?= __('editor.reload_title') ?>" aria-label="<?= __('editor.reload') ?>"><svg class="icon"><use href="#icon-refresh"/></svg></button>
+        <button id="tidyBtn" class="ed-tb-icon" title="<?= __('editor.tidy_title') ?>" aria-label="<?= __('editor.tidy') ?>"><svg class="icon"><use href="#icon-sparkles"/></svg></button>
         <button id="saveBtn" class="ed-tb-iconlabel primary" title="<?= __('editor.save') ?>"><svg class="icon"><use href="#icon-save"/></svg><?= __('common.save') ?></button>
     </div>
     <span id="status"></span>

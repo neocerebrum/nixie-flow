@@ -918,6 +918,10 @@
     }
     // Clusters indexed AFTER nodes so findSubgraphMembers can resolve IDs.
     // Pass 1: collect g/bg/label/members/directChildren for every cluster.
+    // Nesting depth (# of ancestor subgraphs) drives the bounds-update order:
+    // a wrapper that holds only one subgraph shares its transitive member set,
+    // so member-count alone can't tell which is inner — depth can.
+    const nestPaths = computeNestingPaths(currentSource);
     const clusters = svgEl.querySelectorAll("g.cluster");
     for (const g of clusters) {
       const id = extractNodeId(g);
@@ -934,6 +938,7 @@
         g, bg, label, members,
         directNodes: direct.nodes,
         directSubgraphs: direct.subgraphs,
+        depth: (nestPaths.clusterPath[id] || []).length,
         padding: null,
         incomingEdges: [], outgoingEdges: [],
       };
@@ -3431,12 +3436,16 @@
   }
 
   function updateAllClusterBounds() {
-    // Innermost first: a cluster whose member set is a subset of another's is inner.
-    // Approximate by sorting ascending by member-set size — innermost (smaller
-    // member sets) get updated first so outer clusters see fresh inner positions.
-    const ids = Object.keys(clusterMap).sort(
-      (a, b) => (clusterMap[a].members.size || 0) - (clusterMap[b].members.size || 0)
-    );
+    // Innermost first so an outer cluster reads its inner clusters' already-
+    // updated rects. Sort by nesting depth descending; member-set size only
+    // breaks ties between same-depth siblings (which don't depend on each
+    // other). Depth is required because a single-child wrapper shares its
+    // child's transitive member set, so member count can't order the two.
+    const ids = Object.keys(clusterMap).sort((a, b) => {
+      const da = clusterMap[a].depth || 0, db = clusterMap[b].depth || 0;
+      if (da !== db) return db - da;
+      return (clusterMap[a].members.size || 0) - (clusterMap[b].members.size || 0);
+    });
     for (const id of ids) updateClusterBounds(id);
   }
 

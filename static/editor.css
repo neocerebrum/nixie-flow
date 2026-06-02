@@ -542,6 +542,29 @@ g.cluster.reconnect-target > path:first-of-type {
     color: #eceff4;
     pointer-events: none;
 }
+/* Lock badge: indicative only, never grabs the pointer. Amber accent so it
+   reads as a distinct "frozen" state, not a clickable control. */
+#diagram g.collapse-buttons .lock-badge { pointer-events: none; }
+#diagram g.collapse-buttons .lock-badge-bg {
+    fill: rgba(46, 52, 64, 0.92);
+    stroke: #ebcb8b;
+    stroke-width: 1px;
+}
+#diagram g.collapse-buttons .lock-badge-icon {
+    color: #ebcb8b;
+    pointer-events: none;
+}
+/* Frame lock badge: a pushpin in frost blue — frame pinned, contents editable. */
+#diagram g.collapse-buttons .frame-lock-badge { pointer-events: none; }
+#diagram g.collapse-buttons .frame-lock-badge-bg {
+    fill: rgba(46, 52, 64, 0.92);
+    stroke: #88c0d0;
+    stroke-width: 1px;
+}
+#diagram g.collapse-buttons .frame-lock-badge-icon {
+    color: #88c0d0;
+    pointer-events: none;
+}
 
 /* Peer selections (other viewers' current selection, shared via presence).
    Rendered as an overlay <g class="peer-selections"> with sibling rects/paths

@@ -387,6 +387,17 @@
   let collapsibleIds = new Set((bootstrap.layout && bootstrap.layout.collapsibleIds) || []);
   let collapsedIds   = new Set((bootstrap.layout && bootstrap.layout.collapsedIds) || []);
   let collapseDisplace = {};
+  // Locked subgraphs (human-side only — never encoded in the Mermaid source).
+  // A locked subgraph — and everything it contains, recursively — can be
+  // selected but never dragged, so it (and its layout) can't be moved by
+  // accident. Persisted in the layout JSON as an array like the collapse sets.
+  let lockedIds = new Set((bootstrap.layout && bootstrap.layout.lockedIds) || []);
+  // `frameLockedIds` is a lighter lock: only the subgraph FRAME is pinned (can't
+  // be dragged as a whole), but the nodes/subgraphs it contains stay fully
+  // editable. Since the frame can't move, a press-drag on its background is
+  // repurposed as a marquee to select the entities inside it. Mutually
+  // exclusive with `lockedIds` in the UI (full lock subsumes it).
+  let frameLockedIds = new Set((bootstrap.layout && bootstrap.layout.frameLockedIds) || []);
   // Promote legacy quadratic bends to cubic on initial load (idempotent).
   // `migrateAllBends` is a function declaration so it's hoisted within this IIFE.
   migrateAllBends();
@@ -405,6 +416,8 @@
       palettes,
       collapsibleIds: [...collapsibleIds],
       collapsedIds: [...collapsedIds],
+      lockedIds: [...lockedIds],
+      frameLockedIds: [...frameLockedIds],
     };
   }
   let currentRevisionId = bootstrap.revision_id;
@@ -673,6 +686,8 @@
       palettes: JSON.parse(JSON.stringify(palettes)),
       collapsibleIds: [...collapsibleIds],
       collapsedIds: [...collapsedIds],
+      lockedIds: [...lockedIds],
+      frameLockedIds: [...frameLockedIds],
     });
     if (history.length > HISTORY_CAP) {
       history = history.slice(history.length - HISTORY_CAP);
@@ -698,6 +713,8 @@
     edgeStyles = JSON.parse(JSON.stringify(snap.edgeStyles || {}));
     collapsibleIds = new Set(snap.collapsibleIds || []);
     collapsedIds = new Set(snap.collapsedIds || []);
+    lockedIds = new Set(snap.lockedIds || []);
+    frameLockedIds = new Set(snap.frameLockedIds || []);
     palettes = normalizePalettes(snap.palettes);
     currentPaletteGroup = null; // force swatch rebuild — colors may have changed
     renderActivePalette();
@@ -1075,12 +1092,20 @@
     for (const id of [...collapsedIds]) {
       if (!collapsibleIds.has(id)) { collapsedIds.delete(id); pruned = true; }
     }
+    for (const id of [...lockedIds]) {
+      if (!clusterMap[id]) { lockedIds.delete(id); pruned = true; }
+    }
+    for (const id of [...frameLockedIds]) {
+      if (!clusterMap[id]) { frameLockedIds.delete(id); pruned = true; }
+    }
     if (pruned) markDirtyLayout();
     for (const id of Object.keys(clusterMap)) {
       const c = clusterMap[id];
       if (!c || !c.g) continue;
       c.g.classList.toggle("collapsible", collapsibleIds.has(id));
       c.g.classList.toggle("collapsed", collapsedIds.has(id));
+      c.g.classList.toggle("locked", lockedIds.has(id));
+      c.g.classList.toggle("frame-locked", frameLockedIds.has(id));
     }
   }
 
@@ -1098,6 +1123,64 @@
       collapsedIds.delete(id);
     }
     return true;
+  }
+
+  // Set / clear the "locked" flag on a subgraph id. Returns true if it changed.
+  // Persistence / re-render is the caller's responsibility.
+  function setSubgraphLocked(id, on) {
+    const was = lockedIds.has(id);
+    if (on === was) return false;
+    if (on) lockedIds.add(id); else lockedIds.delete(id);
+    return true;
+  }
+
+  // Set / clear the lighter "frame locked" flag (frame pinned, contents free).
+  function setSubgraphFrameLocked(id, on) {
+    const was = frameLockedIds.has(id);
+    if (on === was) return false;
+    if (on) frameLockedIds.add(id); else frameLockedIds.delete(id);
+    return true;
+  }
+
+  // Keep the two lock checkboxes mutually exclusive: a full lock already pins
+  // the frame, so the lighter frame lock is greyed out while it's on, and vice
+  // versa.
+  function syncSubgraphLockChecks() {
+    const lk = document.getElementById("subgraphLockInput");
+    const fl = document.getElementById("subgraphFrameLockInput");
+    if (!lk || !fl) return;
+    fl.disabled = lk.checked;
+    lk.disabled = fl.checked;
+  }
+
+  // The set of every node/cluster id that is frozen by a lock: a locked
+  // subgraph itself plus everything nested inside it (any depth). Computed
+  // fresh from the current source each call — cheap enough for one call per
+  // pointerdown. Empty (fast path) when nothing is locked.
+  function computeFrozenSet() {
+    const frozen = new Set();
+    if (lockedIds.size === 0) return frozen;
+    const owners = computeNodeSubgraphOwners(currentSource);
+    // computeNodeSubgraphOwners only maps nodes → owner; add cluster → parent
+    // cluster so the ancestor walk can climb through nested subgraphs.
+    for (const cid of Object.keys(clusterMap)) {
+      for (const sgId of (clusterMap[cid].directSubgraphs || [])) {
+        if (owners[sgId] === undefined) owners[sgId] = cid;
+      }
+    }
+    const allIds = [...Object.keys(nodeMap), ...Object.keys(clusterMap)];
+    for (const id of allIds) {
+      if (lockedIds.has(id)) { frozen.add(id); continue; }
+      let cur = owners[id];
+      while (cur) { if (lockedIds.has(cur)) { frozen.add(id); break; } cur = owners[cur]; }
+    }
+    return frozen;
+  }
+
+  // True when id (node or cluster) sits inside a locked subgraph (or is one).
+  function isFrozenById(id) {
+    if (lockedIds.size === 0) return false;
+    return computeFrozenSet().has(id);
   }
 
   // Paint the primitive shape children of a node group (rect, polygon, circle,
@@ -1919,7 +2002,7 @@
     const old = svgEl.querySelector(":scope > g.collapse-buttons");
     if (old) old.remove();
     if (!canWrite) return;
-    if (collapsibleIds.size === 0) return;
+    if (collapsibleIds.size === 0 && lockedIds.size === 0 && frameLockedIds.size === 0) return;
     const ctm = svgEl.getScreenCTM();
     const scale = ctm ? ctm.a : 1;          // world→screen factor (uniform)
     const sizeW = COLLAPSE_BTN_SIZE / scale; // button side in world units
@@ -2021,6 +2104,45 @@
         toggleCollapse(id);
       };
       g.addEventListener("pointerdown", onDown);
+    }
+    // Lock badges: a small glyph glued to the top-right corner of every locked
+    // subgraph, purely indicative (pointer-events: none, so it never steals
+    // clicks from the box below). A padlock marks a full lock, a pushpin marks
+    // a frame lock. Badges stack leftward from the corner, after the collapse
+    // button's slot if the box also carries one.
+    const gapW = 4 / scale;
+    const pad = sizeW * 0.22;
+    const badgeIds = new Set([...lockedIds, ...frameLockedIds]);
+    for (const id of badgeIds) {
+      const c = clusterMap[id];
+      if (!c) continue;
+      if (isHiddenByCollapsedAncestor(id)) continue;
+      const box = getClusterRectWorldBbox(c);
+      if (!box) continue;
+      let slot = collapsibleIds.has(id) ? 1 : 0;
+      const y = box.minY + insetW;
+      const drawBadge = (iconHref, cls) => {
+        const x = box.maxX - sizeW - insetW - slot * (sizeW + gapW);
+        const g = document.createElementNS(SVG_NS, "g");
+        g.setAttribute("class", cls);
+        g.setAttribute("data-sg-id", id);
+        const rect = document.createElementNS(SVG_NS, "rect");
+        rect.setAttribute("class", cls + "-bg");
+        rect.setAttribute("x", x); rect.setAttribute("y", y);
+        rect.setAttribute("width", sizeW); rect.setAttribute("height", sizeW);
+        rect.setAttribute("rx", 3 / scale);
+        const use = document.createElementNS(SVG_NS, "use");
+        use.setAttribute("href", iconHref);
+        use.setAttribute("x", x + pad); use.setAttribute("y", y + pad);
+        use.setAttribute("width", sizeW - 2 * pad); use.setAttribute("height", sizeW - 2 * pad);
+        use.setAttribute("class", cls + "-icon");
+        g.appendChild(rect);
+        g.appendChild(use);
+        overlay.appendChild(g);
+        slot++;
+      };
+      if (lockedIds.has(id)) drawBadge("#icon-lock", "lock-badge");
+      if (frameLockedIds.has(id)) drawBadge("#icon-pin", "frame-lock-badge");
     }
   }
 
@@ -3467,7 +3589,11 @@
   function attachClusterHandlers(svgEl) {
     for (const [id, c] of Object.entries(clusterMap)) {
       const target = c.bg || c.g;
-      target.style.cursor = "pointer";
+      // A frame-locked box can't be dragged — its background acts like the
+      // canvas (marquee), so keep the default arrow instead of the grab/pointer
+      // cursor that would suggest the box is draggable.
+      const boxCursor = frameLockedIds.has(id) ? "default" : "pointer";
+      target.style.cursor = boxCursor;
       target.style.pointerEvents = "auto";
       const onClusterPointerDown = (ev) => {
         if (ev.target.closest("g.node")) return;
@@ -3520,7 +3646,7 @@
       // is wired separately on the label text and still fires.
       if (c.label) {
         c.label.style.pointerEvents = "auto";
-        c.label.style.cursor = "pointer";
+        c.label.style.cursor = boxCursor;
         c.label.addEventListener("pointerdown", onClusterPointerDown);
       }
     }
@@ -3530,6 +3656,22 @@
     const c = clusterMap[id];
     if (!c) return;
     const pointerId = ev.pointerId;
+    const frozen = computeFrozenSet();
+    // Locked subgraph (or one nested in a locked ancestor): selectable but not
+    // movable. Select on press (so it can be edited / unlocked) and bail — no
+    // drag handlers, so the box and its members stay put.
+    if (frozen.has(id)) {
+      if (!selectedClusterIds.has(id)) toggleClusterSelection(id, false);
+      setStatus(__("editor.op.subgraph_locked", id), false);
+      return;
+    }
+    // Frame-locked: the box itself can't be dragged, but its contents are free
+    // to edit. Repurpose a press-drag on the background as a marquee over the
+    // contents; a press without drag just selects the box (to edit / unlock).
+    if (frameLockedIds.has(id)) {
+      startBoxMarquee(ev, svgEl, id);
+      return;
+    }
     // Eager select-on-press: if this cluster isn't already part of the
     // current selection, replace selection with just [id] (Figma-style plain
     // click). If it is already selected (possibly in a mixed group with
@@ -3546,15 +3688,18 @@
     for (const cid of selectedClusterIds) {
       const cc = clusterMap[cid];
       if (!cc) continue;
+      if (frozen.has(cid)) continue;   // locked subgraphs don't move with the group
       groupClusters.push({ id: cid, c: cc, origin: getNodeTranslate(cc.g) });
     }
     const memberSet = new Set();
     for (const cid of selectedClusterIds) {
+      if (frozen.has(cid)) continue;
       for (const mid of findSubgraphMembers(currentSource, cid)) memberSet.add(mid);
     }
     for (const nid of selectedNodeIds) memberSet.add(nid);
     const memberStates = [];
     for (const mid of memberSet) {
+      if (frozen.has(mid)) continue;   // a node inside a locked subgraph stays put
       const n = nodeMap[mid];
       if (!n) continue;
       const t = getNodeTranslate(n.g);
@@ -3681,6 +3826,21 @@
       return;
     }
 
+    const frozenSet = computeFrozenSet();
+    // A node inside a locked subgraph is selectable but not movable: replicate
+    // the select-only-on-mouseup path (plain or additive) and never start a drag.
+    if (frozenSet.has(id)) {
+      function onUpLocked(e) {
+        if (e && e.pointerId !== pointerId) return;
+        document.removeEventListener("pointerup", onUpLocked);
+        document.removeEventListener("pointercancel", onUpLocked);
+        toggleNodeSelection(id, e.ctrlKey || e.metaKey || e.shiftKey);
+      }
+      document.addEventListener("pointerup", onUpLocked);
+      document.addEventListener("pointercancel", onUpLocked);
+      return;
+    }
+
     const n = nodeMap[id];
     // Eager select-on-press: if no modifier is held and the node isn't
     // already part of the current selection, select it right now so the
@@ -3708,8 +3868,12 @@
     if (draggingGroup) {
       for (const nid of selectedNodeIds) groupNodeSet.add(nid);
       for (const cid of selectedClusterIds) {
+        if (frozenSet.has(cid)) continue;
         for (const mid of findSubgraphMembers(currentSource, cid)) groupNodeSet.add(mid);
       }
+      // Drop anything frozen by a lock so locked subgraphs stay put even when
+      // they happen to fall inside a larger multi-selection being dragged.
+      for (const fid of frozenSet) groupNodeSet.delete(fid);
     } else {
       groupNodeSet.add(id);
     }
@@ -3726,6 +3890,7 @@
       for (const cid of selectedClusterIds) {
         const cc = clusterMap[cid];
         if (!cc) continue;
+        if (frozenSet.has(cid)) continue;
         groupClusters.push({ id: cid, c: cc, origin: getNodeTranslate(cc.g) });
       }
     }
@@ -5849,6 +6014,10 @@
     // when editing, hidden during creation.
     document.getElementById("subgraphCollapsibleField").classList.add("hidden");
     document.getElementById("subgraphCollapsibleInput").checked = false;
+    document.getElementById("subgraphLockField").classList.add("hidden");
+    document.getElementById("subgraphLockInput").checked = false;
+    document.getElementById("subgraphFrameLockField").classList.add("hidden");
+    document.getElementById("subgraphFrameLockInput").checked = false;
     const where = parentId ? ` (nested in ${parentId})` : "";
     document.getElementById("subgraphMembersInfo").textContent =
       `${ids.length} nodes${where}: ${ids.join(", ")}`;
@@ -5870,6 +6039,11 @@
     document.getElementById("subgraphMembersInfo").textContent = "";
     document.getElementById("subgraphCollapsibleField").classList.remove("hidden");
     document.getElementById("subgraphCollapsibleInput").checked = collapsibleIds.has(subgraphId);
+    document.getElementById("subgraphLockField").classList.remove("hidden");
+    document.getElementById("subgraphLockInput").checked = lockedIds.has(subgraphId);
+    document.getElementById("subgraphFrameLockField").classList.remove("hidden");
+    document.getElementById("subgraphFrameLockInput").checked = frameLockedIds.has(subgraphId);
+    syncSubgraphLockChecks();
     setTimeout(() => {
       const inp = document.getElementById("subgraphIdInput");
       inp.focus(); inp.select();
@@ -5947,8 +6121,16 @@
     if (newId !== oldId) {
       if (collapsibleIds.has(oldId)) { collapsibleIds.delete(oldId); collapsibleIds.add(newId); }
       if (collapsedIds.has(oldId)) { collapsedIds.delete(oldId); collapsedIds.add(newId); }
+      if (lockedIds.has(oldId)) { lockedIds.delete(oldId); lockedIds.add(newId); }
+      if (frameLockedIds.has(oldId)) { frameLockedIds.delete(oldId); frameLockedIds.add(newId); }
     }
     if (setSubgraphCollapsible(newId, document.getElementById("subgraphCollapsibleInput").checked)) {
+      markDirtyLayout();
+    }
+    if (setSubgraphLocked(newId, document.getElementById("subgraphLockInput").checked)) {
+      markDirtyLayout();
+    }
+    if (setSubgraphFrameLocked(newId, document.getElementById("subgraphFrameLockInput").checked)) {
       markDirtyLayout();
     }
     if (selectedClusterIds.has(oldId)) {
@@ -6494,7 +6676,28 @@
   // commit the result. Shift/Ctrl/Cmd held at pointerdown → additive
   // (union with existing selection); otherwise the result replaces the
   // current selection.
-  function startMarquee(ev, svgEl) {
+  // Press on the background of a frame-locked box. The box can't move, so a
+  // drag becomes a marquee over its contents; a tap (no drag) selects the box
+  // itself. A collapsed box has no visible contents to marquee → select-only.
+  function startBoxMarquee(ev, svgEl, id) {
+    if (collapsedIds.has(id)) {
+      const pointerId = ev.pointerId;
+      const additive = ev.shiftKey || ev.ctrlKey || ev.metaKey;
+      function onUp(e) {
+        if (e && e.pointerId !== pointerId) return;
+        document.removeEventListener("pointerup", onUp);
+        document.removeEventListener("pointercancel", onUp);
+        toggleClusterSelection(id, additive);
+      }
+      document.addEventListener("pointerup", onUp);
+      document.addEventListener("pointercancel", onUp);
+      return;
+    }
+    startMarquee(ev, svgEl, { tapClusterId: id });
+  }
+
+  function startMarquee(ev, svgEl, opts) {
+    const tapClusterId = (opts && opts.tapClusterId) || null;
     const MARQUEE_THRESHOLD_PX = 4;
     const pointerId = ev.pointerId;
     const additive = ev.shiftKey || ev.ctrlKey || ev.metaKey;
@@ -6546,7 +6749,15 @@
       document.removeEventListener("pointerup", onUp);
       document.removeEventListener("pointercancel", onUp);
       if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
-      if (!started) return; // below threshold → let the normal click handler run
+      if (!started) {
+        // Below threshold → a tap. From a frame-locked box, select that box;
+        // suppress the trailing diagram click so it isn't immediately cleared.
+        if (tapClusterId) {
+          toggleClusterSelection(tapClusterId, additive);
+          _skipNextDiagramClick = true;
+        }
+        return; // otherwise let the normal click handler run
+      }
       // Suppress the trailing diagramEl click so it doesn't immediately
       // clear the selection we just made.
       _skipNextDiagramClick = true;
@@ -8954,6 +9165,14 @@
 
   document.getElementById("subgraphCancelBtn").addEventListener("click", closeAddSubgraphModal);
   document.getElementById("subgraphOkBtn").addEventListener("click", submitAddSubgraphModal);
+  document.getElementById("subgraphLockInput").addEventListener("change", (e) => {
+    if (e.target.checked) document.getElementById("subgraphFrameLockInput").checked = false;
+    syncSubgraphLockChecks();
+  });
+  document.getElementById("subgraphFrameLockInput").addEventListener("change", (e) => {
+    if (e.target.checked) document.getElementById("subgraphLockInput").checked = false;
+    syncSubgraphLockChecks();
+  });
   document.getElementById("addSubgraphModal").querySelector(".modal-backdrop")
     .addEventListener("click", closeAddSubgraphModal);
   for (const inputId of ["subgraphIdInput", "subgraphTitleInput"]) {

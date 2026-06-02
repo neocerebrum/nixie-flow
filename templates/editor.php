@@ -162,6 +162,14 @@
             <input id="subgraphCollapsibleInput" type="checkbox">
             <span><?= __('editor.modal.subgraph.collapsible') ?><small><?= __('editor.modal.subgraph.collapsible_hint') ?></small></span>
         </label>
+        <label class="field-check hidden" id="subgraphLockField">
+            <input id="subgraphLockInput" type="checkbox">
+            <span><?= __('editor.modal.subgraph.locked') ?><small><?= __('editor.modal.subgraph.locked_hint') ?></small></span>
+        </label>
+        <label class="field-check hidden" id="subgraphFrameLockField">
+            <input id="subgraphFrameLockInput" type="checkbox">
+            <span><?= __('editor.modal.subgraph.frame_locked') ?><small><?= __('editor.modal.subgraph.frame_locked_hint') ?></small></span>
+        </label>
         <div id="subgraphModalError"></div>
         <div class="modal-buttons">
             <button id="subgraphCancelBtn"><?= __('common.cancel') ?></button>

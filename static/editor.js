@@ -6877,7 +6877,18 @@
     const kind = selectionKind();
     const nNodes = selectedNodeIds.size;
     if (addEdgeBtn)      addEdgeBtn.disabled      = !((kind === "node" && nNodes === 1) || kind === "subgraph");
-    if (addSubgraphBtn)  addSubgraphBtn.disabled  = !(kind === "node" && nNodes >= 2);
+    // +Subgraph needs ≥2 nodes that share the same parent (all at root, or all
+    // direct children of one subgraph). Nodes from different subgraphs have no
+    // unambiguous parent to nest under, so applyAddSubgraph would just bail —
+    // don't offer the button in that case.
+    let canSubgraph = kind === "node" && nNodes >= 2;
+    if (canSubgraph) {
+      const owners = computeNodeSubgraphOwners(currentSource);
+      const ids = [...selectedNodeIds];
+      const p0 = owners[ids[0]] || null;
+      canSubgraph = ids.every(id => (owners[id] || null) === p0);
+    }
+    if (addSubgraphBtn)  addSubgraphBtn.disabled  = !canSubgraph;
     // Delete: enabled only for single-kind selections. Mixed and multi-
     // subgraph are intentionally disabled to keep destructive ops unambiguous.
     if (deleteBtn)       deleteBtn.disabled       = !(kind === "node" || kind === "edge" || kind === "subgraph");

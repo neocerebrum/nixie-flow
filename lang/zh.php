@@ -389,6 +389,8 @@ return [
     'js.editor.op.reconnected'         => '已重新连接端点',
     'js.editor.reconnect_to'           => '重新连接到 %s',
     'js.editor.reconnect_hint'         => '拖放到节点或子图上',
+    'js.editor.move_edge_hint'         => '将端点拖到节点或子图上以重新连接',
+    'js.editor.move_edge_btn_hint'     => '重新连接端点 (M)：将端点拖到节点或子图上',
     'js.editor.op.subgraph_added'       => '+ 子图 %s 包含 %s 个节点',
     'js.editor.op.subgraph_renamed'     => '✎ 子图 %s',
     'js.editor.op.subgraph_locked'      => '🔒 子图 %s 已锁定',

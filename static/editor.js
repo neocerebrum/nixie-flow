@@ -2800,6 +2800,10 @@
     if (old) old.remove();
     renderEdgeBendHandle();
     renderEdgeEndpointHandles();
+    // In edge-move mode the only affordance is the endpoint reconnect handles
+    // (drawn by renderEdgeEndpointHandles); curvature handles and compass
+    // anchors are suppressed so the two can never be confused with each other.
+    if (connectingState === "edge-move") return;
     // Anchor hotspots / bend handles only make sense on a single edge — on
     // multi-select they'd be ambiguous and crowd the canvas.
     const soleKey = singleEdgeKey();
@@ -2915,6 +2919,9 @@
     if (!svgEl) return;
     const old = svgEl.querySelector(":scope > g.edge-bend");
     if (old) old.remove();
+    // Curvature is hidden while reconnecting (edge-move): only the endpoint
+    // reconnect handles are in scene in that mode.
+    if (connectingState === "edge-move") return;
     // Bend handles only render on a single-edge selection; on multi-select
     // they'd be ambiguous (one bend per edge) and visually noisy.
     const soleKey = singleEdgeKey();
@@ -3128,6 +3135,12 @@
     if (!svgEl) return;
     const old = svgEl.querySelector(":scope > g.edge-endpoints");
     if (old) old.remove();
+    // Reconnect handles are gated behind the Move mode (entered via the Move
+    // button / M while a single edge is selected). Keeping them out of the
+    // default selected-edge view stops them being mistaken for the curvature
+    // handles — the two never share the canvas. Reparenting an edge endpoint is
+    // the same idea as reparenting a node into a subgraph, hence the same tool.
+    if (connectingState !== "edge-move") return;
     const soleKey = singleEdgeKey();
     if (!soleKey) return;
     if (!canWrite) return;
@@ -3157,7 +3170,9 @@
       overlay.appendChild(hit);
       overlay.appendChild(dot);
       const start = (ev) => {
-        if (connectingState) return;
+        // The handle only exists in edge-move mode, so that's the one
+        // connectingState we must allow the drag to start under.
+        if (connectingState && connectingState !== "edge-move") return;
         if (!lockHeldByMe()) return;
         if (ev.pointerType === "mouse" && ev.button !== 0) return;
         ev.stopPropagation();
@@ -3167,39 +3182,14 @@
       hit.addEventListener("pointerdown", start);
       dot.addEventListener("pointerdown", start);
     };
-    // Pull each handle a little back along the edge's tangent (toward its bend
-    // control point) so it never sits under the endpoint's anchor hotspot and
-    // stays grabbable even when the edge terminates on/near a pinned anchor.
-    // The inset is clamped to a fraction of the edge length so the two handles
-    // can't cross on a short edge.
+    // The reconnect handles sit exactly on the edge endpoints. They only show
+    // in edge-move, where the compass anchors are hidden, so there's nothing to
+    // avoid by insetting them back along the tangent (which is what the old
+    // always-on handles had to do to clear the anchor dots).
     const { sxW, syW, txW, tyW } = ep;
-    let c1, c2;
-    if (edgeBend[soleKey]) {
-      const b = edgeBend[soleKey];
-      c1 = bendCpWorld(sxW, syW, txW, tyW, b, 1);
-      c2 = bendCpWorld(sxW, syW, txW, tyW, b, 2);
-    } else {
-      const auto = autoCurveCps(edge);
-      if (auto) { c1 = auto.c1; c2 = auto.c2; }
-      else {
-        c1 = bendCpWorld(sxW, syW, txW, tyW, BEND_DEFAULT, 1);
-        c2 = bendCpWorld(sxW, syW, txW, tyW, BEND_DEFAULT, 2);
-      }
-    }
-    const chord = Math.hypot(txW - sxW, tyW - syW) || 1;
-    const inset = Math.min(ENDPOINT_HANDLE_INSET_PX * u, chord * 0.3);
-    const along = (px, py, cx, cy) => {
-      const dx = cx - px, dy = cy - py, d = Math.hypot(dx, dy) || 1;
-      return { x: px + (dx / d) * inset, y: py + (dy / d) * inset };
-    };
-    const sP = along(sxW, syW, c1.x, c1.y);
-    const tP = along(txW, tyW, c2.x, c2.y);
-    if (!sHidden) mk("source", sP.x, sP.y);
-    if (!tHidden) mk("target", tP.x, tP.y);
+    if (!sHidden) mk("source", sxW, syW);
+    if (!tHidden) mk("target", txW, tyW);
   }
-  // Screen-px inset pulling an endpoint reconnect handle back along the edge
-  // (scaled by overlayUnitsPerPx at draw time, like the handle radii).
-  const ENDPOINT_HANDLE_INSET_PX = 20;
 
   function beginEndpointDrag(downEv, key, which) {
     const svgEl = diagramEl && diagramEl.querySelector("svg");
@@ -3257,7 +3247,16 @@
       const target = hoverId;
       clearHover();
       if (target) {
+        // Commit-and-exit: leave edge-move before the reconnect re-render so
+        // the freshly re-selected edge comes back showing curvature, not the
+        // reconnect handles.
+        if (connectingState === "edge-move") cancelEdgeMoveMode();
         commitReconnect(edge, which, target);
+      } else if (connectingState === "edge-move") {
+        // No valid drop, still in Move mode — rebuild the handles and keep the
+        // mode active so the user can try again.
+        renderEdgeHotspots();
+        setStatus(__("editor.move_edge_hint"));
       } else {
         // No valid drop — snap back: rebuild the handles where they were.
         renderEdgeHotspots();
@@ -6510,6 +6509,45 @@
     setStatus(`moved ${ids.length} elements ${where}`);
   }
 
+  // ── Edge-move: reparent one endpoint of the selected edge onto another
+  // node/subgraph. Conceptually the same operation as moving a node into a
+  // subgraph (reparenting), so it's driven by the same Move button / M key.
+  // While active, only the endpoint reconnect handles are shown — curvature
+  // and compass anchors are suppressed (the renderEdge* functions gate on
+  // connectingState === "edge-move") — so the two affordances can never be
+  // confused. Drag an endpoint onto a target to commit; beginEndpointDrag then
+  // exits the mode (commit-and-exit). A no-drop release keeps the mode active
+  // so the user can retry.
+  function startEdgeMoveMode() {
+    if (connectingState === "edge-move") { cancelEdgeMoveMode(); return; }
+    if (connectingState) return;
+    if (!requireValidSource("reconnect edge")) return;
+    if (!singleEdgeKey()) return;
+    if (!canWrite || !lockHeldByMe()) return;
+    connectingState = "edge-move";
+    document.body.classList.add("moving");
+    if (moveToSubgraphBtn) {
+      moveToSubgraphBtn.classList.add("active");
+      moveToSubgraphBtn.innerHTML = '<svg class="icon"><use href="#icon-x"/></svg>';
+      moveToSubgraphBtn.title = __("editor.move_cancel");
+    }
+    renderEdgeHotspots(); // swap curvature/compass out for the endpoint handles
+    setStatus(__("editor.move_edge_hint"));
+  }
+
+  function cancelEdgeMoveMode() {
+    connectingState = null;
+    document.body.classList.remove("moving");
+    if (moveToSubgraphBtn) {
+      moveToSubgraphBtn.classList.remove("active");
+      moveToSubgraphBtn.innerHTML = '<svg class="icon"><use href="#icon-log-in"/></svg>';
+      moveToSubgraphBtn.title = __("editor.move_btn_hint");
+    }
+    renderEdgeHotspots(); // endpoint handles out, curvature/compass back
+    updateToolbarState();
+    setStatus("");
+  }
+
   // ── Pan / zoom ───────────────────────────────────────────────────────────
 
   function applyViewState(svgEl) {
@@ -7084,6 +7122,7 @@
   function updateToolbarState() {
     if (connectingState === "edge-target") return; // managed by startConnectMode
     if (connectingState === "move-target") return; // managed by startMoveMode
+    if (connectingState === "edge-move") return;   // managed by startEdgeMoveMode
     const kind = selectionKind();
     const nNodes = selectedNodeIds.size;
     if (addEdgeBtn)      addEdgeBtn.disabled      = !((kind === "node" && nNodes === 1) || kind === "subgraph");
@@ -7114,8 +7153,12 @@
     if (alignHBtn)        alignHBtn.disabled        = !alignEnabled;
     if (distributeHBtn)   distributeHBtn.disabled   = !distributeEnabled;
     if (distributeVBtn)   distributeVBtn.disabled   = !distributeEnabled;
+    // Move also drives edge reconnection: on a single-edge selection it enters
+    // edge-move (reparent an endpoint) instead of move-to-subgraph — so the
+    // tooltip swaps to describe the reconnect gesture in that case.
     if (moveToSubgraphBtn) {
-      moveToSubgraphBtn.disabled = !(kind === "node" || kind === "subgraph" || kind === "subgraphs" || kind === "mixed");
+      moveToSubgraphBtn.disabled = !(kind === "node" || kind === "subgraph" || kind === "subgraphs" || kind === "mixed" || singleEdge);
+      moveToSubgraphBtn.title = singleEdge ? __("editor.move_edge_btn_hint") : __("editor.move_btn_hint");
     }
     // Palette: the swatch row swaps to the active selection's group and marks
     // swatches inert when there's nothing to apply to (still double-click
@@ -9125,7 +9168,14 @@
   if (alignHBtn) alignHBtn.addEventListener("click", applyAlignH);
   if (distributeHBtn) distributeHBtn.addEventListener("click", () => applyDistribute("h"));
   if (distributeVBtn) distributeVBtn.addEventListener("click", () => applyDistribute("v"));
-  if (moveToSubgraphBtn) moveToSubgraphBtn.addEventListener("click", startMoveMode);
+  // The Move button reparents whatever is selected: a single edge → reparent
+  // one of its endpoints (edge-move); nodes/subgraphs → move into a subgraph.
+  // Each target function toggles itself off when its mode is already active.
+  if (moveToSubgraphBtn) moveToSubgraphBtn.addEventListener("click", () => {
+    if (connectingState === "edge-move") { cancelEdgeMoveMode(); return; }
+    if (selectionKind() === "edge" && singleEdgeKey()) startEdgeMoveMode();
+    else startMoveMode();
+  });
   if (addSubgraphBtn) addSubgraphBtn.addEventListener("click", applyAddSubgraph);
   if (deleteBtn) deleteBtn.addEventListener("click", applyDelete);
   exportBtn.addEventListener("click", exportSource);
@@ -9365,6 +9415,7 @@
     if (e.key === "Escape") {
       if (connectingState === "edge-target") { cancelConnectMode(); return; }
       if (connectingState === "move-target") { cancelMoveMode(); return; }
+      if (connectingState === "edge-move") { cancelEdgeMoveMode(); return; }
       if (connectingState) { cancelConnectMode(); return; }
       if (selectedNodeIds.size > 0) { deselectNode(); setStatus(""); }
       if (selectedClusterIds.size > 0) { deselectCluster(); setStatus(""); }
@@ -9394,11 +9445,14 @@
       return;
     }
     if ((e.key === "m" || e.key === "M") && !e.altKey) {
-      // Toggle move-to-subgraph: startMoveMode cancels itself when already
-      // armed, so M also exits the mode. Otherwise require an enabled button
-      // (i.e. a non-empty selection to move).
-      if (connectingState === "move-target" || (moveToSubgraphBtn && !moveToSubgraphBtn.disabled)) {
-        e.preventDefault(); startMoveMode();
+      // M mirrors the Move button: toggles whichever Move variant applies.
+      // Each start* cancels itself when already armed, so M also exits.
+      if (connectingState === "edge-move") { e.preventDefault(); cancelEdgeMoveMode(); return; }
+      if (connectingState === "move-target") { e.preventDefault(); startMoveMode(); return; }
+      if (moveToSubgraphBtn && !moveToSubgraphBtn.disabled) {
+        e.preventDefault();
+        if (selectionKind() === "edge" && singleEdgeKey()) startEdgeMoveMode();
+        else startMoveMode();
       }
       return;
     }
@@ -9417,6 +9471,14 @@
       const onSomething = e.target.closest("g.node, g.cluster, path.flowchart-link, g.edgeLabel, g.edgeLabels");
       if (!onSomething) { handleMoveTargetClick(null); return; }
       return; // node click during move-target: ignore (Esc to cancel)
+    }
+    // Edge-move reconnects by dragging an endpoint handle, not by clicking a
+    // target. A plain click on empty canvas cancels the mode; clicks on nodes
+    // or the handles themselves are ignored (Esc / M / button also exit).
+    if (connectingState === "edge-move") {
+      const onSomething = e.target.closest("g.node, g.cluster, path.flowchart-link, g.edgeLabel, g.edgeLabels, g.edge-endpoints");
+      if (!onSomething) cancelEdgeMoveMode();
+      return;
     }
     // Shift/Ctrl/Cmd held: user is mid-multiselect and missed an element —
     // preserve the current selection instead of clearing it.

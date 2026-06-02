@@ -392,6 +392,8 @@ return [
     'js.editor.op.reconnected'         => 'Kante neu verbunden',
     'js.editor.reconnect_to'           => 'mit %s verbinden',
     'js.editor.reconnect_hint'         => 'auf einen Knoten oder eine Gruppe ziehen',
+    'js.editor.move_edge_hint'         => 'einen Endpunkt auf einen Knoten oder Subgraphen ziehen, um ihn neu zu verbinden',
+    'js.editor.move_edge_btn_hint'     => 'Endpunkt neu verbinden (M): einen Endpunkt auf einen Knoten oder Subgraphen ziehen',
     'js.editor.op.subgraph_added'       => '+ Subgraph %s mit %s Knoten',
     'js.editor.op.subgraph_renamed'     => '✎ Subgraph %s',
     'js.editor.op.subgraph_locked'      => '🔒 Subgraph %s gesperrt',

@@ -389,6 +389,8 @@ return [
     'js.editor.op.reconnected'         => '端点を再接続しました',
     'js.editor.reconnect_to'           => '%s に再接続',
     'js.editor.reconnect_hint'         => 'ノードまたはサブグラフにドロップ',
+    'js.editor.move_edge_hint'         => '端点をノードまたはサブグラフにドラッグして再接続',
+    'js.editor.move_edge_btn_hint'     => '端点を再接続 (M): 端点をノードまたはサブグラフにドラッグ',
     'js.editor.op.subgraph_added'       => '+ サブグラフ %s（%s個のノード）',
     'js.editor.op.subgraph_renamed'     => '✎ サブグラフ %s',
     'js.editor.op.subgraph_locked'      => '🔒 サブグラフ %s はロックされています',

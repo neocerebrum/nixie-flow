@@ -389,6 +389,8 @@ return [
     'js.editor.op.reconnected'         => '끝점을 다시 연결함',
     'js.editor.reconnect_to'           => '%s에 다시 연결',
     'js.editor.reconnect_hint'         => '노드 또는 서브그래프에 놓기',
+    'js.editor.move_edge_hint'         => '끝점을 노드나 서브그래프로 드래그하여 다시 연결',
+    'js.editor.move_edge_btn_hint'     => '끝점 다시 연결 (M): 끝점을 노드나 서브그래프로 드래그',
     'js.editor.op.subgraph_added'       => '+ 서브그래프 %s, %s개 노드 포함',
     'js.editor.op.subgraph_renamed'     => '✎ 서브그래프 %s',
     'js.editor.op.subgraph_locked'      => '🔒 서브그래프 %s 잠김',

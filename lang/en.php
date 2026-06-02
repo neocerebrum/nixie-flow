@@ -392,6 +392,8 @@ return [
     'js.editor.op.reconnected'         => 'edge endpoint reconnected',
     'js.editor.reconnect_to'           => 'reconnect to %s',
     'js.editor.reconnect_hint'         => 'drop on a node or subgraph',
+    'js.editor.move_edge_hint'         => 'drag an endpoint onto a node or subgraph to reconnect it',
+    'js.editor.move_edge_btn_hint'     => 'Reconnect edge endpoint (M): drag an endpoint onto a node or subgraph',
     'js.editor.op.subgraph_added'       => '+ subgraph %s with %s nodes',
     'js.editor.op.subgraph_renamed'     => '✎ subgraph %s',
     'js.editor.op.subgraph_locked'      => '🔒 subgraph %s is locked',

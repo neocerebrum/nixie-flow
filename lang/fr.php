@@ -392,6 +392,8 @@ return [
     'js.editor.op.reconnected'         => 'extrémité reconnectée',
     'js.editor.reconnect_to'           => 'reconnecter à %s',
     'js.editor.reconnect_hint'         => 'déposez sur un nœud ou un sous-graphe',
+    'js.editor.move_edge_hint'         => 'faites glisser une extrémité sur un nœud ou un sous-graphe pour la reconnecter',
+    'js.editor.move_edge_btn_hint'     => 'Reconnecter une extrémité (M) : faites glisser une extrémité sur un nœud ou un sous-graphe',
     'js.editor.op.subgraph_added'       => '+ subgraph %s avec %s nodes',
     'js.editor.op.subgraph_renamed'     => '✎ subgraph %s',
     'js.editor.op.subgraph_locked'      => '🔒 subgraph %s verrouillé',

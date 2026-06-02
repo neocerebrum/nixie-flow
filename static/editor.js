@@ -4471,25 +4471,24 @@
   }
 
   function attachLabelEditors() {
-    // Double-click on a node/subgraph label opens the same modal used for
-    // creation, pre-filled with the current id/label/shape. This lets the
-    // user rename the id (with propagation across edges/notes/style/positions)
-    // and change shape/title — capabilities the in-place inline editor lacked.
+    // Double-click on a node/subgraph opens the same modal used for creation,
+    // pre-filled with the current id/label/shape. This lets the user rename the
+    // id (with propagation across edges/notes/style/positions) and change
+    // shape/title — capabilities the in-place inline editor lacked. Bound to the
+    // whole element group (not just the title text) so it stays easy to hit at
+    // low zoom; the title bubbles up to the same group. Member nodes are
+    // separate groups painted on top of a subgraph, so a dblclick on a node
+    // edits the node, not its container. Collapsed subgraphs are handled by the
+    // collapse-hit's own dblclick.
     for (const [id, n] of Object.entries(nodeMap)) {
-      const labelEl = findLabelTextElement(n.g);
-      if (!labelEl) continue;
-      labelEl.style.cursor = "pointer";
-      labelEl.addEventListener("dblclick", (ev) => {
+      n.g.addEventListener("dblclick", (ev) => {
         if (isReadOnly) return; // spectator: no edit
         ev.stopPropagation(); ev.preventDefault();
         openEditNodeModal(id);
       });
     }
     for (const [id, c] of Object.entries(clusterMap)) {
-      const labelEl = findLabelTextElement(c.g);
-      if (!labelEl) continue;
-      labelEl.style.cursor = "pointer";
-      labelEl.addEventListener("dblclick", (ev) => {
+      c.g.addEventListener("dblclick", (ev) => {
         if (isReadOnly) return; // spectator: no edit
         ev.stopPropagation(); ev.preventDefault();
         openEditSubgraphModal(id);

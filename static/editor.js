@@ -4720,6 +4720,34 @@
     return lines.join("\n");
   }
 
+  // Insert a node declaration at the diagram ROOT (depth 0), never inside a
+  // subgraph block. The generic "after the last node decl" scan would land
+  // inside a subgraph when every existing node has been grouped — the last
+  // declaration then sits just before that subgraph's `end`, so the new root
+  // node would be dropped into the wrong container.
+  function insertNodeAtRoot(source, line) {
+    const lines = source.split("\n");
+    const anySg = /^\s*subgraph\b/i, endRe = /^\s*end\s*$/i;
+    const nodeDeclRe = /^\s*[A-Za-z_]\w*\s*[\[(\{]/;
+    let depth = 0, lastRootDecl = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (anySg.test(lines[i])) { depth++; continue; }
+      if (endRe.test(lines[i])) { if (depth > 0) depth--; continue; }
+      if (depth === 0 && nodeDeclRe.test(lines[i])) lastRootDecl = i;
+    }
+    if (lastRootDecl !== -1) {
+      // Keep an adjacent note glued to its declaration.
+      if (lastRootDecl + 1 < lines.length && matchNote(lines[lastRootDecl + 1])) lastRootDecl++;
+      lines.splice(lastRootDecl + 1, 0, line);
+      return lines.join("\n");
+    }
+    // No root-level node exists yet: drop it just above the trailing edge
+    // sections (or at EOF), which is depth 0 and after any subgraph blocks.
+    const idx = rootContentInsertIndex(lines);
+    lines.splice(idx, 0, line);
+    return lines.join("\n");
+  }
+
   function addNodeToSource(source, id, label, shape, subgraphId) {
     if (!/^[A-Za-z_][\w]*$/.test(id)) {
       return { ok: false, error: __("editor.err.id_invalid", id) };
@@ -4729,7 +4757,7 @@
     const lbl = label || id;
     const err = validateLabelForShape(lbl, shp);
     if (err) return { ok: false, error: err };
-    const line = `    ${id}${shp.open}${lbl}${shp.close}`;
+    const body = `${id}${shp.open}${lbl}${shp.close}`;
     if (subgraphId && clusterMap[subgraphId]) {
       const lines = source.split("\n");
       const idEsc = regexEscape(subgraphId);
@@ -4747,13 +4775,20 @@
           else if (endRe.test(lines[i])) { depth--; if (depth === 0) { endIdx = i; break; } }
         }
         if (endIdx !== -1) {
-          lines.splice(endIdx, 0, line);
+          // Indent to the target's content depth (enclosing subgraphs + 1) so
+          // a nested subgraph's nodes line up canonically without a Tidy pass.
+          let outer = 0;
+          for (let i = 0; i < headerIdx; i++) {
+            if (subgraphHeaderRe.test(lines[i])) outer++;
+            else if (endRe.test(lines[i])) outer--;
+          }
+          lines.splice(endIdx, 0, "    ".repeat(outer + 1) + body);
           return { ok: true, source: lines.join("\n") };
         }
       }
     }
-    const nodeDeclRegex = /^\s*[A-Za-z_]\w*\s*[\[(\{]/;
-    return { ok: true, source: insertAfterLastMatch(source, nodeDeclRegex, line) };
+    // Root: depth 0, no indentation.
+    return { ok: true, source: insertNodeAtRoot(source, body) };
   }
 
   function addEdgeToSource(source, src, tgt, label) {
@@ -5204,7 +5239,10 @@
     for (const id of ids) {
       if (movedNotes[id]) outSource = upsertNoteInSource(outSource, id, movedNotes[id]);
     }
-    return { ok: true, source: outSource };
+    // Moved pieces (and any relocated subgraph blocks) keep their old leading
+    // indentation; canonicalize depth-based indentation so a move to root lands
+    // at column 0 without needing a Tidy pass.
+    return { ok: true, source: reindentSource(outSource) };
   }
 
   // Detect "legacy" sources where a node's standalone declaration sits at
@@ -7508,7 +7546,17 @@
     if (!requireValidSource("add node")) return;
     _editNodeOriginalId = null;
     setNodeModalMode(false);
-    _addNodeTargetSubgraph = (selectedClusterIds.size === 1 ? [...selectedClusterIds][0] : null);
+    // Target subgraph: an explicitly selected single subgraph wins; otherwise,
+    // if a single node inside a subgraph is selected, inherit its owning
+    // subgraph so the new node lands beside it. Falls back to root.
+    if (selectedClusterIds.size === 1) {
+      _addNodeTargetSubgraph = [...selectedClusterIds][0];
+    } else if (selectedNodeIds.size === 1 && selectedClusterIds.size === 0) {
+      const owner = computeNodeSubgraphOwners(currentSource)[[...selectedNodeIds][0]];
+      _addNodeTargetSubgraph = owner || null;
+    } else {
+      _addNodeTargetSubgraph = null;
+    }
     document.getElementById("addNodeModal").classList.remove("hidden");
     document.getElementById("modalError").textContent = "";
     const hint = document.getElementById("addNodeSubgraphHint");

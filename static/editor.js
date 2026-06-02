@@ -4930,6 +4930,40 @@
     return { ok: true, source: kept.join("\n"), removedDecl, removedOther };
   }
 
+  // Remove `subgraph … end` blocks with no content between header and end —
+  // only blank/comment lines count as empty. Deleting a subgraph's last node
+  // (or moving it out) otherwise leaves an empty block that Mermaid renders as
+  // a stray node-like box (and the editor then indexes it as a node, so it
+  // can't even be deleted as a subgraph). Loops until stable so emptying an
+  // inner subgraph cascades to a parent that's left holding only it. Returns
+  // { source, removed }.
+  function pruneEmptySubgraphs(source) {
+    const headerRe = /^\s*subgraph\b/i;
+    const endRe = /^\s*end\s*$/i;
+    const isContent = (l) => { const t = l.trim(); return t !== "" && !t.startsWith("%%"); };
+    let lines = source.split("\n");
+    let removed = 0, changed = true;
+    while (changed) {
+      changed = false;
+      for (let i = 0; i < lines.length; i++) {
+        if (!headerRe.test(lines[i])) continue;
+        let depth = 1, end = -1;
+        for (let j = i + 1; j < lines.length; j++) {
+          if (headerRe.test(lines[j])) depth++;
+          else if (endRe.test(lines[j])) { depth--; if (depth === 0) { end = j; break; } }
+        }
+        if (end === -1) continue;
+        let hasContent = false;
+        for (let j = i + 1; j < end; j++) { if (isContent(lines[j])) { hasContent = true; break; } }
+        if (!hasContent) {
+          lines.splice(i, end - i + 1);
+          removed++; changed = true; break;
+        }
+      }
+    }
+    return { source: lines.join("\n"), removed };
+  }
+
   // Walks the source block between `subgraph ID` and its matching `end`, and
   // returns the set of node IDs (keys of nodeMap) referenced inside — including
   // those contained in nested subgraphs, since dragging the outer cluster must
@@ -5239,6 +5273,8 @@
     for (const id of ids) {
       if (movedNotes[id]) outSource = upsertNoteInSource(outSource, id, movedNotes[id]);
     }
+    // Moving a node out can leave its old subgraph empty — drop it.
+    outSource = pruneEmptySubgraphs(outSource).source;
     // Moved pieces (and any relocated subgraph blocks) keep their old leading
     // indentation; canonicalize depth-based indentation so a move to root lands
     // at column 0 without needing a Tidy pass.
@@ -6059,12 +6095,16 @@
       } else errs.push(`${id}: ${r.error}`);
     }
     if (ok > 0) {
+      // Drop any subgraph emptied by the deletion (no node left inside).
+      const pruned = pruneEmptySubgraphs(next);
+      next = pruned.source;
       currentSource = next;
       markDirtySource();
       deselectNode();
       await renderDiagram();
       pushHistory();
-      setStatus(ids.length === 1 ? __("editor.op.node_deleted", ids[0]) : `− ${ok}/${ids.length} nodes${errs.length ? " err: " + errs.join("; ") : ""}`,
+      const sgNote = pruned.removed ? ` (− ${pruned.removed} empty subgraph${pruned.removed > 1 ? "s" : ""})` : "";
+      setStatus((ids.length === 1 ? __("editor.op.node_deleted", ids[0]) : `− ${ok}/${ids.length} nodes${errs.length ? " err: " + errs.join("; ") : ""}`) + sgNote,
                 errs.length > 0);
     } else if (errs.length) {
       setStatus(`delete: ${errs.join("; ")}`, true);

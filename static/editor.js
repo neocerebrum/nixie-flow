@@ -9175,6 +9175,15 @@
       if (addEdgeBtn && !addEdgeBtn.disabled) { e.preventDefault(); startConnectMode(); }
       return;
     }
+    if ((e.key === "m" || e.key === "M") && !e.altKey) {
+      // Toggle move-to-subgraph: startMoveMode cancels itself when already
+      // armed, so M also exits the mode. Otherwise require an enabled button
+      // (i.e. a non-empty selection to move).
+      if (connectingState === "move-target" || (moveToSubgraphBtn && !moveToSubgraphBtn.disabled)) {
+        e.preventDefault(); startMoveMode();
+      }
+      return;
+    }
   });
 
   diagramEl.addEventListener("click", (e) => {

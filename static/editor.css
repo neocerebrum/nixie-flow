@@ -352,6 +352,12 @@ body.connecting .node.connect-source > circle:first-of-type,
 body.connecting .node.connect-source > ellipse:first-of-type {
     stroke: #88c0d0; stroke-width: 3px;
 }
+/* Move-to-subgraph mode: nodes are transparent to the mouse so a click falls
+   through to the subgraph that contains them (→ that subgraph as target) or to
+   the background (→ root). Individual nodes are never valid move targets, so
+   the grab cursor over them would be misleading. */
+body.moving .node { pointer-events: none; }
+
 body.deleting .node { cursor: not-allowed; }
 body.deleting .node:hover > rect:first-of-type,
 body.deleting .node:hover > polygon:first-of-type,

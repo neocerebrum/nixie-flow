@@ -318,6 +318,47 @@
   const notesTargetLabel = document.getElementById("notesTargetLabel");
   const toggleNotesPanelBtn = document.getElementById("toggleNotesPanelBtn");
 
+  // ── Origin breadcrumb chain ──────────────────────────────────────────────
+  // Node links carry the trail of diagrams that led here as a comma list in
+  // `?origin=a,b,c` (oldest→newest ancestor; the current diagram is NOT in it).
+  // The "back" button pops the last element. Two invariants keep the URL bounded:
+  //   • cap   — at most ORIGIN_CAP ancestors are kept (oldest dropped first);
+  //   • dedup — revisiting a diagram already in the trail collapses the loop,
+  //             so A→B→C→A returns straight to A instead of growing forever.
+  const ORIGIN_CAP = 15;
+  const SLUG_RE = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+
+  function parseOriginChain() {
+    const raw = new URLSearchParams(location.search).get("origin") || "";
+    return raw.split(",").map(s => s.trim()).filter(s => SLUG_RE.test(s));
+  }
+  function buildOriginParam(chain) {
+    return chain.length ? "?origin=" + chain.map(encodeURIComponent).join(",") : "";
+  }
+  // URL for a node link from the current diagram to `dest`, with the trail
+  // extended by the current slug then cycle-collapsed and capped.
+  function nodeLinkUrl(dest) {
+    const chain = parseOriginChain();
+    chain.push(slug); // current diagram becomes the newest ancestor
+    const dup = chain.indexOf(dest);
+    let next = dup === -1 ? chain : chain.slice(0, dup); // collapse the loop
+    if (next.length > ORIGIN_CAP) next = next.slice(next.length - ORIGIN_CAP);
+    return "/editor/" + encodeURIComponent(dest) + buildOriginParam(next);
+  }
+
+  // Back button: returns to the last ancestor, carrying the remaining trail.
+  (function setupOriginBack() {
+    const btn = document.getElementById("originBackBtn");
+    if (!btn) return;
+    const chain = parseOriginChain();
+    if (!chain.length) return;
+    const back = chain[chain.length - 1];
+    btn.href = "/editor/" + encodeURIComponent(back) + buildOriginParam(chain.slice(0, -1));
+    btn.textContent = "← " + back;
+    btn.title = __("editor.origin_back_title", back);
+    btn.classList.remove("hidden");
+  })();
+
   // ── State ────────────────────────────────────────────────────────────────
 
   const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
@@ -851,6 +892,7 @@
     updateToolbarState();
     applyNoteTooltips();
     renderCollapseButtons();
+    renderNodeLinks();
     // SVG was rebuilt — repaint peer-selection overlay so external selections
     // stay visible across remote-poll reloads.
     if (typeof renderPeerSelections === "function") renderPeerSelections();
@@ -896,6 +938,85 @@
     const ref = (nodeMap[id] && nodeMap[id].g) || (clusterMap[id] && clusterMap[id].g);
     setNoteTitle(ref, text);
     if (clusterMap[id] && collapsedIds.has(id)) renderCollapseButtons();
+  }
+
+  // ── Node "open another diagram" links ───────────────────────────────────
+  // A node whose label contains the token `link:<slug>` gets a small clickable
+  // badge in its top-right corner that opens `/editor/<slug>` (the same URL the
+  // dashboard navigates to). The token itself is stripped from the visible
+  // caption so the node reads cleanly. Works in read-only mode — navigating to
+  // another diagram is a read action, so there's no canWrite guard.
+  const NODE_LINK_RE = /link:([A-Za-z0-9][A-Za-z0-9_-]*)/;
+  const NODE_LINK_RE_G = /\s*link:[A-Za-z0-9][A-Za-z0-9_-]*/g;
+  const NODE_LINK_BADGE = 20; // world units (scales with the diagram)
+
+  function renderNodeLinks() {
+    const SVG_NS = "http://www.w3.org/2000/svg";
+    for (const id of Object.keys(nodeMap)) {
+      const node = nodeMap[id];
+      const g = node.g;
+      const raw = getNodeLabelInSource(currentSource, id);
+      if (!raw) continue;
+      const m = raw.match(NODE_LINK_RE);
+      if (!m) continue;
+      const dest = m[1];
+      // Open `dest` carrying the breadcrumb trail so it can offer a back path
+      // here (capped + cycle-collapsed — see nodeLinkUrl).
+      const url = nodeLinkUrl(dest);
+      // Drop the token from the rendered caption (leaf text/tspan nodes only).
+      for (const t of g.querySelectorAll("text, tspan")) {
+        if (t.children.length) continue;
+        if (NODE_LINK_RE.test(t.textContent)) {
+          t.textContent = t.textContent.replace(NODE_LINK_RE_G, "").trim();
+        }
+      }
+      // Anchor the badge inline, just after the end of the caption — node shapes
+      // can be diamonds/circles/etc., so a fixed top-right corner would fall
+      // outside the shape. We measure the (already stripped) label text and sit
+      // the badge to its right, vertically centred on the text. The badge is
+      // appended as a SIBLING of the text so getBBox()'s coords line up.
+      const textEl = findLabelTextElement(g);
+      if (!textEl) continue;
+      let bb; try { bb = textEl.getBBox(); } catch (_) { continue; }
+      const sz = bb.height > 0 ? bb.height * 1.15 : NODE_LINK_BADGE;
+      const gap = sz * 0.3;
+      const x = bb.x + bb.width + gap;
+      const y = bb.y + bb.height / 2 - sz / 2;
+      const a = document.createElementNS(SVG_NS, "a");
+      a.setAttribute("class", "node-link");
+      a.setAttribute("href", url);
+      const title = document.createElementNS(SVG_NS, "title");
+      title.textContent = __("editor.node_link.open", dest);
+      a.appendChild(title);
+      const rect = document.createElementNS(SVG_NS, "rect");
+      rect.setAttribute("class", "node-link-bg");
+      rect.setAttribute("x", x); rect.setAttribute("y", y);
+      rect.setAttribute("width", sz);
+      rect.setAttribute("height", sz);
+      rect.setAttribute("rx", sz * 0.2);
+      const use = document.createElementNS(SVG_NS, "use");
+      use.setAttribute("href", "#icon-arrow-link");
+      const pad = sz * 0.22;
+      use.setAttribute("x", x + pad); use.setAttribute("y", y + pad);
+      use.setAttribute("width", sz - 2 * pad);
+      use.setAttribute("height", sz - 2 * pad);
+      use.setAttribute("class", "node-link-icon");
+      a.appendChild(rect);
+      a.appendChild(use);
+      // Don't let the node's drag/select handler swallow the click.
+      a.addEventListener("pointerdown", (ev) => { ev.stopPropagation(); });
+      a.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        // Honour modifier-click / middle-click → open in a new tab.
+        if (ev.metaKey || ev.ctrlKey || ev.button === 1) {
+          window.open(url, "_blank");
+        } else {
+          location.href = url;
+        }
+      });
+      (textEl.parentNode || g).appendChild(a);
+    }
   }
 
   async function safeRenderFromTextarea() {

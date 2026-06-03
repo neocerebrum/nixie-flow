@@ -337,6 +337,8 @@ return [
     'js.dashboard.delete_failed'        => '削除に失敗しました: %s',
 
     // editor JS — shapes
+    'js.editor.origin_back_title' => '「%s」に戻る',
+    'js.editor.node_link.open' => 'ダイアグラム「%s」を開く',
     'js.editor.shape.rect'      => '四角形',
     'js.editor.shape.rounded'   => '角丸',
     'js.editor.shape.stadium'   => 'スタジアム',

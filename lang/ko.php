@@ -337,6 +337,8 @@ return [
     'js.dashboard.delete_failed'        => '삭제 실패: %s',
 
     // editor JS — shapes
+    'js.editor.origin_back_title' => '“%s”(으)로 돌아가기',
+    'js.editor.node_link.open' => '다이어그램 “%s” 열기',
     'js.editor.shape.rect'      => '사각형',
     'js.editor.shape.rounded'   => '둥근 사각형',
     'js.editor.shape.stadium'   => '스타디움',

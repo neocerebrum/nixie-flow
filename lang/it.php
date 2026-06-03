@@ -340,6 +340,8 @@ return [
     'js.dashboard.delete_failed'        => 'Eliminazione fallita: %s',
 
     // editor JS — shapes
+    'js.editor.origin_back_title' => 'Torna a “%s”',
+    'js.editor.node_link.open' => 'Apri diagramma “%s”',
     'js.editor.shape.rect'      => 'Rettangolo',
     'js.editor.shape.rounded'   => 'Arrotondato',
     'js.editor.shape.stadium'   => 'Stadio',

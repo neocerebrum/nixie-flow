@@ -337,6 +337,8 @@ return [
     'js.dashboard.delete_failed'        => '删除失败：%s',
 
     // editor JS — shapes
+    'js.editor.origin_back_title' => '返回“%s”',
+    'js.editor.node_link.open' => '打开图表“%s”',
     'js.editor.shape.rect'      => '矩形',
     'js.editor.shape.rounded'   => '圆角',
     'js.editor.shape.stadium'   => '跑道形',

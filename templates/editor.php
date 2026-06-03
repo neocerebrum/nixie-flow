@@ -19,6 +19,7 @@
 <?php include __DIR__ . '/partials/icons.php'; ?>
 <header class="ed-header">
     <a href="/dashboard" class="ed-back" title="<?= __('editor.back') ?>"><?= __('editor.back_short') ?></a>
+    <a id="originBackBtn" class="ed-back ed-origin-back hidden" href="#"></a>
 
     <div class="ed-toolbar">
         <button id="undoBtn" class="ed-tb-icon" title="<?= __('editor.undo') ?>" aria-label="Undo"><svg class="icon"><use href="#icon-undo"/></svg></button>

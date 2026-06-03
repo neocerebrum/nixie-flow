@@ -18,6 +18,13 @@ body { margin: 0; overflow: hidden; display: flex; flex-direction: column; }
     padding: 4px 8px; border-radius: 4px;
 }
 .ed-back:hover { background: #1c242e; text-decoration: none; }
+/* Contextual "back to origin" button: accent-filled so it reads as an active
+   return path, distinct from the always-present dashboard link. */
+.ed-origin-back {
+    color: #eceff4; background: #5e81ac;
+    max-width: 16ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ed-origin-back:hover { background: #81a1c1; }
 /* Document title overlay: centered top of canvas, non-interactive */
 .canvas-title {
     position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
@@ -544,6 +551,20 @@ g.cluster.reconnect-target > path:first-of-type {
 }
 /* Lock badge: indicative only, never grabs the pointer. Amber accent so it
    reads as a distinct "frozen" state, not a clickable control. */
+/* Node "open another diagram" link badge: saturated accent so it reads as a
+   live control, in the node's top-right corner. */
+#diagram g.node a.node-link { pointer-events: all; cursor: pointer; }
+#diagram g.node a.node-link .node-link-bg {
+    fill: #5e81ac;
+    stroke: #88c0d0;
+    stroke-width: 1px;
+    transition: fill 80ms ease-out;
+}
+#diagram g.node a.node-link:hover .node-link-bg { fill: #81a1c1; }
+#diagram g.node a.node-link .node-link-icon {
+    color: #eceff4;
+    pointer-events: none;
+}
 #diagram g.collapse-buttons .lock-badge { pointer-events: none; }
 #diagram g.collapse-buttons .lock-badge-bg {
     fill: rgba(46, 52, 64, 0.92);

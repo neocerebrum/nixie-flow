@@ -11,6 +11,7 @@ use App\Json;
 use App\Models\Diagram;
 use App\Models\Lock;
 use App\Models\Presence;
+use App\Models\Project;
 use App\Models\Revision;
 use App\Models\User;
 use App\Quota;
@@ -119,6 +120,12 @@ final class DiagramController
             $slug = $customSlug;
         }
 
+        // Optional: create the diagram directly inside a project (used by the
+        // "New diagram" button on a project page).
+        $projectId = array_key_exists('project', $body)
+            ? $this->resolveTargetProject($body['project'], $user)
+            : null;
+
         [$diagram, $current] = Diagram::createWithFirstRevision(
             $slug,
             $title,
@@ -126,6 +133,10 @@ final class DiagramController
             $source,
             $layout
         );
+        if ($projectId !== null) {
+            Diagram::setProject((int) $diagram['id'], $projectId);
+            $diagram = Diagram::byId((int) $diagram['id']) ?? $diagram;
+        }
 
         Response::json($this->toFullDto($diagram, $current, $user), 201);
     }
@@ -334,7 +345,104 @@ final class DiagramController
         Response::json($this->toFullDto($fresh, $head, $user));
     }
 
+    /**
+     * File a diagram into a project (or unfile it). Body: { project: slug|null }.
+     * Only the diagram owner (or admin) may move it, and the target project must
+     * be one they manage.
+     */
+    public function move(array $args): never
+    {
+        $user = $this->apiUser(true);
+        Csrf::requireValidApi();
+        $diagram = $this->loadOr404($args['slug'], $user);
+
+        $isAdmin = ($user['role'] ?? '') === 'admin';
+        if (!$isAdmin && (int) $diagram['owner_id'] !== (int) $user['id']) {
+            Response::error('Only the owner can move this diagram', 403);
+        }
+
+        $body = Json::readBody();
+        if (!array_key_exists('project', $body)) {
+            Response::error('Missing required field: project', 400);
+        }
+
+        $projectId = $this->resolveTargetProject($body['project'], $user);
+        Diagram::setProject((int) $diagram['id'], $projectId);
+
+        $fresh = Diagram::byId((int) $diagram['id']);
+        $current = Revision::current((int) $diagram['id']);
+        Response::json($this->toFullDto($fresh, $current, $user));
+    }
+
+    /**
+     * Duplicate a diagram the user can read into a fresh diagram they own,
+     * copying the live source + layout. Body: { title?, project? }.
+     */
+    public function duplicate(array $args): never
+    {
+        $user = $this->apiUser(true);
+        Csrf::requireValidApi();
+        $diagram = $this->loadOr404($args['slug'], $user);
+        $body = Json::readBody();
+
+        $title = null;
+        if (array_key_exists('title', $body)) {
+            $title = Json::requireString($body, 'title', self::TITLE_MAX, true);
+        }
+        if ($title === null || $title === '') {
+            $base = trim((string) ($diagram['title'] ?? '')) !== ''
+                ? (string) $diagram['title']
+                : (string) $diagram['slug'];
+            $title = mb_substr($base . ' (copy)', 0, self::TITLE_MAX);
+        }
+
+        $projectId = array_key_exists('project', $body)
+            ? $this->resolveTargetProject($body['project'], $user)
+            : null;
+
+        // Copy is owned by the current user; quota counts against them.
+        $current = Revision::current((int) $diagram['id']);
+        $bytes = $current
+            ? strlen((string) $current['source']) + strlen((string) ($current['layout'] ?? ''))
+            : 0;
+        try {
+            Quota::checkCanCreateDiagram($user);
+            Quota::checkBytesForOwner($user, $user, $bytes);
+        } catch (QuotaExceeded $q) {
+            $this->respondQuota($q);
+        }
+
+        $slug = Slug::ensureUnique(Slug::fromTitle($title), [Diagram::class, 'slugExists']);
+        [$newDiagram, $newCurrent] = Diagram::duplicate(
+            (int) $diagram['id'],
+            $slug,
+            $title,
+            (int) $user['id'],
+            $projectId
+        );
+        Response::json($this->toFullDto($newDiagram, $newCurrent, $user), 201);
+    }
+
     // ── helpers ─────────────────────────────────────────────────────────────
+
+    /**
+     * Resolve a `project` request value (slug, or null/'' for unfiled) into a
+     * project id the user manages. 404s if a non-empty slug doesn't resolve.
+     */
+    private function resolveTargetProject(mixed $projectSlug, array $user): ?int
+    {
+        if ($projectSlug === null || $projectSlug === '') {
+            return null;
+        }
+        if (!is_string($projectSlug)) {
+            Response::error('Invalid project', 400);
+        }
+        $project = Project::bySlug($projectSlug);
+        if ($project === null || !empty($project['deleted_at']) || !Project::canManage($project, $user)) {
+            Response::error('Project not found', 404);
+        }
+        return (int) $project['id'];
+    }
 
     private function loadOr404(string $slug, array $user): array
     {

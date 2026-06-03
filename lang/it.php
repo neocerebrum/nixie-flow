@@ -87,6 +87,24 @@ return [
     'dashboard.modal.share.placeholder' => 'email@dominio.it',
     'dashboard.modal.share.add'         => 'Aggiungi',
     'dashboard.modal.share.close'       => 'Chiudi',
+    'dashboard.new_project'     => 'Nuovo progetto',
+    'dashboard.projects'        => 'Progetti',
+    'dashboard.projects_empty'  => 'Ancora nessun progetto. Raggruppa i grafici collegati in un progetto.',
+    'dashboard.project_count'   => '%d grafici',
+    'dashboard.unfiled_empty'   => 'Nessun grafico fuori dai progetti.',
+    'dashboard.move'            => 'Sposta nel progetto',
+    'dashboard.duplicate'       => 'Duplica',
+    'dashboard.modal.new_project.title'       => 'Nuovo progetto',
+    'dashboard.modal.new_project.field_title' => 'Titolo',
+    'dashboard.modal.new_project.placeholder' => 'es. Sistema di autenticazione',
+    'dashboard.modal.new_project.create'      => 'Crea',
+    'dashboard.modal.rename_project.title'    => 'Rinomina progetto',
+    'dashboard.modal.move.title'         => 'Sposta',
+    'dashboard.modal.move.field_project' => 'Progetto',
+    'dashboard.modal.move.save'          => 'Sposta',
+
+    // ── project page ──
+    'project.empty'             => 'Questo progetto non ha ancora grafici. Creane uno o spostane di esistenti qui.',
 
     // ── common (modals) ──
     'common.cancel'             => 'Annulla',
@@ -338,6 +356,10 @@ return [
     'js.dashboard.remove_share_confirm' => 'Rimuovere la condivisione con questo utente?',
     'js.dashboard.delete_confirm'       => 'Eliminare il diagramma "%s"? Verrà spostato nel cestino, recuperabile da admin.',
     'js.dashboard.delete_failed'        => 'Eliminazione fallita: %s',
+    'js.dashboard.duplicate'              => 'Duplica',
+    'js.dashboard.duplicate_confirm'      => 'Duplicare "%s"?',
+    'js.dashboard.delete_project_confirm' => 'Eliminare il progetto "%s"? I grafici non verranno eliminati, solo tolti dal progetto.',
+    'js.dashboard.move.unfiled'           => 'Nessun progetto',
 
     // editor JS — shapes
     'js.editor.origin_back_title' => 'Torna a “%s”',

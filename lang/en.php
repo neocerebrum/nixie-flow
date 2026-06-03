@@ -87,6 +87,24 @@ return [
     'dashboard.modal.share.placeholder' => 'email@example.com',
     'dashboard.modal.share.add'         => 'Add',
     'dashboard.modal.share.close'       => 'Close',
+    'dashboard.new_project'     => 'New project',
+    'dashboard.projects'        => 'Projects',
+    'dashboard.projects_empty'  => 'No projects yet. Group related diagrams into a project.',
+    'dashboard.project_count'   => '%d diagrams',
+    'dashboard.unfiled_empty'   => 'No diagrams outside projects.',
+    'dashboard.move'            => 'Move to project',
+    'dashboard.duplicate'       => 'Duplicate',
+    'dashboard.modal.new_project.title'       => 'New project',
+    'dashboard.modal.new_project.field_title' => 'Title',
+    'dashboard.modal.new_project.placeholder' => 'e.g. Authentication system',
+    'dashboard.modal.new_project.create'      => 'Create',
+    'dashboard.modal.rename_project.title'    => 'Rename project',
+    'dashboard.modal.move.title'         => 'Move',
+    'dashboard.modal.move.field_project' => 'Project',
+    'dashboard.modal.move.save'          => 'Move',
+
+    // ── project page ──
+    'project.empty'             => 'This project has no diagrams yet. Create one, or move existing diagrams here.',
 
     // ── common (modals) ──
     'common.cancel'             => 'Cancel',
@@ -338,6 +356,10 @@ return [
     'js.dashboard.remove_share_confirm' => 'Remove the share with this user?',
     'js.dashboard.delete_confirm'       => 'Delete diagram "%s"? It will be moved to trash, recoverable by admin.',
     'js.dashboard.delete_failed'        => 'Deletion failed: %s',
+    'js.dashboard.duplicate'              => 'Duplicate',
+    'js.dashboard.duplicate_confirm'      => 'Duplicate "%s"?',
+    'js.dashboard.delete_project_confirm' => 'Delete project "%s"? Its diagrams won\'t be deleted, only removed from the project.',
+    'js.dashboard.move.unfiled'           => 'No project (unfiled)',
 
     // editor JS — shapes
     'js.editor.origin_back_title' => 'Back to “%s”',

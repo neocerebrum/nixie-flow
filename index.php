@@ -25,8 +25,9 @@ $router->get('/password-reset/confirm',  [App\Controllers\PasswordResetControlle
 $router->post('/password-reset/confirm', [App\Controllers\PasswordResetController::class, 'confirmSubmit']);
 
 // Authenticated user
-$router->get('/dashboard',     [App\Controllers\DashboardController::class, 'index']);
-$router->get('/editor/{slug}', [App\Controllers\EditorController::class,    'show']);
+$router->get('/dashboard',      [App\Controllers\DashboardController::class, 'index']);
+$router->get('/project/{slug}', [App\Controllers\ProjectController::class,   'show']);
+$router->get('/editor/{slug}',  [App\Controllers\EditorController::class,    'show']);
 $router->get('/profile',                  [App\Controllers\ProfileController::class, 'show']);
 $router->post('/profile',                 [App\Controllers\ProfileController::class, 'save']);
 $router->get('/profile/tokens',           [App\Controllers\ProfileController::class, 'tokens']);
@@ -54,6 +55,14 @@ $router->delete('/api/diagrams/{slug}',         [App\Controllers\Api\DiagramCont
 $router->get('/api/diagrams/{slug}/history',    [App\Controllers\Api\DiagramController::class, 'history']);
 $router->post('/api/diagrams/{slug}/checkout',  [App\Controllers\Api\DiagramController::class, 'checkout']);
 $router->post('/api/diagrams/{slug}/restore',   [App\Controllers\Api\DiagramController::class, 'restore']);
+$router->post('/api/diagrams/{slug}/move',      [App\Controllers\Api\DiagramController::class, 'move']);
+$router->post('/api/diagrams/{slug}/duplicate', [App\Controllers\Api\DiagramController::class, 'duplicate']);
+
+// Projects (folders grouping the owner's diagrams)
+$router->get('/api/projects',           [App\Controllers\Api\ProjectController::class, 'index']);
+$router->post('/api/projects',          [App\Controllers\Api\ProjectController::class, 'create']);
+$router->patch('/api/projects/{slug}',  [App\Controllers\Api\ProjectController::class, 'patch']);
+$router->delete('/api/projects/{slug}', [App\Controllers\Api\ProjectController::class, 'delete']);
 
 // Presence-driven scepter
 $router->post('/api/diagrams/{slug}/presence',           [App\Controllers\Api\PresenceController::class, 'join']);

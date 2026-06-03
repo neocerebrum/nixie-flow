@@ -175,6 +175,69 @@ final class Diagram
         return !empty($diagram['deleted_at']);
     }
 
+    // ── Projects ─────────────────────────────────────────────────────────────
+
+    /**
+     * Live (non-deleted) diagrams filed under a project, newest first.
+     * @return array<int, array<string, mixed>>
+     */
+    public static function listForProject(int $projectId): array
+    {
+        $stmt = db()->prepare(
+            'SELECT * FROM diagrams WHERE project_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC'
+        );
+        $stmt->execute([$projectId]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * Diagrams the user owns that are not filed under any project, newest first.
+     * @return array<int, array<string, mixed>>
+     */
+    public static function listUnfiledForUser(int $userId): array
+    {
+        $stmt = db()->prepare(
+            'SELECT * FROM diagrams
+             WHERE owner_id = ? AND project_id IS NULL AND deleted_at IS NULL
+             ORDER BY updated_at DESC'
+        );
+        $stmt->execute([$userId]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /** File a diagram into a project, or pass null to unfile it. */
+    public static function setProject(int $diagramId, ?int $projectId): void
+    {
+        $stmt = db()->prepare(
+            'UPDATE diagrams SET project_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+        );
+        $stmt->execute([$projectId, $diagramId]);
+    }
+
+    /**
+     * Duplicate a diagram into a fresh diagram owned by $newOwnerId, copying the
+     * #current source + layout. Optionally files it under $projectId.
+     * @return array{0: array<string,mixed>, 1: array<string,mixed>}
+     */
+    public static function duplicate(
+        int $sourceDiagramId,
+        string $newSlug,
+        string $newTitle,
+        int $newOwnerId,
+        ?int $projectId
+    ): array {
+        $current = Revision::current($sourceDiagramId);
+        $source  = $current !== null ? (string) $current['source'] : "graph TD\n";
+        $layout  = $current !== null ? $current['layout'] : null;
+
+        [$diagram, $rev] = self::createWithFirstRevision($newSlug, $newTitle, $newOwnerId, $source, $layout);
+        if ($projectId !== null) {
+            self::setProject((int) $diagram['id'], $projectId);
+            $diagram = self::byId((int) $diagram['id']) ?? $diagram;
+        }
+        return [$diagram, $rev];
+    }
+
     /** True if user can read the diagram (owner, admin, or shared view/edit). */
     public static function canAccess(array $diagram, array $user): bool
     {

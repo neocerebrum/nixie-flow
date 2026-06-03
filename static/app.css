@@ -114,6 +114,16 @@ main {
 
 /* Pages and cards */
 .page { max-width: 920px; }
+
+/* Dashboard: grid uses the full viewport, text stays at a comfortable measure */
+main:has(.page-dashboard) { max-width: none; }
+.page-dashboard { max-width: none; }
+.page-dashboard > .breadcrumb,
+.page-dashboard > .page-header,
+.page-dashboard > .muted,
+.page-dashboard > .section-title,
+.page-dashboard > .section-empty,
+.page-dashboard > .empty-state { max-width: 920px; }
 .page-header {
   display: flex;
   align-items: center;
@@ -301,6 +311,63 @@ table.data th.actions { text-align: right; }
     border-top: 1px solid var(--border);
     display: flex; gap: 4px; justify-content: flex-end;
 }
+
+/* Projects (folders) */
+.page-header-actions { display: flex; gap: 0.5rem; align-items: center; }
+.section-empty { margin: 0.75rem 0 0; }
+
+.project-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 12px;
+    margin-top: 1rem;
+}
+.project-card {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    transition: border-color 0.15s, transform 0.1s;
+}
+.project-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+.project-card-link {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    color: var(--fg);
+    text-decoration: none;
+    flex: 1;
+}
+.project-card-link:hover { text-decoration: none; }
+.project-folder { color: var(--accent); display: inline-flex; flex: none; }
+.project-body { display: flex; flex-direction: column; min-width: 0; }
+.project-name {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--fg);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.project-count { font-size: 0.78em; color: var(--muted); }
+.project-heading { display: flex; align-items: center; gap: 0.5rem; }
+.project-heading .icon { color: var(--accent); }
+
+/* Breadcrumb (project page) */
+.breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.85em;
+    margin-bottom: 0.75rem;
+}
+.breadcrumb a { color: var(--muted); text-decoration: none; }
+.breadcrumb a:hover { color: var(--accent); }
+.breadcrumb-sep { color: var(--border); }
+.breadcrumb-current { color: var(--fg); }
 
 /* Icons (SVG sprite, inherits currentColor) */
 .icon {

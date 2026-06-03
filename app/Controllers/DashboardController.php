@@ -6,6 +6,7 @@ namespace App\Controllers;
 use App\Auth;
 use App\Csrf;
 use App\Models\Diagram;
+use App\Models\Project;
 use App\View;
 
 final class DashboardController
@@ -13,22 +14,24 @@ final class DashboardController
     public function index(array $args): never
     {
         $user = Auth::requireLogin();
-        $rows = Diagram::listAccessibleForUser((int) $user['id']);
-
         $userId = (int) $user['id'];
-        $owned = [];
-        $shared = [];
-        foreach ($rows as $d) {
-            if ((int) $d['owner_id'] === $userId) {
-                $owned[] = $d;
-            } else {
-                $shared[] = $d;
-            }
-        }
+
+        // Owned diagrams are now split into projects (folders) + unfiled.
+        $projects = Project::listForUser($userId);
+        $unfiled  = Diagram::listUnfiledForUser($userId);
+
+        // Diagrams shared with this user stay a flat section (sharing is still
+        // per-diagram). Reuse the accessible query and keep the non-owned rows.
+        $rows = Diagram::listAccessibleForUser($userId);
+        $shared = array_values(array_filter(
+            $rows,
+            fn (array $d) => (int) $d['owner_id'] !== $userId
+        ));
 
         View::render('dashboard', [
             'user'           => $user,
-            'diagrams'       => $owned,
+            'projects'       => $projects,
+            'diagrams'       => $unfiled,
             'sharedDiagrams' => $shared,
             'csrfToken'      => Csrf::token(),
         ], ['title' => __('dashboard.title'), 'active' => 'dashboard']);

@@ -13,7 +13,7 @@ $noNav = $noNav ?? false;
     <?php if ($currentUser !== null): ?>
         <meta name="csrf-token" content="<?= e(\App\Csrf::token()) ?>">
     <?php endif; ?>
-    <link rel="stylesheet" href="/static/app.css">
+    <link rel="stylesheet" href="<?= e(asset('/static/app.css')) ?>">
     <script>window.__i18n=<?= json_encode(App\I18n::jsStrings(), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;</script>
 </head>
 <body>

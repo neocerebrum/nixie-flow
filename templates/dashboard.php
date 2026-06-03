@@ -101,4 +101,4 @@
 
 <?php include __DIR__ . '/partials/diagram_modals.php'; ?>
 
-<script src="/static/dashboard.js"></script>
+<script src="<?= e(asset('/static/dashboard.js')) ?>"></script>

@@ -72,4 +72,16 @@ function __(string $key, mixed ...$args): string
     return App\I18n::get($key, ...$args);
 }
 
+/**
+ * Static asset URL with a content-version query (file mtime) so browsers fetch
+ * the new file after each deploy instead of serving a stale cached copy.
+ * $path is web-absolute, e.g. "/static/editor.js".
+ */
+function asset(string $path): string
+{
+    $full = AQUATA_ROOT . $path;
+    $v = is_file($full) ? (int) @filemtime($full) : 0;
+    return $path . ($v ? ('?v=' . $v) : '');
+}
+
 App\View::init(AQUATA_ROOT . '/templates');

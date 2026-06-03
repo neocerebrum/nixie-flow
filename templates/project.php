@@ -45,4 +45,4 @@ $readonly = empty($canManage); // shared viewers can't manage diagrams in this p
 <?php else: ?>
 <script>window.__projectSlug = <?= json_encode($project['slug'], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;</script>
 <?php endif; ?>
-<script src="/static/dashboard.js"></script>
+<script src="<?= e(asset('/static/dashboard.js')) ?>"></script>

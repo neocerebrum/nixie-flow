@@ -54,17 +54,33 @@ final class Project
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    public static function create(string $slug, string $title, int $ownerId): array
+    public static function create(string $slug, string $title, int $ownerId, ?int $sourceProjectId = null): array
     {
         $stmt = db()->prepare(
-            'INSERT INTO projects (slug, title, owner_id) VALUES (?, ?, ?)'
+            'INSERT INTO projects (slug, title, owner_id, source_project_id) VALUES (?, ?, ?, ?)'
         );
-        $stmt->execute([$slug, $title, $ownerId]);
+        $stmt->execute([$slug, $title, $ownerId, $sourceProjectId]);
         $project = self::byId((int) db()->lastInsertId());
         if ($project === null) {
             throw new \RuntimeException('Failed to reload created project');
         }
         return $project;
+    }
+
+    /**
+     * The user's personal fork of a shared source project, if any (newest first).
+     * A fork is a project they own with source_project_id pointing at the original.
+     */
+    public static function forkFor(int $sourceProjectId, int $ownerId): ?array
+    {
+        $stmt = db()->prepare(
+            'SELECT * FROM projects
+             WHERE owner_id = ? AND source_project_id = ? AND deleted_at IS NULL
+             ORDER BY updated_at DESC'
+        );
+        $stmt->execute([$ownerId, $sourceProjectId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row !== false ? $row : null;
     }
 
     public static function rename(int $projectId, ?string $title, ?string $slug): void

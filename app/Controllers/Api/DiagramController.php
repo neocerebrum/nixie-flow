@@ -396,9 +396,19 @@ final class DiagramController
             $title = mb_substr($base . ' (copy)', 0, self::TITLE_MAX);
         }
 
-        $projectId = array_key_exists('project', $body)
-            ? $this->resolveTargetProject($body['project'], $user)
-            : null;
+        // `fork_project` (a shared project's slug) takes precedence: the copy is
+        // filed into the user's personal fork of that project (created on demand).
+        // Otherwise `project` files it into a project the user manages.
+        $forkProjectSlug = null;
+        if (array_key_exists('fork_project', $body) && $body['fork_project'] !== null && $body['fork_project'] !== '') {
+            $fork = $this->resolveForkProject($body['fork_project'], $user);
+            $projectId = (int) $fork['id'];
+            $forkProjectSlug = $fork['slug'];
+        } else {
+            $projectId = array_key_exists('project', $body)
+                ? $this->resolveTargetProject($body['project'], $user)
+                : null;
+        }
 
         // Copy is owned by the current user; quota counts against them.
         $current = Revision::current((int) $diagram['id']);
@@ -420,10 +430,43 @@ final class DiagramController
             (int) $user['id'],
             $projectId
         );
-        Response::json($this->toFullDto($newDiagram, $newCurrent, $user), 201);
+        $dto = $this->toFullDto($newDiagram, $newCurrent, $user);
+        if ($forkProjectSlug !== null) {
+            // Tell the client where the copy landed so it can navigate there.
+            $dto['project'] = $forkProjectSlug;
+        }
+        Response::json($dto, 201);
     }
 
     // ── helpers ─────────────────────────────────────────────────────────────
+
+    /**
+     * Resolve a shared project's slug into the id of the user's personal fork of
+     * it, creating the fork on first use. The source must be a project the user
+     * can access; if they actually manage it, no fork is made (returns it as-is).
+     */
+    private function resolveForkProject(mixed $sourceSlug, array $user): array
+    {
+        if (!is_string($sourceSlug)) {
+            Response::error('Invalid project', 400);
+        }
+        $source = Project::bySlug($sourceSlug);
+        if ($source === null || !empty($source['deleted_at']) || !Project::canAccess($source, $user)) {
+            Response::error('Project not found', 404);
+        }
+        if (Project::canManage($source, $user)) {
+            return $source; // owner/admin: file straight into it, no fork
+        }
+        $existing = Project::forkFor((int) $source['id'], (int) $user['id']);
+        if ($existing !== null) {
+            return $existing;
+        }
+        $title = trim((string) ($source['title'] ?? '')) !== ''
+            ? (string) $source['title']
+            : (string) $source['slug'];
+        $slug = Slug::ensureUnique(Slug::fromTitle($title), [Project::class, 'slugExists']);
+        return Project::create($slug, $title, (int) $user['id'], (int) $source['id']);
+    }
 
     /**
      * Resolve a `project` request value (slug, or null/'' for unfiled) into a

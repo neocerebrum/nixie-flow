@@ -13,6 +13,9 @@
   // Set on project pages; null on the dashboard. Used to file new/duplicated
   // diagrams under the current project and to preselect it in the move modal.
   const projectSlug = window.__projectSlug || null;
+  // Set on a project page shared with the viewer (read-only). Duplicating a
+  // diagram here forks the project into a personal copy and files the copy there.
+  const sharedProjectSlug = window.__sharedProjectSlug || null;
 
   // ── In-app dialogs (replace native confirm/alert which Firefox can block) ─
   let _confirmResolve = null;
@@ -121,7 +124,11 @@
     }
   }
 
-  document.getElementById("newDiagramBtn").addEventListener("click", openModal);
+  // The "New diagram" trigger lives in the page header, which is absent on a
+  // read-only (shared) project page — guard it, or the whole script would abort
+  // here and later handlers (duplicate, share, …) would never bind.
+  const newDiagramBtn = document.getElementById("newDiagramBtn");
+  if (newDiagramBtn) newDiagramBtn.addEventListener("click", openModal);
   document.getElementById("newDiagramCancelBtn").addEventListener("click", closeModal);
   document.getElementById("newDiagramOkBtn").addEventListener("click", submitModal);
   modal.querySelector(".modal-backdrop").addEventListener("click", closeModal);
@@ -566,11 +573,16 @@
         __("dashboard.duplicate_confirm", title),
         { confirmLabel: __("dashboard.duplicate") })) return;
       const body = {};
-      if (projectSlug) body.project = projectSlug; // keep the copy in this project
+      if (sharedProjectSlug) body.fork_project = sharedProjectSlug; // fork into a personal copy
+      else if (projectSlug) body.project = projectSlug;             // keep the copy in this project
       try {
         const { status, json } = await api("POST",
           `/api/diagrams/${encodeURIComponent(slug)}/duplicate`, body);
-        if (status === 201) { location.reload(); }
+        if (status === 201) {
+          // When the copy lands in a (forked) project, go there so it's visible.
+          if (json && json.project) location.href = `/project/${encodeURIComponent(json.project)}`;
+          else location.reload();
+        }
         else { await infoDialog((json && json.error) || ("HTTP " + status), { title: __("common.error"), danger: true }); }
       } catch (err) {
         await infoDialog(err.message || String(err), { title: __("common.error"), danger: true });

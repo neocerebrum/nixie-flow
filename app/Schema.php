@@ -8,7 +8,7 @@ use RuntimeException;
 
 final class Schema
 {
-    private const BASELINE_VERSION = 14;
+    private const BASELINE_VERSION = 17;
 
     private const BASELINE_SQL = <<<'SQL'
 CREATE TABLE users (
@@ -34,27 +34,31 @@ CREATE TABLE diagrams (
   edit_lock_at     TIMESTAMP,
   created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  deleted_at       TIMESTAMP NULL,
-  project_id       INTEGER,
+  deleted_at        TIMESTAMP NULL,
+  project_id        INTEGER,
+  source_diagram_id INTEGER,
   FOREIGN KEY (owner_id) REFERENCES users(id)
 );
 CREATE INDEX idx_diagrams_owner     ON diagrams(owner_id);
 CREATE INDEX idx_diagrams_deleted   ON diagrams(deleted_at);
 CREATE INDEX idx_diagrams_lock_user ON diagrams(edit_lock_user);
 CREATE INDEX idx_diagrams_project   ON diagrams(project_id);
+CREATE INDEX idx_diagrams_source    ON diagrams(source_diagram_id);
 
 CREATE TABLE projects (
-  id         INTEGER PRIMARY KEY,
-  slug       TEXT UNIQUE NOT NULL,
-  title      TEXT,
-  owner_id   INTEGER NOT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  deleted_at TIMESTAMP NULL,
+  id                INTEGER PRIMARY KEY,
+  slug              TEXT UNIQUE NOT NULL,
+  title             TEXT,
+  owner_id          INTEGER NOT NULL,
+  source_project_id INTEGER,
+  created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  deleted_at        TIMESTAMP NULL,
   FOREIGN KEY (owner_id) REFERENCES users(id)
 );
 CREATE INDEX idx_projects_owner   ON projects(owner_id);
 CREATE INDEX idx_projects_deleted ON projects(deleted_at);
+CREATE INDEX idx_projects_source  ON projects(source_project_id);
 
 CREATE TABLE diagram_revisions (
   id                 INTEGER PRIMARY KEY,
@@ -183,26 +187,13 @@ SQL;
     // BRIDGE: one-shot upgrade from previous baseline to current. Set both
     // constants when a schema change ships, then delete after every running
     // instance is on BASELINE_VERSION.
-    private const BRIDGE_FROM = 13;
-    // v14: projects — a folder grouping the user's own diagrams. New `projects`
-    // table plus a nullable `project_id` on diagrams (NULL = unfiled). No FK on
-    // project_id: the association is enforced in app logic, which keeps the
-    // bridge a pure additive ALTER and avoids MySQL create-order constraints.
+    private const BRIDGE_FROM = 16;
+    // v17: diagram fork lineage — record which diagram a copy was duplicated
+    // from (`diagrams.source_diagram_id`), so a future "merge request" can offer
+    // to publish a fork back onto its original. No FK; app-enforced; additive.
     private const BRIDGE_SQL  = <<<'SQL'
-CREATE TABLE projects (
-  id         INTEGER PRIMARY KEY,
-  slug       TEXT UNIQUE NOT NULL,
-  title      TEXT,
-  owner_id   INTEGER NOT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  deleted_at TIMESTAMP NULL,
-  FOREIGN KEY (owner_id) REFERENCES users(id)
-);
-CREATE INDEX idx_projects_owner   ON projects(owner_id);
-CREATE INDEX idx_projects_deleted ON projects(deleted_at);
-ALTER TABLE diagrams ADD COLUMN project_id INTEGER;
-CREATE INDEX idx_diagrams_project ON diagrams(project_id);
+ALTER TABLE diagrams ADD COLUMN source_diagram_id INTEGER;
+CREATE INDEX idx_diagrams_source ON diagrams(source_diagram_id);
 SQL;
 
     private static bool $checked = false;

@@ -40,5 +40,9 @@ $readonly = empty($canManage); // shared viewers can't manage diagrams in this p
 
 <?php include __DIR__ . '/partials/diagram_modals.php'; ?>
 
+<?php if ($readonly): ?>
+<script>window.__sharedProjectSlug = <?= json_encode($project['slug'], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;</script>
+<?php else: ?>
 <script>window.__projectSlug = <?= json_encode($project['slug'], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;</script>
+<?php endif; ?>
 <script src="/static/dashboard.js"></script>

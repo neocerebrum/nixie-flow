@@ -232,10 +232,13 @@ final class Diagram
         $layout  = $current !== null ? $current['layout'] : null;
 
         [$diagram, $rev] = self::createWithFirstRevision($newSlug, $newTitle, $newOwnerId, $source, $layout);
+        // Record provenance so a fork can later request a "merge" onto its origin.
+        $stmt = db()->prepare('UPDATE diagrams SET source_diagram_id = ? WHERE id = ?');
+        $stmt->execute([$sourceDiagramId, (int) $diagram['id']]);
         if ($projectId !== null) {
             self::setProject((int) $diagram['id'], $projectId);
-            $diagram = self::byId((int) $diagram['id']) ?? $diagram;
         }
+        $diagram = self::byId((int) $diagram['id']) ?? $diagram;
         return [$diagram, $rev];
     }
 

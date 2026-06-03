@@ -2335,6 +2335,19 @@
             document.addEventListener("pointercancel", onUp);
             return;
           }
+          if (isReadOnly) {
+            // Spectator: select-only on pointerup, never drag the capsule.
+            const pointerId = ev.pointerId;
+            const onUpRO = (e) => {
+              if (e && e.pointerId !== pointerId) return;
+              document.removeEventListener("pointerup", onUpRO);
+              document.removeEventListener("pointercancel", onUpRO);
+              toggleClusterSelection(id, false);
+            };
+            document.addEventListener("pointerup", onUpRO);
+            document.addEventListener("pointercancel", onUpRO);
+            return;
+          }
           startClusterDrag(ev, svgEl, id);
         });
         hit.addEventListener("dblclick", (ev) => {
@@ -7436,6 +7449,19 @@
     if (shapePaletteEl) {
       for (const b of shapePaletteEl.querySelectorAll("button")) b.disabled = !shapeEnabled;
     }
+    // Spectators (no scepter / view-only) get no editing tools. Force-disable
+    // every mutating button regardless of selection: this also neutralizes the
+    // N/E/M shortcuts, which gate on the button's .disabled state.
+    if (isReadOnly) {
+      for (const b of [addNodeBtn, addEdgeBtn, addSubgraphBtn, deleteBtn, moveToSubgraphBtn,
+                       toggleEdgeStyleBtn, cycleEdgeArrowBtn, reverseEdgeBtn,
+                       alignVBtn, alignHBtn, distributeHBtn, distributeVBtn]) {
+        if (b) b.disabled = true;
+      }
+      if (shapePaletteEl) {
+        for (const b of shapePaletteEl.querySelectorAll("button")) b.disabled = true;
+      }
+    }
     updateNotesPanel();
   }
 
@@ -9705,7 +9731,7 @@
       return;
     }
     if ((e.key === "Delete" || e.key === "Backspace")) {
-      if (selectionKind() !== null) { e.preventDefault(); applyDelete(); }
+      if (!isReadOnly && selectionKind() !== null) { e.preventDefault(); applyDelete(); }
       return;
     }
     if (e.key === "+" || (e.key === "=" && e.shiftKey === false)) { e.preventDefault(); zoomStep(1.2); return; }

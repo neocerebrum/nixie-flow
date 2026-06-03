@@ -516,6 +516,18 @@ return [
     'js.editor.lock.yield'              => 'Yield scepter',
     'js.editor.lock.deny'               => 'Deny',
 
+    // editor JS — merge requests
+    'js.editor.merge.fork_of'           => 'Fork of %s',
+    'js.editor.merge.request_btn'       => 'Request merge',
+    'js.editor.merge.requested'         => 'Merge requested',
+    'js.editor.merge.cancel'            => 'Cancel',
+    'js.editor.merge.prompt_note'       => 'Add a note for the owner (optional):',
+    'js.editor.merge.incoming'          => '%s proposes a merge',
+    'js.editor.merge.preview'           => 'Preview',
+    'js.editor.merge.accept'            => 'Accept',
+    'js.editor.merge.decline'           => 'Decline',
+    'js.editor.merge.accept_confirm'    => 'Accept this variant as the new version? The current content is replaced (kept in history).',
+
     // editor JS — toast
     'js.editor.toast.moved_tab'         => 'Edit moved to another tab of yours. Try again.',
     'js.editor.toast.lost_scepter'      => 'You no longer have the scepter — someone else is editing.',
@@ -528,6 +540,10 @@ return [
     'js.editor.toast.request_failed'    => 'Unable to send request.',
     'js.editor.toast.request_denied'    => 'Request denied.',
     'js.editor.toast.scepter_yielded'   => 'Scepter yielded.',
+    'js.editor.toast.merge_sent'        => 'Merge request sent.',
+    'js.editor.toast.merge_failed'      => 'Could not complete the merge request.',
+    'js.editor.toast.merge_denied'      => 'Your merge request was declined.',
+    'js.editor.toast.merge_accepted'    => 'Variant merged.',
 
     // editor JS — follow
     'js.editor.follow.active'           => 'Following pan/zoom — click to stop',

@@ -6,6 +6,7 @@ namespace App\Controllers;
 use App\Auth;
 use App\Models\Diagram;
 use App\Models\Lock;
+use App\Models\MergeRequest;
 use App\Models\Revision;
 use App\Response;
 use App\View;
@@ -52,6 +53,7 @@ final class EditorController
                 'display_name' => $user['display_name'] ?? null,
             ],
             'lock'        => Lock::state($diagram),
+            'merge'       => $this->mergeContext($diagram, $user),
         ];
 
         // Editor is a full-page application: render WITHOUT the standard layout
@@ -60,6 +62,44 @@ final class EditorController
             'diagram'   => $diagram,
             'bootstrap' => $bootstrap,
         ]);
+    }
+
+    /**
+     * Merge-request context for the editor: whether this diagram is a fork that
+     * can request a merge onto its origin (+ my pending request), and whether I
+     * manage it as a merge target (+ how many requests are pending on it).
+     * @return array<string, mixed>
+     */
+    private function mergeContext(array $diagram, array $user): array
+    {
+        $me = (int) $user['id'];
+        $origin = null;
+        $canRequest = false;
+        $pending = null;
+
+        if (!empty($diagram['source_diagram_id'])) {
+            $orig = Diagram::byId((int) $diagram['source_diagram_id']);
+            if ($orig !== null && !Diagram::isDeleted($orig)) {
+                $origin = ['slug' => $orig['slug'], 'title' => $orig['title']];
+                if ((int) $diagram['owner_id'] === $me && (int) $orig['owner_id'] !== $me) {
+                    $canRequest = true;
+                    $p = MergeRequest::mineForSource((int) $diagram['id'], $me);
+                    if ($p !== null && ($p['status'] ?? '') === 'pending') {
+                        $pending = ['id' => (int) $p['id'], 'status' => $p['status'], 'note' => $p['note'] ?? null];
+                    }
+                }
+            }
+        }
+
+        $manage = ($user['role'] ?? '') === 'admin' || (int) $diagram['owner_id'] === $me;
+
+        return [
+            'origin'      => $origin,
+            'can_request' => $canRequest,
+            'pending'     => $pending,
+            'manage'      => $manage,
+            'incoming'    => $manage ? MergeRequest::countPendingForTarget((int) $diagram['id']) : 0,
+        ];
     }
 
     private function render404(): never

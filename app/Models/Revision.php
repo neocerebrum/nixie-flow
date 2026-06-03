@@ -295,4 +295,79 @@ final class Revision
         }
         return $row;
     }
+
+    /**
+     * Publish foreign content (e.g. an accepted merge request's variant) onto a
+     * diagram: create an immutable snapshot from the given source+layout and
+     * advance #current to it. Unlike snapshotCurrent there is no optimistic-lock
+     * check — the content is replaced wholesale (a "jump"). Any editor currently
+     * open on this diagram detects the new source_revision_id on its next save
+     * and is offered a reload through the usual conflict path. Returns the
+     * created snapshot.
+     */
+    public static function commitForeign(
+        int $diagramId,
+        string $source,
+        ?string $layoutJson,
+        int $authorId,
+        ?string $message
+    ): array {
+        $pdo = db();
+        $isSqlite = ($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite');
+        if ($isSqlite) {
+            $pdo->exec('BEGIN IMMEDIATE');
+            $forUpdate = '';
+        } else {
+            $pdo->beginTransaction();
+            $forUpdate = ' FOR UPDATE';
+        }
+
+        try {
+            $stmt = $pdo->prepare(
+                'SELECT id, source_revision_id FROM diagram_revisions
+                 WHERE diagram_id = ? AND is_current = 1' . $forUpdate
+            );
+            $stmt->execute([$diagramId]);
+            $current = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($current === false) {
+                throw new \RuntimeException('Diagram has no #current row');
+            }
+            $currentId = (int) $current['id'];
+            $parentId = $current['source_revision_id'] === null
+                ? null : (int) $current['source_revision_id'];
+
+            $stmt = $pdo->prepare(
+                'INSERT INTO diagram_revisions
+                   (diagram_id, parent_id, source, layout, author_id, message, is_current, source_revision_id)
+                 VALUES (?, ?, ?, ?, ?, ?, 0, NULL)'
+            );
+            $stmt->execute([$diagramId, $parentId, $source, $layoutJson, $authorId, $message]);
+            $newSnapshotId = (int) $pdo->lastInsertId();
+
+            $stmt = $pdo->prepare(
+                'UPDATE diagram_revisions
+                 SET source = ?, layout = ?, source_revision_id = ?
+                 WHERE id = ?'
+            );
+            $stmt->execute([$source, $layoutJson, $newSnapshotId, $currentId]);
+
+            $stmt = $pdo->prepare(
+                'UPDATE diagrams SET updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+            );
+            $stmt->execute([$diagramId]);
+
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
+
+        $row = self::byId($newSnapshotId);
+        if ($row === null) {
+            throw new \RuntimeException('Failed to reload merge snapshot');
+        }
+        return $row;
+    }
 }

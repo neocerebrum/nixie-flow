@@ -8,7 +8,7 @@ use RuntimeException;
 
 final class Schema
 {
-    private const BASELINE_VERSION = 17;
+    private const BASELINE_VERSION = 18;
 
     private const BASELINE_SQL = <<<'SQL'
 CREATE TABLE users (
@@ -126,6 +126,24 @@ CREATE TABLE edit_requests (
 );
 CREATE INDEX idx_edit_req_diagram ON edit_requests(diagram_id, status);
 
+CREATE TABLE merge_requests (
+  id                   INTEGER PRIMARY KEY,
+  source_diagram_id    INTEGER NOT NULL,
+  target_diagram_id    INTEGER NOT NULL,
+  requester_id         INTEGER NOT NULL,
+  status               VARCHAR(20) NOT NULL DEFAULT 'pending',
+  note                 TEXT NULL,
+  created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  resolved_at          TIMESTAMP NULL,
+  resolver_id          INTEGER,
+  accepted_revision_id INTEGER,
+  FOREIGN KEY (source_diagram_id) REFERENCES diagrams(id),
+  FOREIGN KEY (target_diagram_id) REFERENCES diagrams(id),
+  FOREIGN KEY (requester_id)      REFERENCES users(id)
+);
+CREATE INDEX idx_merge_req_target ON merge_requests(target_diagram_id, status);
+CREATE INDEX idx_merge_req_source ON merge_requests(source_diagram_id, status);
+
 CREATE TABLE api_tokens (
   token_hash   CHAR(64) PRIMARY KEY,
   user_id      INTEGER NOT NULL,
@@ -187,13 +205,29 @@ SQL;
     // BRIDGE: one-shot upgrade from previous baseline to current. Set both
     // constants when a schema change ships, then delete after every running
     // instance is on BASELINE_VERSION.
-    private const BRIDGE_FROM = 16;
-    // v17: diagram fork lineage — record which diagram a copy was duplicated
-    // from (`diagrams.source_diagram_id`), so a future "merge request" can offer
-    // to publish a fork back onto its original. No FK; app-enforced; additive.
+    private const BRIDGE_FROM = 17;
+    // v18: merge requests — a fork owner asks the original's owner to publish
+    // their variant onto the original. Accepting writes the variant's current
+    // source+layout as a new revision/#current on the original (a "jump", not a
+    // diff merge). New `merge_requests` table only; additive.
     private const BRIDGE_SQL  = <<<'SQL'
-ALTER TABLE diagrams ADD COLUMN source_diagram_id INTEGER;
-CREATE INDEX idx_diagrams_source ON diagrams(source_diagram_id);
+CREATE TABLE merge_requests (
+  id                   INTEGER PRIMARY KEY,
+  source_diagram_id    INTEGER NOT NULL,
+  target_diagram_id    INTEGER NOT NULL,
+  requester_id         INTEGER NOT NULL,
+  status               VARCHAR(20) NOT NULL DEFAULT 'pending',
+  note                 TEXT NULL,
+  created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  resolved_at          TIMESTAMP NULL,
+  resolver_id          INTEGER,
+  accepted_revision_id INTEGER,
+  FOREIGN KEY (source_diagram_id) REFERENCES diagrams(id),
+  FOREIGN KEY (target_diagram_id) REFERENCES diagrams(id),
+  FOREIGN KEY (requester_id)      REFERENCES users(id)
+);
+CREATE INDEX idx_merge_req_target ON merge_requests(target_diagram_id, status);
+CREATE INDEX idx_merge_req_source ON merge_requests(source_diagram_id, status);
 SQL;
 
     private static bool $checked = false;

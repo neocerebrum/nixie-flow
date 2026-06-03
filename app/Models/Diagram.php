@@ -6,6 +6,7 @@ namespace App\Models;
 use PDO;
 use App\Models\Share;
 use App\Models\ProjectShare;
+use App\Models\MergeRequest;
 
 final class Diagram
 {
@@ -251,7 +252,12 @@ final class Diagram
         if ((int) $diagram['owner_id'] === (int) $user['id']) {
             return true;
         }
-        return self::sharedPermission($diagram, (int) $user['id']) !== null;
+        if (self::sharedPermission($diagram, (int) $user['id']) !== null) {
+            return true;
+        }
+        // Read-only preview: the owner of a diagram targeted by a pending merge
+        // request may view the variant proposing the merge.
+        return MergeRequest::ownerCanPreview((int) $diagram['id'], (int) $user['id']);
     }
 
     /** True if user can write to the diagram (owner, admin, or shared with edit). */

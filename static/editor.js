@@ -516,6 +516,153 @@
   const incomingReqEl  = document.getElementById("incomingRequestBanner");
   const shareBtn       = document.getElementById("shareBtn");
 
+  // ── Merge-request state (fork owner proposes; original owner reviews) ──────
+  const mergeCtx = bootstrap.merge || { origin: null, can_request: false, pending: null, manage: false, incoming: 0 };
+  let myMergeRequest = mergeCtx.pending || null;  // my pending MR on this fork
+  let pendingIncomingMerges = [];                 // MRs targeting this diagram
+  const mergeBarEl      = document.getElementById("mergeBar");
+  const incomingMergeEl = document.getElementById("incomingMergeBanner");
+
+  function renderMergeBar() {
+    if (!mergeBarEl || !mergeCtx.can_request || !mergeCtx.origin) return;
+    mergeBarEl.innerHTML = "";
+    mergeBarEl.classList.remove("hidden");
+    const originName = escapeHtml(mergeCtx.origin.title || mergeCtx.origin.slug);
+    const label = document.createElement("span");
+    label.innerHTML = __("editor.merge.fork_of", `<strong>${originName}</strong>`);
+    mergeBarEl.appendChild(label);
+    if (myMergeRequest && myMergeRequest.status === "pending") {
+      const st = document.createElement("span");
+      st.textContent = __("editor.merge.requested");
+      const cancel = document.createElement("button");
+      cancel.className = "ghost";
+      cancel.textContent = __("editor.merge.cancel");
+      cancel.addEventListener("click", cancelMerge);
+      mergeBarEl.appendChild(st);
+      mergeBarEl.appendChild(cancel);
+    } else {
+      const btn = document.createElement("button");
+      btn.textContent = __("editor.merge.request_btn");
+      btn.addEventListener("click", requestMerge);
+      mergeBarEl.appendChild(btn);
+    }
+  }
+
+  async function requestMerge() {
+    const note = (prompt(__("editor.merge.prompt_note")) || "").trim();
+    try {
+      const { status, json } = await api("POST",
+        `/api/diagrams/${encodeURIComponent(slug)}/merge-requests`, { note });
+      if ((status === 200 || status === 201) && json && json.request) {
+        myMergeRequest = json.request;
+        renderMergeBar();
+        showToast(__("editor.toast.merge_sent"));
+      } else {
+        showToast((json && json.error) || __("editor.toast.merge_failed"), "warn");
+      }
+    } catch (_) { showToast(__("editor.toast.merge_failed"), "warn"); }
+  }
+
+  async function cancelMerge() {
+    if (!myMergeRequest || !myMergeRequest.id) return;
+    try {
+      await api("DELETE", `/api/diagrams/${encodeURIComponent(slug)}/merge-requests/${myMergeRequest.id}`, {});
+    } catch (_) { /* ignore */ }
+    myMergeRequest = null;
+    renderMergeBar();
+  }
+
+  async function pollMyMergeRequest() {
+    if (document.hidden || !mergeCtx.can_request) return;
+    try {
+      const { status, json } = await api("GET", `/api/diagrams/${encodeURIComponent(slug)}/merge-requests/mine`);
+      if (status !== 200 || !json) return;
+      const prev = myMergeRequest;
+      const latest = json.request; // latest request (any status) or null
+      if (prev && prev.status === "pending" && (!latest || latest.status !== "pending")) {
+        if (latest && latest.status === "accepted") showToast(__("editor.toast.merge_accepted"));
+        else showToast(__("editor.toast.merge_denied"), "warn");
+      }
+      myMergeRequest = (latest && latest.status === "pending") ? latest : null;
+      renderMergeBar();
+    } catch (_) { /* ignore */ }
+  }
+
+  async function pollIncomingMerges() {
+    if (document.hidden || !mergeCtx.manage) return;
+    try {
+      const { status, json } = await api("GET", `/api/diagrams/${encodeURIComponent(slug)}/merge-requests`);
+      if (status !== 200 || !json) return;
+      pendingIncomingMerges = json.requests || [];
+      renderIncomingMerges();
+    } catch (_) { /* ignore */ }
+  }
+
+  function renderIncomingMerges() {
+    if (!incomingMergeEl) return;
+    if (!pendingIncomingMerges.length) {
+      incomingMergeEl.classList.add("hidden");
+      incomingMergeEl.innerHTML = "";
+      return;
+    }
+    incomingMergeEl.classList.remove("hidden");
+    incomingMergeEl.innerHTML = "";
+    for (const r of pendingIncomingMerges) {
+      const who = r.requester_name || r.requester_email || ("user #" + r.requester_id);
+      const row = document.createElement("div");
+      row.className = "mr-row";
+      const msg = document.createElement("span");
+      msg.innerHTML = __("editor.merge.incoming", `<strong>${escapeHtml(who)}</strong>`);
+      row.appendChild(msg);
+      if (r.note) {
+        const note = document.createElement("span");
+        note.className = "mr-note";
+        note.textContent = "“" + r.note + "”";
+        row.appendChild(note);
+      }
+      const prev = document.createElement("button");
+      prev.className = "ghost";
+      prev.textContent = __("editor.merge.preview");
+      prev.addEventListener("click", () => {
+        if (r.source_slug) window.open(`/editor/${encodeURIComponent(r.source_slug)}`, "_blank");
+      });
+      const acc = document.createElement("button");
+      acc.className = "primary";
+      acc.textContent = __("editor.merge.accept");
+      acc.addEventListener("click", () => acceptMerge(r.id));
+      const dec = document.createElement("button");
+      dec.className = "danger";
+      dec.textContent = __("editor.merge.decline");
+      dec.addEventListener("click", () => declineMerge(r.id));
+      row.appendChild(prev);
+      row.appendChild(acc);
+      row.appendChild(dec);
+      incomingMergeEl.appendChild(row);
+    }
+  }
+
+  async function acceptMerge(id) {
+    if (!confirm(__("editor.merge.accept_confirm"))) return;
+    try {
+      const { status, json } = await api("POST",
+        `/api/diagrams/${encodeURIComponent(slug)}/merge-requests/${id}/accept`, {});
+      if (status === 200) {
+        showToast(__("editor.toast.merge_accepted"));
+        setTimeout(() => location.reload(), 700);
+      } else {
+        showToast((json && json.error) || __("editor.toast.merge_failed"), "warn");
+      }
+    } catch (_) { showToast(__("editor.toast.merge_failed"), "warn"); }
+  }
+
+  async function declineMerge(id) {
+    try {
+      await api("POST", `/api/diagrams/${encodeURIComponent(slug)}/merge-requests/${id}/decline`, {});
+      pendingIncomingMerges = pendingIncomingMerges.filter(r => r.id !== id);
+      renderIncomingMerges();
+    } catch (_) { /* ignore */ }
+  }
+
   // ── API helper (Plesk quirk: always send body + CT) ──────────────────────
 
   async function api(method, path, body) {
@@ -9715,10 +9862,16 @@
     sourceEditor.addEventListener("focus", () => claimActiveTab(false));
     sourceEditor.addEventListener("input", () => claimActiveTab(false));
 
-    // Poll edit-requests (mine if waiting, incoming if editor) every 4s.
+    // Merge-request UI: propose-bar for a fork owner, review-panel for the original owner.
+    renderMergeBar();
+    if (mergeCtx.manage && mergeCtx.incoming > 0) pollIncomingMerges();
+
+    // Poll edit-requests (mine if waiting, incoming if editor) and merge-requests every 4s.
     requestPollTimer = setInterval(() => {
       pollMyEditRequest();
       pollIncomingRequests();
+      pollMyMergeRequest();
+      pollIncomingMerges();
     }, 4000);
 
     // Clean exit: tell the server my presence is gone. The request lands via

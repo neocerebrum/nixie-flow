@@ -80,6 +80,15 @@ $router->post('/api/diagrams/{slug}/edit-requests/{id}/accept',      [App\Contro
 $router->post('/api/diagrams/{slug}/edit-requests/{id}/decline',     [App\Controllers\Api\EditRequestController::class, 'decline']);
 $router->delete('/api/diagrams/{slug}/edit-requests/{id}',           [App\Controllers\Api\EditRequestController::class, 'cancel']);
 
+// Merge requests: publish a fork (variant) onto the diagram it was forked from.
+// {slug} is the variant for create/mine/withdraw, the original for list/accept/decline.
+$router->post('/api/diagrams/{slug}/merge-requests',                 [App\Controllers\Api\MergeRequestController::class, 'create']);
+$router->get('/api/diagrams/{slug}/merge-requests/mine',             [App\Controllers\Api\MergeRequestController::class, 'mine']);
+$router->get('/api/diagrams/{slug}/merge-requests',                  [App\Controllers\Api\MergeRequestController::class, 'listForDiagram']);
+$router->post('/api/diagrams/{slug}/merge-requests/{id}/accept',     [App\Controllers\Api\MergeRequestController::class, 'accept']);
+$router->post('/api/diagrams/{slug}/merge-requests/{id}/decline',    [App\Controllers\Api\MergeRequestController::class, 'decline']);
+$router->delete('/api/diagrams/{slug}/merge-requests/{id}',          [App\Controllers\Api\MergeRequestController::class, 'withdraw']);
+
 $router->get('/api/diagrams/{slug}/shares',              [App\Controllers\Api\ShareController::class, 'index']);
 $router->post('/api/diagrams/{slug}/shares',             [App\Controllers\Api\ShareController::class, 'create']);
 $router->delete('/api/diagrams/{slug}/shares/{user_id}', [App\Controllers\Api\ShareController::class, 'delete']);

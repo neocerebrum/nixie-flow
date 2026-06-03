@@ -9,8 +9,8 @@
     <title><?= e($diagram['title']) ?> — Aquata</title>
     <meta name="csrf-token" content="<?= e(\App\Csrf::token()) ?>">
     <meta name="aquata-slug" content="<?= e($diagram['slug']) ?>">
-    <link rel="stylesheet" href="/static/app.css">
-    <link rel="stylesheet" href="/static/editor.css">
+    <link rel="stylesheet" href="<?= e(asset('/static/app.css')) ?>">
+    <link rel="stylesheet" href="<?= e(asset('/static/editor.css')) ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
     <script id="bootstrap-data" type="application/json"><?= json_encode($bootstrap, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?></script>
     <script>window.__i18n=<?= json_encode(App\I18n::jsStrings(), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;</script>
@@ -296,10 +296,14 @@
 <!-- Banner: edit-request (in-bound, when I hold the scepter and someone wants it) -->
 <div id="incomingRequestBanner" class="hidden"></div>
 
+<!-- Merge requests: bar for a fork owner (propose merge), panel for the original owner (review) -->
+<div id="mergeBar" class="hidden"></div>
+<div id="incomingMergeBanner" class="hidden"></div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/mode/simple.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
-<script src="/static/editor.js"></script>
+<script src="<?= e(asset('/static/editor.js')) ?>"></script>
 </body>
 </html>

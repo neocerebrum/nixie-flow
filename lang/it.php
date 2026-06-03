@@ -516,6 +516,18 @@ return [
     'js.editor.lock.yield'              => 'Cedi scettro',
     'js.editor.lock.deny'               => 'Rifiuta',
 
+    // editor JS — merge requests
+    'js.editor.merge.fork_of'           => 'Copia di %s',
+    'js.editor.merge.request_btn'       => 'Richiedi merge',
+    'js.editor.merge.requested'         => 'Merge richiesto',
+    'js.editor.merge.cancel'            => 'Annulla',
+    'js.editor.merge.prompt_note'       => 'Aggiungi una nota per il proprietario (opzionale):',
+    'js.editor.merge.incoming'          => '%s propone un merge',
+    'js.editor.merge.preview'           => 'Anteprima',
+    'js.editor.merge.accept'            => 'Accetta',
+    'js.editor.merge.decline'           => 'Rifiuta',
+    'js.editor.merge.accept_confirm'    => 'Accettare questa variante come nuova versione? Il contenuto attuale viene sostituito (resta nello storico).',
+
     // editor JS — toast
     'js.editor.toast.moved_tab'         => "Modifica spostata in un'altra tua scheda. Riprova.",
     'js.editor.toast.lost_scepter'      => 'Non hai più lo scettro — qualcun altro sta modificando.',
@@ -528,6 +540,10 @@ return [
     'js.editor.toast.request_failed'    => 'Impossibile inviare la richiesta.',
     'js.editor.toast.request_denied'    => 'Richiesta rifiutata.',
     'js.editor.toast.scepter_yielded'   => 'Scettro ceduto.',
+    'js.editor.toast.merge_sent'        => 'Richiesta di merge inviata.',
+    'js.editor.toast.merge_failed'      => 'Impossibile completare la richiesta di merge.',
+    'js.editor.toast.merge_denied'      => 'La tua richiesta di merge è stata rifiutata.',
+    'js.editor.toast.merge_accepted'    => 'Variante unita.',
 
     // editor JS — follow
     'js.editor.follow.active'           => 'Stai seguendo pan/zoom — clicca per smettere',

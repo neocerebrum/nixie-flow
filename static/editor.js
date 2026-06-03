@@ -8427,6 +8427,12 @@
     nodeStyles     = Array.isArray(L.nodeStyles)     ? {} : (L.nodeStyles     || {});
     subgraphStyles = Array.isArray(L.subgraphStyles) ? {} : (L.subgraphStyles || {});
     edgeStyles     = Array.isArray(L.edgeStyles)     ? {} : (L.edgeStyles     || {});
+    // Set-backed buckets: restore so subgraph collapse/lock/pin state from the
+    // scepter holder propagates to spectators (these mirror buildLayoutPayload).
+    collapsibleIds = new Set(Array.isArray(L.collapsibleIds) ? L.collapsibleIds : []);
+    collapsedIds   = new Set(Array.isArray(L.collapsedIds)   ? L.collapsedIds   : []);
+    lockedIds      = new Set(Array.isArray(L.lockedIds)      ? L.lockedIds      : []);
+    frameLockedIds = new Set(Array.isArray(L.frameLockedIds) ? L.frameLockedIds : []);
     palettes       = normalizePalettes(L.palettes);
     currentPaletteGroup = null; // force swatch rebuild — colors may have changed
     renderActivePalette();

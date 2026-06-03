@@ -324,10 +324,12 @@ final class Presence
             "SELECT v.user_id, v.joined_at, v.last_activity_at,
                     d.owner_id AS owner_id,
                     s.permission AS share_permission,
+                    ps.permission AS project_permission,
                     u.role AS user_role
              FROM diagram_viewers v
              INNER JOIN diagrams d ON d.id = v.diagram_id
              LEFT JOIN diagram_shares s ON s.diagram_id = v.diagram_id AND s.user_id = v.user_id
+             LEFT JOIN project_shares ps ON ps.project_id = d.project_id AND ps.user_id = v.user_id
              LEFT JOIN users u ON u.id = v.user_id
              WHERE v.diagram_id = ?"
         );
@@ -338,7 +340,13 @@ final class Presence
             $uid = (int) $row['user_id'];
             $isOwner = $uid === (int) $row['owner_id'];
             $isAdmin = ($row['user_role'] ?? '') === 'admin';
-            $canEdit = $isOwner || $isAdmin || ($row['share_permission'] === 'edit');
+            // Project-level edit share cascades to every diagram filed under it,
+            // mirroring Diagram::sharedPermission(); without this, a user who can
+            // only reach the diagram via a shared project is never eligible to
+            // receive the scepter.
+            $canEdit = $isOwner || $isAdmin
+                || ($row['share_permission'] === 'edit')
+                || ($row['project_permission'] === 'edit');
             if (!$canEdit) {
                 continue;
             }

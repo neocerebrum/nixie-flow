@@ -5,6 +5,7 @@ namespace App\Models;
 
 use PDO;
 use App\Models\Share;
+use App\Models\ProjectShare;
 
 final class Diagram
 {
@@ -247,8 +248,7 @@ final class Diagram
         if ((int) $diagram['owner_id'] === (int) $user['id']) {
             return true;
         }
-        $share = Share::get((int) $diagram['id'], (int) $user['id']);
-        return $share !== null;
+        return self::sharedPermission($diagram, (int) $user['id']) !== null;
     }
 
     /** True if user can write to the diagram (owner, admin, or shared with edit). */
@@ -260,8 +260,7 @@ final class Diagram
         if ((int) $diagram['owner_id'] === (int) $user['id']) {
             return true;
         }
-        $share = Share::get((int) $diagram['id'], (int) $user['id']);
-        return $share !== null && $share['permission'] === Share::PERM_EDIT;
+        return self::sharedPermission($diagram, (int) $user['id']) === Share::PERM_EDIT;
     }
 
     /** Returns 'owner' | 'edit' | 'view' | null. */
@@ -273,10 +272,31 @@ final class Diagram
         if (($user['role'] ?? '') === 'admin') {
             return 'edit';
         }
-        $share = Share::get((int) $diagram['id'], (int) $user['id']);
-        if ($share === null) {
-            return null;
+        return self::sharedPermission($diagram, (int) $user['id']);
+    }
+
+    /**
+     * Effective shared permission for a non-owner: the strongest of the
+     * direct diagram share and the share of the project this diagram is filed
+     * under ('edit' beats 'view'). Returns 'edit' | 'view' | null.
+     */
+    private static function sharedPermission(array $diagram, int $userId): ?string
+    {
+        $best = null; // 0 none, 1 view, 2 edit
+        $rank = static fn (?string $p): int => $p === Share::PERM_EDIT ? 2 : ($p === Share::PERM_VIEW ? 1 : 0);
+
+        $direct = Share::get((int) $diagram['id'], $userId);
+        if ($direct !== null) {
+            $best = $direct['permission'];
         }
-        return $share['permission'];
+
+        if (!empty($diagram['project_id'])) {
+            $viaProject = ProjectShare::get((int) $diagram['project_id'], $userId);
+            if ($viaProject !== null && $rank($viaProject['permission']) > $rank($best)) {
+                $best = $viaProject['permission'];
+            }
+        }
+
+        return $best;
     }
 }

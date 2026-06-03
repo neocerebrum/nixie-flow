@@ -16,17 +16,19 @@ final class ProjectController
     {
         $user = Auth::requireLogin();
         $project = Project::bySlug($args['slug']);
-        if ($project === null || !empty($project['deleted_at']) || !Project::canManage($project, $user)) {
+        if ($project === null || !empty($project['deleted_at']) || !Project::canAccess($project, $user)) {
             Response::notFound('Project not found');
         }
 
         $diagrams = Diagram::listForProject((int) $project['id']);
 
         View::render('project', [
-            'user'      => $user,
-            'project'   => $project,
-            'diagrams'  => $diagrams,
-            'csrfToken' => Csrf::token(),
+            'user'       => $user,
+            'project'    => $project,
+            'diagrams'   => $diagrams,
+            'canManage'  => Project::canManage($project, $user),
+            'permission' => Project::permissionFor($project, $user),
+            'csrfToken'  => Csrf::token(),
         ], [
             'title'  => ($project['title'] ?: $project['slug']) . ' — Aquata',
             'active' => 'dashboard',

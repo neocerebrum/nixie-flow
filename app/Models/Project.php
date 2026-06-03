@@ -91,8 +91,8 @@ final class Project
     }
 
     /**
-     * Soft-delete a project and detach (not delete) its diagrams: every diagram
-     * filed under it becomes unfiled (project_id = NULL).
+     * Soft-delete a project, detach (not delete) its diagrams — every diagram
+     * filed under it becomes unfiled (project_id = NULL) — and drop its shares.
      */
     public static function softDelete(int $projectId): void
     {
@@ -102,6 +102,9 @@ final class Project
             $stmt = $pdo->prepare(
                 'UPDATE diagrams SET project_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE project_id = ?'
             );
+            $stmt->execute([$projectId]);
+
+            $stmt = $pdo->prepare('DELETE FROM project_shares WHERE project_id = ?');
             $stmt->execute([$projectId]);
 
             $stmt = $pdo->prepare(
@@ -122,12 +125,34 @@ final class Project
         $stmt->execute([$projectId]);
     }
 
-    /** True if the user may manage (rename/delete/file into) this project. */
+    /** True if the user may manage (rename/delete/share/file into) this project. */
     public static function canManage(array $project, array $user): bool
     {
         if (($user['role'] ?? '') === 'admin') {
             return true;
         }
         return (int) $project['owner_id'] === (int) $user['id'];
+    }
+
+    /** True if the user may open this project (owner, admin, or shared view/edit). */
+    public static function canAccess(array $project, array $user): bool
+    {
+        if (self::canManage($project, $user)) {
+            return true;
+        }
+        return ProjectShare::get((int) $project['id'], (int) $user['id']) !== null;
+    }
+
+    /** Returns the user's permission on the project: 'owner' | 'edit' | 'view' | null. */
+    public static function permissionFor(array $project, array $user): ?string
+    {
+        if ((int) $project['owner_id'] === (int) $user['id']) {
+            return 'owner';
+        }
+        if (($user['role'] ?? '') === 'admin') {
+            return 'edit';
+        }
+        $share = ProjectShare::get((int) $project['id'], (int) $user['id']);
+        return $share['permission'] ?? null;
     }
 }

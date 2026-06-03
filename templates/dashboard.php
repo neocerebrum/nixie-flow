@@ -1,6 +1,7 @@
 <?php /** @var array $user */
 /** @var array $projects */
 /** @var array $diagrams */       // unfiled diagrams owned by the user
+/** @var array $sharedProjects */
 /** @var array $sharedDiagrams */
 /** @var string $csrfToken */
 ?>
@@ -30,6 +31,9 @@
                         </span>
                     </a>
                     <div class="diagram-card-actions">
+                        <button class="btn-icon project-share" data-slug="<?= e($p['slug']) ?>" data-title="<?= e($p['title']) ?>" title="<?= __('dashboard.share_project') ?>" aria-label="<?= __('dashboard.share_project') ?>">
+                            <svg class="icon"><use href="#icon-share"/></svg>
+                        </button>
                         <button class="btn-icon project-rename" data-slug="<?= e($p['slug']) ?>" data-title="<?= e($p['title']) ?>" title="<?= __('dashboard.rename') ?>" aria-label="<?= __('dashboard.rename') ?>">
                             <svg class="icon"><use href="#icon-rename"/></svg>
                         </button>
@@ -48,6 +52,26 @@
     <?php else: ?>
         <div class="diagram-grid">
             <?php foreach ($diagrams as $d): include __DIR__ . '/partials/diagram_card.php'; endforeach; ?>
+        </div>
+    <?php endif; ?>
+
+    <?php if (!empty($sharedProjects)): ?>
+        <h2 class="section-title"><?= __('dashboard.shared_projects') ?></h2>
+        <div class="project-grid">
+            <?php foreach ($sharedProjects as $p): ?>
+                <article class="project-card project-card-shared">
+                    <a class="project-card-link" href="/project/<?= e($p['slug']) ?>">
+                        <span class="project-folder"><svg class="icon icon-lg"><use href="#icon-folder"/></svg></span>
+                        <span class="project-body">
+                            <span class="project-name"><?= e($p['title'] ?: $p['slug']) ?></span>
+                            <span class="project-count">
+                                <span class="share-perm-badge"><?= e($p['share_permission']) ?></span>
+                                · <?= __('dashboard.project_count', (int) $p['diagram_count']) ?>
+                            </span>
+                        </span>
+                    </a>
+                </article>
+            <?php endforeach; ?>
         </div>
     <?php endif; ?>
 

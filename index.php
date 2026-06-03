@@ -63,6 +63,9 @@ $router->get('/api/projects',           [App\Controllers\Api\ProjectController::
 $router->post('/api/projects',          [App\Controllers\Api\ProjectController::class, 'create']);
 $router->patch('/api/projects/{slug}',  [App\Controllers\Api\ProjectController::class, 'patch']);
 $router->delete('/api/projects/{slug}', [App\Controllers\Api\ProjectController::class, 'delete']);
+$router->get('/api/projects/{slug}/shares',              [App\Controllers\Api\ProjectShareController::class, 'index']);
+$router->post('/api/projects/{slug}/shares',             [App\Controllers\Api\ProjectShareController::class, 'create']);
+$router->delete('/api/projects/{slug}/shares/{user_id}', [App\Controllers\Api\ProjectShareController::class, 'delete']);
 
 // Presence-driven scepter
 $router->post('/api/diagrams/{slug}/presence',           [App\Controllers\Api\PresenceController::class, 'join']);

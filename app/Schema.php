@@ -98,6 +98,17 @@ CREATE TABLE diagram_shares (
 );
 CREATE INDEX idx_shares_user ON diagram_shares(user_id);
 
+CREATE TABLE project_shares (
+  project_id INTEGER NOT NULL,
+  user_id    INTEGER NOT NULL,
+  permission TEXT NOT NULL,
+  shared_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (project_id, user_id),
+  FOREIGN KEY (project_id) REFERENCES projects(id),
+  FOREIGN KEY (user_id)    REFERENCES users(id)
+);
+CREATE INDEX idx_project_shares_user ON project_shares(user_id);
+
 CREATE TABLE edit_requests (
   id           INTEGER PRIMARY KEY,
   diagram_id   INTEGER NOT NULL,

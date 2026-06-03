@@ -7,6 +7,7 @@ use App\Auth;
 use App\Csrf;
 use App\Models\Diagram;
 use App\Models\Project;
+use App\Models\ProjectShare;
 use App\View;
 
 final class DashboardController
@@ -20,6 +21,9 @@ final class DashboardController
         $projects = Project::listForUser($userId);
         $unfiled  = Diagram::listUnfiledForUser($userId);
 
+        // Projects shared with this user (access cascades to their diagrams).
+        $sharedProjects = ProjectShare::projectsForUser($userId);
+
         // Diagrams shared with this user stay a flat section (sharing is still
         // per-diagram). Reuse the accessible query and keep the non-owned rows.
         $rows = Diagram::listAccessibleForUser($userId);
@@ -32,6 +36,7 @@ final class DashboardController
             'user'           => $user,
             'projects'       => $projects,
             'diagrams'       => $unfiled,
+            'sharedProjects' => $sharedProjects,
             'sharedDiagrams' => $shared,
             'csrfToken'      => Csrf::token(),
         ], ['title' => __('dashboard.title'), 'active' => 'dashboard']);

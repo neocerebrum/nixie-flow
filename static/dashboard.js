@@ -235,6 +235,101 @@
     }
   }
 
+  // ── Share project modal (cascades to all diagrams in the project) ─────────
+
+  const projShareModal = document.getElementById("projShareModal");
+  if (projShareModal) {
+    let currentProjShareSlug = null;
+    const pErr = () => document.getElementById("projShareError");
+
+    const openProjShareModal = async (slug, title) => {
+      currentProjShareSlug = slug;
+      document.getElementById("projShareTitle").textContent = title || slug;
+      pErr().textContent = "";
+      document.getElementById("projShareEmailInput").value = "";
+      projShareModal.classList.remove("hidden");
+      await reloadProjShareList();
+    };
+    const closeProjShareModal = () => {
+      projShareModal.classList.add("hidden");
+      currentProjShareSlug = null;
+    };
+    async function reloadProjShareList() {
+      if (!currentProjShareSlug) return;
+      const list = document.getElementById("projShareList");
+      list.innerHTML = `<p class='share-empty'>${escapeHtml(__("dashboard.loading"))}</p>`;
+      try {
+        const { status, json } = await api("GET", `/api/projects/${encodeURIComponent(currentProjShareSlug)}/shares`);
+        if (status !== 200 || !json) throw new Error("HTTP " + status);
+        renderProjShareList(json.shares || []);
+      } catch (e) {
+        list.innerHTML = `<p class='share-empty'>${escapeHtml(__("common.error"))}: ${escapeHtml(e.message || "")}</p>`;
+      }
+    }
+    function renderProjShareList(shares) {
+      const list = document.getElementById("projShareList");
+      if (!shares.length) {
+        list.innerHTML = `<p class='share-empty'>${escapeHtml(__("dashboard.no_shares"))}</p>`;
+        return;
+      }
+      list.innerHTML = "";
+      for (const s of shares) {
+        const row = document.createElement("div");
+        row.className = "share-row" + (s.disabled ? " disabled" : "");
+        const who = s.user_name
+          ? `${escapeHtml(s.user_name)} <small>${escapeHtml(s.user_email || "")}</small>`
+          : escapeHtml(s.user_email || (__("dashboard.user_fallback") + s.user_id));
+        row.innerHTML = `
+          <span class="share-user">${who}</span>
+          <span class="share-perm">${escapeHtml(s.permission)}</span>
+        `;
+        const removeBtn = document.createElement("button");
+        removeBtn.textContent = __("common.remove");
+        removeBtn.addEventListener("click", async () => {
+          if (!await confirmDialog(__("dashboard.remove_project_share_confirm"),
+            { confirmLabel: __("common.remove"), danger: true })) return;
+          try {
+            await api("DELETE", `/api/projects/${encodeURIComponent(currentProjShareSlug)}/shares/${s.user_id}`);
+            await reloadProjShareList();
+          } catch (_) { /* ignore */ }
+        });
+        row.appendChild(removeBtn);
+        list.appendChild(row);
+      }
+    }
+    async function submitProjShareAdd(e) {
+      e.preventDefault();
+      if (!currentProjShareSlug) return;
+      const email = document.getElementById("projShareEmailInput").value.trim();
+      const perm  = document.getElementById("projSharePermInput").value;
+      pErr().textContent = "";
+      if (!email) { pErr().textContent = __("dashboard.email_required"); return; }
+      try {
+        const { status, json } = await api("POST",
+          `/api/projects/${encodeURIComponent(currentProjShareSlug)}/shares`,
+          { email, permission: perm });
+        if (status === 201) {
+          document.getElementById("projShareEmailInput").value = "";
+          await reloadProjShareList();
+        } else {
+          pErr().textContent = (json && json.error) ? json.error : ("HTTP " + status);
+        }
+      } catch (ex) {
+        pErr().textContent = ex.message || String(ex);
+      }
+    }
+
+    document.getElementById("projShareCloseBtn").addEventListener("click", closeProjShareModal);
+    projShareModal.querySelector(".modal-backdrop").addEventListener("click", closeProjShareModal);
+    document.getElementById("projShareAddForm").addEventListener("submit", submitProjShareAdd);
+    for (const btn of document.querySelectorAll(".project-share, #shareProjectHeaderBtn")) {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        openProjShareModal(btn.dataset.slug, btn.dataset.title);
+      });
+    }
+  }
+
   // ── Rename modal ─────────────────────────────────────────────────────────
 
   const renameModal = document.getElementById("renameDiagramModal");

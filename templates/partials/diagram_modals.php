@@ -119,6 +119,28 @@
     </div>
 </div>
 
+<!-- Modal: share project (cascades to all its diagrams) -->
+<div id="projShareModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-box modal-wide">
+        <h2><?= __('dashboard.modal.share_project.title') ?> <span id="projShareTitle"></span></h2>
+        <p class="muted-small"><?= __('dashboard.modal.share_project.help') ?></p>
+        <form id="projShareAddForm" class="share-add">
+            <input id="projShareEmailInput" type="email" placeholder="<?= __('dashboard.modal.share.placeholder') ?>" required autocomplete="off">
+            <select id="projSharePermInput">
+                <option value="view">view</option>
+                <option value="edit" selected>edit</option>
+            </select>
+            <button type="submit" class="primary"><?= __('dashboard.modal.share.add') ?></button>
+        </form>
+        <div id="projShareError"></div>
+        <div id="projShareList" class="share-list"></div>
+        <div class="modal-buttons">
+            <button id="projShareCloseBtn"><?= __('dashboard.modal.share.close') ?></button>
+        </div>
+    </div>
+</div>
+
 <!-- Modal: generic confirmation -->
 <div id="confirmDialogModal" class="modal hidden">
     <div class="modal-backdrop"></div>

@@ -315,6 +315,7 @@
   const notesPanel = document.getElementById("notesPanel");
   const notesTextarea = document.getElementById("notesTextarea");
   const notesEmpty = document.getElementById("notesEmpty");
+  const notesGrounding = document.getElementById("notesGrounding");
   const notesTargetLabel = document.getElementById("notesTargetLabel");
   const toggleNotesPanelBtn = document.getElementById("toggleNotesPanelBtn");
 
@@ -439,6 +440,13 @@
   // repurposed as a marquee to select the entities inside it. Mutually
   // exclusive with `lockedIds` in the UI (full lock subsumes it).
   let frameLockedIds = new Set((bootstrap.layout && bootstrap.layout.frameLockedIds) || []);
+  // Grounding verdicts per node/subgraph id ({status, evidence, noteHash, ...}),
+  // written out-of-band by the MCP grounding tools (set_grounding / commit_save).
+  // The editor does not author these — it carries the bucket through untouched so
+  // a layout save never wipes them. Mirror it everywhere the layout is built
+  // (buildLayoutPayload / history snapshot / loadFromDto), per the collab-sync invariant.
+  let grounding = (bootstrap.layout && bootstrap.layout.grounding) || {};
+  if (Array.isArray(grounding)) grounding = {};
   // Promote legacy quadratic bends to cubic on initial load (idempotent).
   // `migrateAllBends` is a function declaration so it's hoisted within this IIFE.
   migrateAllBends();
@@ -459,6 +467,7 @@
       collapsedIds: [...collapsedIds],
       lockedIds: [...lockedIds],
       frameLockedIds: [...frameLockedIds],
+      grounding,
     };
   }
   let currentRevisionId = bootstrap.revision_id;
@@ -876,6 +885,7 @@
       collapsedIds: [...collapsedIds],
       lockedIds: [...lockedIds],
       frameLockedIds: [...frameLockedIds],
+      grounding: JSON.parse(JSON.stringify(grounding)),
     });
     if (history.length > HISTORY_CAP) {
       history = history.slice(history.length - HISTORY_CAP);
@@ -903,6 +913,7 @@
     collapsedIds = new Set(snap.collapsedIds || []);
     lockedIds = new Set(snap.lockedIds || []);
     frameLockedIds = new Set(snap.frameLockedIds || []);
+    grounding = JSON.parse(JSON.stringify(snap.grounding || {}));
     palettes = normalizePalettes(snap.palettes);
     currentPaletteGroup = null; // force swatch rebuild — colors may have changed
     renderActivePalette();
@@ -1631,6 +1642,11 @@
     for (const id of Object.keys(subgraphStyles)) {
       if (!clusterMap[id]) { delete subgraphStyles[id]; changed = true; }
     }
+    // Grounding verdicts are keyed by node OR subgraph id; drop those whose
+    // element no longer exists so a deleted node doesn't leave an orphan verdict.
+    for (const id of Object.keys(grounding)) {
+      if (!nodeMap[id] && !clusterMap[id]) { delete grounding[id]; changed = true; }
+    }
     if (changed) markDirtyLayout();
   }
 
@@ -1661,7 +1677,7 @@
     if (b.touchedAny) { edgeBend = b.updated; changed = true; }
     const c = rekey(edgeStyles);
     if (c.touchedAny) { edgeStyles = c.updated; changed = true; }
-    for (const bucket of [nodeStyles, subgraphStyles]) {
+    for (const bucket of [nodeStyles, subgraphStyles, grounding]) {
       if (Object.prototype.hasOwnProperty.call(bucket, oldId)) {
         bucket[newId] = bucket[oldId];
         delete bucket[oldId];
@@ -5062,6 +5078,59 @@
     return txt || id;
   }
 
+  // ── Grounding verdict display (read-only) ────────────────────────────────
+  // The editor never authors grounding — verdicts are written out-of-band by the
+  // MCP grounding tools and carried in layout.grounding. Here we just surface, for
+  // the bound element: status, provenance, evidence, and a DERIVED "stale" flag
+  // (the note's text changed since it was last verified). Staleness is computed
+  // with the exact server canonicalization so the hash matches byte-for-byte.
+  let _ngToken = 0;
+  function canonicalizeNoteText(encoded) {
+    return decodeNote(encoded).replace(/\s+/gu, " ").trim();
+  }
+  async function noteHashHex(encoded) {
+    const bytes = new TextEncoder().encode(canonicalizeNoteText(encoded));
+    const buf = await crypto.subtle.digest("SHA-256", bytes);
+    return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+  function renderNotesGrounding(id) {
+    if (!notesGrounding) return;
+    const rec = id ? (grounding && grounding[id]) : null;
+    if (!rec || !rec.status) { notesGrounding.classList.add("hidden"); notesGrounding.innerHTML = ""; return; }
+    const status = String(rec.status).toLowerCase();
+    const cls = { verified: "ng-verified", contradicted: "ng-contradicted", unverified: "ng-unverified", "n/a": "ng-na" }[status] || "ng-unverified";
+    const labelKey = status === "n/a" ? "na" : status;
+    let html = `<div class="ng-row">`
+      + `<span class="ng-pill ${cls}">${escapeHtml(__("grounding." + labelKey))}</span>`
+      + `<span class="ng-stale hidden">⚠ ${escapeHtml(__("grounding.stale"))}</span>`
+      + `</div>`;
+    const meta = [];
+    if (rec.checkedAtCommit) meta.push("@ " + escapeHtml(String(rec.checkedAtCommit)));
+    if (rec.verifier) meta.push(escapeHtml(String(rec.verifier)));
+    if (meta.length) html += `<div class="ng-meta">${meta.join(" · ")}</div>`;
+    if (Array.isArray(rec.evidence) && rec.evidence.length) {
+      html += `<div class="ng-ev-h">${escapeHtml(__("grounding.evidence"))}</div><ul class="ng-ev">`;
+      for (const ev of rec.evidence) {
+        html += `<li><code>${escapeHtml(String(ev.ref || ""))}</code> — <span class="ng-q">${escapeHtml(String(ev.quote || ""))}</span></li>`;
+      }
+      html += `</ul>`;
+    }
+    notesGrounding.innerHTML = html;
+    notesGrounding.classList.remove("hidden");
+    // Derived staleness: only for receipts bound to the note by noteHash.
+    if (rec.noteHash && (status === "verified" || status === "contradicted")) {
+      const tok = ++_ngToken;
+      const encoded = findNoteForId(currentSource, id) || "";
+      noteHashHex(encoded).then((h) => {
+        if (tok !== _ngToken) return; // panel rebound while hashing
+        if (h !== rec.noteHash) {
+          const el = notesGrounding.querySelector(".ng-stale");
+          if (el) el.classList.remove("hidden");
+        }
+      }).catch(() => {});
+    }
+  }
+
   // Decide what (if anything) the panel binds to right now, and refresh it.
   function updateNotesPanel() {
     let kind = null, id = null;
@@ -5093,6 +5162,7 @@
       notesTargetLabel.textContent = "";
       _notesSuppressInput = true;
       try { notesTextarea.value = ""; } finally { _notesSuppressInput = false; }
+      renderNotesGrounding(null);
       return;
     }
 
@@ -5113,6 +5183,7 @@
     notesEmpty.classList.add("hidden");
     notesTextarea.classList.remove("hidden");
     notesTextarea.disabled = isReadOnly || !canWrite;
+    renderNotesGrounding(id);
   }
 
   // Apply the textarea content to currentSource for the bound element.
@@ -8453,6 +8524,7 @@
     nodeStyles     = Array.isArray(L.nodeStyles)     ? {} : (L.nodeStyles     || {});
     subgraphStyles = Array.isArray(L.subgraphStyles) ? {} : (L.subgraphStyles || {});
     edgeStyles     = Array.isArray(L.edgeStyles)     ? {} : (L.edgeStyles     || {});
+    grounding      = Array.isArray(L.grounding)      ? {} : (L.grounding      || {});
     // Set-backed buckets: restore so subgraph collapse/lock/pin state from the
     // scepter holder propagates to spectators (these mirror buildLayoutPayload).
     collapsibleIds = new Set(Array.isArray(L.collapsibleIds) ? L.collapsibleIds : []);

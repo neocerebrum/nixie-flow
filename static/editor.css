@@ -924,3 +924,29 @@ body.readonly #palette {
 .share-row button:hover { background: rgba(191, 97, 106, 0.30); }
 .share-row.disabled { opacity: 0.55; }
 .share-empty { padding: 18px; text-align: center; color: #6f7a88; font-size: 12px; }
+
+/* Grounding verdict block in the notes panel (read-only display of layout.grounding). */
+.notes-grounding {
+    padding: 10px 12px; border-bottom: 1px solid #1c2530;
+    font-size: 12px; color: #c2c9d4; line-height: 1.5;
+}
+.notes-grounding .ng-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.notes-grounding .ng-pill {
+    display: inline-block; padding: 1px 8px; border-radius: 10px;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
+    border: 1px solid currentColor;
+}
+.notes-grounding .ng-verified     { color: #a3be8c; background: rgba(163, 190, 140, 0.13); }
+.notes-grounding .ng-contradicted { color: #e3515f; background: rgba(227, 81, 95, 0.13); }
+.notes-grounding .ng-unverified   { color: #8a93a0; background: rgba(138, 147, 160, 0.13); }
+.notes-grounding .ng-na           { color: #6f7a88; background: rgba(111, 122, 136, 0.10); }
+.notes-grounding .ng-stale {
+    color: #ebcb8b; background: rgba(235, 203, 139, 0.14);
+    border: 1px solid #ebcb8b; border-radius: 10px; padding: 1px 8px; font-size: 11px;
+}
+.notes-grounding .ng-meta { color: #6f7a88; font-size: 11px; margin-top: 4px; }
+.notes-grounding .ng-ev-h { color: #8fbcbb; font-size: 11px; margin-top: 8px; text-transform: uppercase; letter-spacing: 0.04em; }
+.notes-grounding ul.ng-ev { margin: 4px 0 0; padding-left: 0; list-style: none; }
+.notes-grounding ul.ng-ev li { margin: 3px 0; word-break: break-word; }
+.notes-grounding ul.ng-ev code { color: #ebcb8b; font-size: 11px; }
+.notes-grounding .ng-q { color: #97a0ad; }

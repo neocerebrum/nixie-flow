@@ -8,7 +8,7 @@ use RuntimeException;
 
 final class Schema
 {
-    private const BASELINE_VERSION = 18;
+    private const BASELINE_VERSION = 19;
 
     private const BASELINE_SQL = <<<'SQL'
 CREATE TABLE users (
@@ -200,34 +200,47 @@ CREATE TABLE diagram_viewers (
   FOREIGN KEY (user_id)    REFERENCES users(id)
 );
 CREATE INDEX idx_viewers_diagram_seen ON diagram_viewers(diagram_id, last_seen_at);
+
+CREATE TABLE diagram_prepare (
+  token              CHAR(64) PRIMARY KEY,
+  diagram_id         INTEGER NOT NULL,
+  user_id            INTEGER NOT NULL,
+  base_version       INTEGER,
+  staged_source      TEXT NOT NULL,
+  staged_layout      TEXT,
+  requires_grounding TEXT,
+  created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (diagram_id) REFERENCES diagrams(id),
+  FOREIGN KEY (user_id)    REFERENCES users(id)
+);
+CREATE INDEX idx_prepare_diagram ON diagram_prepare(diagram_id);
+CREATE INDEX idx_prepare_created ON diagram_prepare(created_at);
 SQL;
 
     // BRIDGE: one-shot upgrade from previous baseline to current. Set both
     // constants when a schema change ships, then delete after every running
     // instance is on BASELINE_VERSION.
-    private const BRIDGE_FROM = 17;
-    // v18: merge requests — a fork owner asks the original's owner to publish
-    // their variant onto the original. Accepting writes the variant's current
-    // source+layout as a new revision/#current on the original (a "jump", not a
-    // diff merge). New `merge_requests` table only; additive.
+    private const BRIDGE_FROM = 18;
+    // v19: grounding gate — staging area for the prepare_save → commit_save
+    // handshake. prepare_save stores the staged source/layout + the note ids
+    // that need a grounding receipt (noteHash changed/new) under a short-lived
+    // token; commit_save validates the receipts' form and then snapshots. New
+    // `diagram_prepare` table only; additive.
     private const BRIDGE_SQL  = <<<'SQL'
-CREATE TABLE merge_requests (
-  id                   INTEGER PRIMARY KEY,
-  source_diagram_id    INTEGER NOT NULL,
-  target_diagram_id    INTEGER NOT NULL,
-  requester_id         INTEGER NOT NULL,
-  status               VARCHAR(20) NOT NULL DEFAULT 'pending',
-  note                 TEXT NULL,
-  created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  resolved_at          TIMESTAMP NULL,
-  resolver_id          INTEGER,
-  accepted_revision_id INTEGER,
-  FOREIGN KEY (source_diagram_id) REFERENCES diagrams(id),
-  FOREIGN KEY (target_diagram_id) REFERENCES diagrams(id),
-  FOREIGN KEY (requester_id)      REFERENCES users(id)
+CREATE TABLE diagram_prepare (
+  token              CHAR(64) PRIMARY KEY,
+  diagram_id         INTEGER NOT NULL,
+  user_id            INTEGER NOT NULL,
+  base_version       INTEGER,
+  staged_source      TEXT NOT NULL,
+  staged_layout      TEXT,
+  requires_grounding TEXT,
+  created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (diagram_id) REFERENCES diagrams(id),
+  FOREIGN KEY (user_id)    REFERENCES users(id)
 );
-CREATE INDEX idx_merge_req_target ON merge_requests(target_diagram_id, status);
-CREATE INDEX idx_merge_req_source ON merge_requests(source_diagram_id, status);
+CREATE INDEX idx_prepare_diagram ON diagram_prepare(diagram_id);
+CREATE INDEX idx_prepare_created ON diagram_prepare(created_at);
 SQL;
 
     private static bool $checked = false;

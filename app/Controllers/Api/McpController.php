@@ -23,26 +23,68 @@ use App\Slug;
  * Auth: `Authorization: Bearer aqt_...` resolved via App\Models\ApiToken.
  *
  * Implemented JSON-RPC methods:
- *   - initialize
+ *   - initialize                  (advertises tools + prompts; returns `instructions`)
  *   - notifications/initialized   (no response — it's a notification)
  *   - ping
- *   - tools/list
- *   - tools/call  → dispatches to one of the 7 Aquata tools below.
+ *   - tools/list, tools/call
+ *   - prompts/list, prompts/get   → the `ground` prompt (grounding procedure)
  *
  * Tools exposed (mirror the API's verbs but identified by slug instead of internal id):
  *   - list_diagrams                         → owned + shared, excluding deleted
  *   - get_diagram(slug)                     → source + layout + revision_id
- *   - save_diagram(slug, source, expected_version[, layout, message])
+ *   - save_diagram(slug, source, expected_version[, layout, message])  (DEPRECATED → prepare/commit)
  *   - create_diagram(title[, slug, source]) → first revision
  *   - delete_diagram(slug)                  → soft delete (owner only)
  *   - get_layout(slug)                      → just the positions sidecar
  *   - set_layout(slug, layout, expected_version)
+ *
+ * Grounding gate (notes-as-code-contracts): verdicts live in layout.grounding, bound to
+ * the note text by noteHash; a 'verified'/'contradicted' without a matching receipt is rejected.
+ *   - prepare_save(slug, source, expected_version[, layout]) → token + requires_grounding
+ *   - commit_save(token, grounding[, message])               → snapshot with grounding
+ *   - set_grounding(slug, grounding, expected_version)        → re-verify in-place (no snapshot)
  */
 final class McpController
 {
     private const PROTOCOL_VERSION = '2024-11-05';
     private const SERVER_NAME      = 'aquata';
     private const SERVER_VERSION   = '0.1.0';
+
+    /** Sent in the initialize response; primes the client on the grounding contract. */
+    private const SERVER_INSTRUCTIONS =
+        "Aquata hosts Mermaid diagrams whose per-element notes (`%% [<id>] <text>`) are contracts about code. "
+        . "When you change a diagram, preserve and update these notes — they carry authorial intent. "
+        . "Before recording a note as 'verified' or 'contradicted', GROUND it against the code: read the code, "
+        . "collect {ref, quote} evidence, and check the quote literally. The server never sees your code — it only "
+        . "enforces a receipt's form and binds it to the note by noteHash. Use the `ground` prompt for the full "
+        . "procedure. To save with verdicts use prepare_save → commit_save; to re-verify an unchanged diagram use "
+        . "set_grounding. Plain saves still work via save_diagram. Grey/unverified notes are always free; the gate "
+        . "only forbids a 'verified'/'contradicted' without a well-formed, note-bound receipt.";
+
+    /** Body of the `ground` MCP prompt. {{SLUG}} is substituted in prompts/get. */
+    private const GROUND_PROMPT = <<<'TXT'
+You are grounding the Aquata diagram "{{SLUG}}" against the local code in the CURRENT working directory (cwd = repo root). The diagram's notes (`%% [<id>] <text>`) are contracts about that code; check whether they still tell the truth and record verdicts the server can trust.
+
+Principle: Aquata never sees the code. The server only checks a receipt's FORM and binds it to the note by noteHash. You establish TRUTH here, by a mechanical quote check. A note is not true just because it reads well.
+
+Procedure:
+1. Pin the commit: `git -C . rev-parse --short HEAD` → $COMMIT. Sanity-check that cwd is the repo this diagram describes; if it clearly is not, stop and ask the user.
+2. Fetch: call get_diagram("{{SLUG}}"). Read EVERY `%% [<id>] <text>` note and any existing layout.grounding. Keep the revision_id (it is the expected_version for writes).
+3. For each note that makes a claim about code:
+   a. Anchor: the files/symbols it names. If the code is unreachable from cwd (a separate repo, an external API), status = "unverified" with an explicit reason — never fake-verify what you cannot see.
+   b. Read the anchored code at HEAD.
+   c. Verdict: verified | contradicted | unverified | n/a  (n/a = the note makes no verifiable code claim, e.g. a UI preference).
+   d. Evidence (required for verified/contradicted): [{ "ref": "path:line[-line]", "quote": "<literal substring of the code>" }]. ref must match ^[A-Za-z0-9._/-]+:[0-9]+(-[0-9]+)?$ .
+   e. MECHANICAL CHECK (this is the truth): the quote MUST appear literally at that ref. If it does not, fix the ref/quote or downgrade to "unverified". Never emit a verified that fails this.
+   f. noteHash = sha256 of the note text after: decode inline encoding (`\n`→newline, `\\`→backslash), collapse every whitespace run to a single space, then trim. It must equal the server's, or the receipt is rejected.
+4. Ghosts (advisory): list repo files/symbols with no node in the diagram. Not a gate — a hint for missing nodes. Distinguish accidental drift from intentional omission (ask if unclear).
+5. Writing:
+   - Re-verification, source UNCHANGED → set_grounding("{{SLUG}}", expected_version, grounding).
+   - You are CHANGING the source → prepare_save("{{SLUG}}", source, expected_version) returns a token + requires_grounding (the new/changed notes); ground those, then commit_save(token, grounding).
+   - Report-only (default if the user did not ask to persist): print a table per id (status · ref · one-line reason) plus the ghost list. Do NOT smuggle verdicts into save_diagram.
+
+Grey/unverified is always free. The gate only forbids a "verified"/"contradicted" without a well-formed, note-bound receipt — it never forces you to verify.
+TXT;
 
     public function handle(array $args): never
     {
@@ -113,11 +155,15 @@ final class McpController
                 case 'initialize':
                     return $this->ok($id, [
                         'protocolVersion' => self::PROTOCOL_VERSION,
-                        'capabilities'    => ['tools' => ['listChanged' => false]],
+                        'capabilities'    => [
+                            'tools'   => ['listChanged' => false],
+                            'prompts' => ['listChanged' => false],
+                        ],
                         'serverInfo'      => [
                             'name'    => self::SERVER_NAME,
                             'version' => self::SERVER_VERSION,
                         ],
+                        'instructions'    => self::SERVER_INSTRUCTIONS,
                     ]);
                 case 'notifications/initialized':
                 case 'notifications/cancelled':
@@ -126,6 +172,13 @@ final class McpController
                     return $this->ok($id, new \stdClass());
                 case 'tools/list':
                     return $this->ok($id, ['tools' => $this->toolDefinitions()]);
+                case 'prompts/list':
+                    return $this->ok($id, ['prompts' => $this->promptDefinitions()]);
+                case 'prompts/get':
+                    return $this->ok($id, $this->getPrompt(
+                        (string) ($params['name'] ?? ''),
+                        is_array($params['arguments'] ?? null) ? $params['arguments'] : []
+                    ));
                 case 'tools/call':
                     $name = (string) ($params['name'] ?? '');
                     $argsT = $params['arguments'] ?? [];
@@ -184,7 +237,7 @@ final class McpController
     {
         if (($req['method'] ?? '') !== 'tools/call') return false;
         $name = $req['params']['name'] ?? '';
-        return in_array($name, ['save_diagram', 'create_diagram', 'delete_diagram', 'set_layout'], true);
+        return in_array($name, ['save_diagram', 'create_diagram', 'delete_diagram', 'set_layout', 'prepare_save', 'commit_save', 'set_grounding'], true);
     }
 
     /**
@@ -235,6 +288,17 @@ final class McpController
         . "Multi-line notes are encoded inline: newline → `\\n` (literal backslash + n), backslash → `\\\\`. "
         . "At most one such line per id; absence = no note. These comments are authored via the Aquata editor's notes panel and convey authorial intent — read them, and preserve/update them when rewriting the source (do not strip `%% [<id>] ...` lines unless you want to delete the corresponding note).";
 
+    /** Shape + binding rules for grounding receipts (used by commit_save / set_grounding). */
+    private const GROUNDING_DOC =
+        "grounding is a map keyed by node/subgraph id; each value is {status: 'verified'|'contradicted'|'unverified'|'n/a', evidence: [{ref, quote}], noteHash, checkedAtCommit, checkedAt, verifier}. "
+        . "evidence is required and non-empty for verified/contradicted (each ref must match `^[A-Za-z0-9._/-]+:[0-9]+(-[0-9]+)?$` and quote be a literal code substring); it is ignored/empty for unverified/n/a. "
+        . "noteHash = sha256 of the note's text after decoding the inline encoding (\\n→newline, \\\\→backslash), trimming, and collapsing every whitespace run to a single space. "
+        . "For verified/contradicted the noteHash MUST equal the hash of that id's note in the source being committed/checked, otherwise the receipt is rejected (a changed note cannot keep a stale 'verified'). unverified/n/a are always accepted. "
+        . "The server never sees your code: it only enforces this form and the noteHash binding — the truth of each quote is established client-side.";
+
+    /** prepare_save token lifetime (seconds). */
+    private const PREPARE_TTL_SECONDS = 900;
+
     /** @return array<int, array<string, mixed>> */
     private function toolDefinitions(): array
     {
@@ -259,7 +323,7 @@ final class McpController
             ],
             [
                 'name' => 'save_diagram',
-                'description' => 'Create a new immutable snapshot from the live working copy. expected_version is the snapshot id the working copy is currently based on (null/0 on a never-saved diagram); mismatch returns a conflict error. Auto-acquires the edit lock. The source MUST be a Mermaid flowchart (flowchart/graph TD|LR|TB|BT|RL); other Mermaid diagram types (sequence, class, ER, state, gantt, etc.) are not supported by the editor. Do NOT include style directives, classDef, or per-node fill/stroke/color: visual styling is managed by the user via the editor palette and stored separately. ' . $notesDoc,
+                'description' => 'DEPRECATED — prefer prepare_save → commit_save, which records grounding verdicts for the notes you changed (save_diagram writes the source with NO grounding receipts). Still supported for plain saves where grounding is not wanted. Creates a new immutable snapshot from the live working copy. expected_version is the snapshot id the working copy is currently based on (null/0 on a never-saved diagram); mismatch returns a conflict error. Auto-acquires the edit lock. The source MUST be a Mermaid flowchart (flowchart/graph TD|LR|TB|BT|RL); other Mermaid diagram types (sequence, class, ER, state, gantt, etc.) are not supported by the editor. Do NOT include style directives, classDef, or per-node fill/stroke/color: visual styling is managed by the user via the editor palette and stored separately. ' . $notesDoc,
                 'inputSchema' => [
                     'type' => 'object',
                     'properties' => [
@@ -317,6 +381,78 @@ final class McpController
                     'required' => ['slug', 'layout', 'expected_version'],
                 ],
             ],
+            [
+                'name' => 'prepare_save',
+                'description' => 'Stage a new source for a GATED save and find out which notes need re-grounding. Returns a short-lived prepare token plus `requires_grounding`: the note ids whose text is new or changed since the current revision — exactly the notes whose truth claims must be re-checked against the code. Ground those notes locally (read the code, collect {ref, quote} evidence at the pinned commit), then call commit_save with the token and the grounding receipts. prepare_save does NOT create a snapshot and changes nothing on the diagram; it only stages the source/layout under a token (TTL ' . self::PREPARE_TTL_SECONDS . 's). Prefer this over save_diagram when you want note verdicts recorded alongside the save. ' . self::NOTES_CONVENTION_DOC,
+                'inputSchema' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'slug'             => ['type' => 'string'],
+                        'source'           => ['type' => 'string', 'description' => 'Mermaid flowchart source. Plain nodes/edges/subgraphs only — no style/classDef/colors. ' . self::NOTES_CONVENTION_DOC],
+                        'expected_version' => ['type' => 'integer'],
+                        'layout'           => ['type' => 'object'],
+                    ],
+                    'required' => ['slug', 'source', 'expected_version'],
+                ],
+            ],
+            [
+                'name' => 'commit_save',
+                'description' => 'Finalize a save started with prepare_save. Pass the prepare `token` and a `grounding` map of receipts. The server validates the FORM of each receipt and binds it to the staged source by noteHash, then creates the snapshot (same optimistic-concurrency as save_diagram, re-checked against the staged base) and stores the grounding in the layout. ' . self::GROUNDING_DOC,
+                'inputSchema' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'token'     => ['type' => 'string'],
+                        'grounding' => ['type' => 'object'],
+                        'message'   => ['type' => 'string'],
+                    ],
+                    'required' => ['token', 'grounding'],
+                ],
+            ],
+            [
+                'name' => 'set_grounding',
+                'description' => 'Record or update grounding verdicts for the CURRENT revision WITHOUT changing the source (re-verification against newer code). Pass expected_version and a `grounding` map. Same form + noteHash binding as commit_save, checked against the current source. Updates the layout in-place (no snapshot), like set_layout. ' . self::GROUNDING_DOC,
+                'inputSchema' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'slug'             => ['type' => 'string'],
+                        'grounding'        => ['type' => 'object'],
+                        'expected_version' => ['type' => 'integer'],
+                    ],
+                    'required' => ['slug', 'grounding', 'expected_version'],
+                ],
+            ],
+        ];
+    }
+
+    // ── Prompt definitions (advertised via prompts/list) ────────────────────
+
+    /** @return array<int, array<string, mixed>> */
+    private function promptDefinitions(): array
+    {
+        return [
+            [
+                'name'        => 'ground',
+                'description' => "Verify an Aquata diagram's notes against the local code (run from inside the repo: cwd = repo root) and optionally record the verdicts via set_grounding or prepare_save → commit_save. Notes are contracts about the code; this checks whether they still tell the truth and flags drift, dead code, and missing nodes.",
+                'arguments'   => [
+                    ['name' => 'slug', 'description' => 'The diagram slug to ground (e.g. bibliomante).', 'required' => true],
+                ],
+            ],
+        ];
+    }
+
+    private function getPrompt(string $name, array $arguments): array
+    {
+        if ($name !== 'ground') {
+            throw new McpToolException("Unknown prompt: $name");
+        }
+        $slug = (isset($arguments['slug']) && is_string($arguments['slug']) && $arguments['slug'] !== '')
+            ? $arguments['slug'] : '<slug>';
+        $text = str_replace('{{SLUG}}', $slug, self::GROUND_PROMPT);
+        return [
+            'description' => 'Ground the notes of an Aquata diagram against the local code.',
+            'messages'    => [
+                ['role' => 'user', 'content' => ['type' => 'text', 'text' => $text]],
+            ],
         ];
     }
 
@@ -333,6 +469,9 @@ final class McpController
             case 'delete_diagram': return $this->toolDeleteDiagram($args, $user);
             case 'get_layout':     return $this->toolGetLayout($args, $user);
             case 'set_layout':     return $this->toolSetLayout($args, $user);
+            case 'prepare_save':   return $this->toolPrepareSave($args, $user);
+            case 'commit_save':    return $this->toolCommitSave($args, $user);
+            case 'set_grounding':  return $this->toolSetGrounding($args, $user);
             default:
                 throw new McpToolException("Unknown tool: $name");
         }
@@ -560,6 +699,352 @@ final class McpController
         ]);
     }
 
+    // ── Grounding gate: prepare_save / commit_save / set_grounding ──────────
+
+    /**
+     * Stage a new source under a short-lived token and report which notes are
+     * new/changed (and thus need a fresh grounding receipt before they can be
+     * marked verified at commit). Creates no snapshot; changes nothing.
+     */
+    private function toolPrepareSave(array $args, array $user): array
+    {
+        $slug     = $this->requireString($args, 'slug');
+        $source   = $this->requireString($args, 'source');
+        $expected = $this->requireInt($args, 'expected_version');
+        // 0 means "never saved" (no source_revision_id yet); store as NULL so
+        // it matches the nullable optimistic-lock check in snapshotCurrent.
+        $base     = $expected === 0 ? null : $expected;
+        $layout   = $args['layout'] ?? null;
+
+        $diagram = Diagram::bySlug($slug);
+        if ($diagram === null || !Diagram::canWrite($diagram, $user) || Diagram::isDeleted($diagram)) {
+            throw new McpToolException("Not found or no edit permission: $slug");
+        }
+
+        $layoutJson = $this->encodeLayout($layout);
+
+        $current      = Revision::current((int) $diagram['id']);
+        $currentNotes = $this->parseNotes($current['source'] ?? '');
+        $stagedNotes  = $this->parseNotes($source);
+        $requires = [];
+        foreach ($stagedNotes as $id => $text) {
+            $old = $currentNotes[$id] ?? null;
+            if ($old === null || $this->noteHashOf($old) !== $this->noteHashOf($text)) {
+                $requires[] = $id;
+            }
+        }
+
+        $this->purgeExpiredPrepare();
+        $token = bin2hex(random_bytes(32));
+        $stmt = db()->prepare(
+            'INSERT INTO diagram_prepare
+               (token, diagram_id, user_id, base_version, staged_source, staged_layout, requires_grounding)
+             VALUES (?, ?, ?, ?, ?, ?, ?)'
+        );
+        $stmt->execute([
+            $token,
+            (int) $diagram['id'],
+            (int) $user['id'],
+            $base,
+            $source,
+            $layoutJson,
+            json_encode(array_values($requires), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+        ]);
+
+        return $this->structuredResult([
+            'token'              => $token,
+            'slug'               => $diagram['slug'],
+            'base_version'       => $base,
+            'requires_grounding' => array_values($requires),
+            'note_count'         => count($stagedNotes),
+            'ttl_seconds'        => self::PREPARE_TTL_SECONDS,
+        ]);
+    }
+
+    /**
+     * Finalize a prepared save: validate the grounding receipts' form, bind
+     * verified/contradicted to the staged note text by noteHash, then snapshot.
+     */
+    private function toolCommitSave(array $args, array $user): array
+    {
+        $token = $this->requireString($args, 'token');
+        if (!array_key_exists('grounding', $args)) {
+            throw new McpToolException('missing required arg: grounding');
+        }
+        $message = isset($args['message']) ? (string) $args['message'] : null;
+
+        $row = $this->loadPrepare($token);
+        if ($row === null) {
+            throw new McpToolException('invalid prepare token — call prepare_save again');
+        }
+        if ((int) $row['user_id'] !== (int) $user['id']) {
+            throw new McpToolException('prepare token belongs to another user');
+        }
+        if ($this->prepareIsExpired($row)) {
+            $this->deletePrepare($token);
+            throw new McpToolException('prepare token expired — call prepare_save again');
+        }
+
+        $diagram = Diagram::byId((int) $row['diagram_id']);
+        if ($diagram === null || !Diagram::canWrite($diagram, $user) || Diagram::isDeleted($diagram)) {
+            $this->deletePrepare($token);
+            throw new McpToolException('diagram no longer writable');
+        }
+
+        $source = (string) $row['staged_source'];
+        $base   = $row['base_version'] !== null ? (int) $row['base_version'] : null;
+
+        // The gate: form + noteHash binding against the staged source.
+        $grounding = $this->validateGrounding($args['grounding'], $source);
+
+        $layout = ($row['staged_layout'] !== null && $row['staged_layout'] !== '')
+            ? json_decode((string) $row['staged_layout'], true) : [];
+        if (!is_array($layout)) $layout = [];
+        $layout['grounding'] = $grounding === [] ? new \stdClass() : $grounding;
+        $layoutJson = $this->encodeLayout($layout);
+
+        if (!Lock::tryClaimIfFree((int) $diagram['id'], (int) $user['id'])) {
+            throw new McpToolException('locked: another user is currently editing this diagram');
+        }
+        try {
+            $owner = User::byId((int) $diagram['owner_id']) ?? $user;
+            $payloadBytes = strlen($source) + strlen($layoutJson ?? '');
+            Quota::checkCanAddRevision((int) $diagram['id'], $owner, $user, $payloadBytes);
+        } catch (QuotaExceeded $q) {
+            throw new McpToolException($q->getMessage());
+        }
+
+        try {
+            $rev = Revision::snapshotCurrent(
+                (int) $diagram['id'], $base, $source, $layoutJson, (int) $user['id'], $message
+            );
+        } catch (RevisionConflict $c) {
+            // Base moved under us: this staged save is stale. Drop the token.
+            $this->deletePrepare($token);
+            throw new McpToolException("conflict: current is now based on revision {$c->currentRevisionId}, staged on $base — re-run prepare_save");
+        }
+
+        $this->deletePrepare($token);
+        $fresh = Diagram::byId((int) $diagram['id']);
+        return $this->structuredResult([
+            'slug'        => $fresh['slug'],
+            'revision_id' => (int) $rev['id'],
+            'parent_id'   => $rev['parent_id'] !== null ? (int) $rev['parent_id'] : null,
+            'grounded'    => count($grounding),
+            'updated_at'  => $fresh['updated_at'],
+        ]);
+    }
+
+    /**
+     * Record grounding verdicts against the CURRENT source without changing it
+     * (re-verification). Updates the layout in-place; no snapshot.
+     */
+    private function toolSetGrounding(array $args, array $user): array
+    {
+        $slug     = $this->requireString($args, 'slug');
+        $expected = $this->requireInt($args, 'expected_version');
+        $base     = $expected === 0 ? null : $expected;
+        if (!array_key_exists('grounding', $args)) {
+            throw new McpToolException('missing required arg: grounding');
+        }
+
+        $diagram = Diagram::bySlug($slug);
+        if ($diagram === null || !Diagram::canWrite($diagram, $user) || Diagram::isDeleted($diagram)) {
+            throw new McpToolException("Not found or no edit permission: $slug");
+        }
+
+        $current = Revision::current((int) $diagram['id']);
+        if ($current === null) {
+            throw new McpToolException('diagram has no current revision');
+        }
+        $grounding = $this->validateGrounding($args['grounding'], (string) $current['source']);
+
+        $layout = ($current['layout'] !== null && $current['layout'] !== '')
+            ? json_decode((string) $current['layout'], true) : [];
+        if (!is_array($layout)) $layout = [];
+        $layout['grounding'] = $grounding === [] ? new \stdClass() : $grounding;
+        $layoutJson = $this->encodeLayout($layout);
+
+        if (!Lock::tryClaimIfFree((int) $diagram['id'], (int) $user['id'])) {
+            throw new McpToolException('locked: another user is currently editing this diagram');
+        }
+        try {
+            $owner    = User::byId((int) $diagram['owner_id']) ?? $user;
+            $oldBytes = strlen((string) $current['source']) + strlen((string) ($current['layout'] ?? ''));
+            $newBytes = strlen((string) $current['source']) + strlen($layoutJson ?? '');
+            Quota::checkCanReplaceDraft($owner, $user, $oldBytes, $newBytes);
+        } catch (QuotaExceeded $q) {
+            throw new McpToolException($q->getMessage());
+        }
+
+        try {
+            Revision::updateCurrent((int) $diagram['id'], $base, null, $layoutJson);
+        } catch (RevisionConflict $c) {
+            throw new McpToolException("conflict: current is now based on revision {$c->currentRevisionId}, expected $expected");
+        }
+
+        $fresh = Diagram::byId((int) $diagram['id']);
+        return $this->structuredResult([
+            'slug'        => $fresh['slug'],
+            'revision_id' => $base,
+            'grounded'    => count($grounding),
+            'updated_at'  => $fresh['updated_at'],
+        ]);
+    }
+
+    // ── Grounding helpers ───────────────────────────────────────────────────
+
+    /**
+     * Extract per-element notes from a Mermaid source. Returns id → raw (still
+     * inline-encoded) note text, using the canonical `%% [<id>] <text>` form.
+     * @return array<string,string>
+     */
+    private function parseNotes(string $source): array
+    {
+        $out = [];
+        foreach (preg_split('/\r?\n/', $source) as $line) {
+            if (preg_match('/^\s*%%\s*\[([A-Za-z0-9_]+)\]\s*(.*)$/', $line, $m)) {
+                $out[$m[1]] = rtrim($m[2]);
+            }
+        }
+        return $out;
+    }
+
+    /** Decode inline note encoding: `\n` → newline, `\\` → backslash. */
+    private function decodeNote(string $text): string
+    {
+        return strtr($text, ['\\n' => "\n", '\\\\' => '\\']);
+    }
+
+    /** Canonical note text: decode, collapse every whitespace run to one space, trim. */
+    private function canonicalizeNote(string $encoded): string
+    {
+        $decoded = $this->decodeNote($encoded);
+        return trim((string) preg_replace('/\s+/u', ' ', $decoded));
+    }
+
+    private function noteHashOf(string $encoded): string
+    {
+        return hash('sha256', $this->canonicalizeNote($encoded));
+    }
+
+    /**
+     * Validate the FORM of a grounding map and bind verified/contradicted
+     * receipts to the note text in $source by noteHash. Returns the normalized
+     * grounding (assoc id → record). Throws on the first problem.
+     * @return array<string, array<string, mixed>>
+     */
+    private function validateGrounding(mixed $grounding, string $source): array
+    {
+        if ($grounding === null) return [];
+        if (!is_array($grounding)) {
+            throw new McpToolException('grounding must be an object');
+        }
+        if ($grounding !== [] && array_keys($grounding) === range(0, count($grounding) - 1)) {
+            throw new McpToolException('grounding must be an object keyed by node id, not an array');
+        }
+
+        $notes   = $this->parseNotes($source);
+        $allowed = ['verified', 'contradicted', 'unverified', 'n/a'];
+        $refRe   = '/^[A-Za-z0-9._\/-]+:[0-9]+(-[0-9]+)?$/';
+        $out = [];
+
+        foreach ($grounding as $id => $rec) {
+            if (!is_string($id) || !preg_match('/^[A-Za-z0-9_]+$/', $id)) {
+                throw new McpToolException('grounding key is not a valid node id: ' . (is_string($id) ? $id : '(non-string)'));
+            }
+            if (!is_array($rec)) {
+                throw new McpToolException("grounding[$id] must be an object");
+            }
+            $status = $rec['status'] ?? null;
+            $status = is_string($status) ? strtolower($status) : '';
+            if ($status === 'na') $status = 'n/a';
+            if (!in_array($status, $allowed, true)) {
+                throw new McpToolException("grounding[$id].status must be one of verified|contradicted|unverified|n/a");
+            }
+
+            $record       = ['status' => $status];
+            $needsEvidence = ($status === 'verified' || $status === 'contradicted');
+
+            $evidence = $rec['evidence'] ?? [];
+            if (!is_array($evidence)) {
+                throw new McpToolException("grounding[$id].evidence must be an array");
+            }
+            $normEvidence = [];
+            foreach ($evidence as $ev) {
+                if (!is_array($ev)) {
+                    throw new McpToolException("grounding[$id].evidence entries must be objects {ref, quote}");
+                }
+                $ref   = $ev['ref']   ?? '';
+                $quote = $ev['quote'] ?? '';
+                if (!is_string($ref) || !preg_match($refRe, $ref)) {
+                    throw new McpToolException("grounding[$id].evidence.ref must match <path>:<line[-line]> (got: " . (is_string($ref) ? $ref : '(non-string)') . ')');
+                }
+                if (!is_string($quote) || $quote === '') {
+                    throw new McpToolException("grounding[$id].evidence.quote must be a non-empty string");
+                }
+                $normEvidence[] = ['ref' => $ref, 'quote' => $quote];
+            }
+            if ($needsEvidence && $normEvidence === []) {
+                throw new McpToolException("grounding[$id]: status '$status' requires at least one {ref, quote} evidence item");
+            }
+            $record['evidence'] = $normEvidence;
+
+            if ($needsEvidence) {
+                $noteHash = $rec['noteHash'] ?? '';
+                if (!is_string($noteHash) || !preg_match('/^[a-f0-9]{64}$/', $noteHash)) {
+                    throw new McpToolException("grounding[$id].noteHash must be a sha256 hex string for a '$status' verdict");
+                }
+                if (!isset($notes[$id])) {
+                    throw new McpToolException("grounding[$id]: no note found in the source for this id — cannot mark '$status'");
+                }
+                if (!hash_equals($this->noteHashOf($notes[$id]), $noteHash)) {
+                    throw new McpToolException("grounding[$id].noteHash does not match the note being committed (stale verdict? re-ground this note)");
+                }
+                $record['noteHash'] = $noteHash;
+            } elseif (isset($rec['noteHash']) && is_string($rec['noteHash'])) {
+                $record['noteHash'] = $rec['noteHash'];
+            }
+
+            foreach (['checkedAtCommit', 'checkedAt', 'verifier'] as $k) {
+                if (isset($rec[$k]) && is_string($rec[$k]) && $rec[$k] !== '') {
+                    $record[$k] = $rec[$k];
+                }
+            }
+            $out[$id] = $record;
+        }
+        return $out;
+    }
+
+    private function loadPrepare(string $token): ?array
+    {
+        if (!preg_match('/^[a-f0-9]{64}$/', $token)) return null;
+        $stmt = db()->prepare('SELECT * FROM diagram_prepare WHERE token = ?');
+        $stmt->execute([$token]);
+        $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+        return $row === false ? null : $row;
+    }
+
+    private function deletePrepare(string $token): void
+    {
+        $stmt = db()->prepare('DELETE FROM diagram_prepare WHERE token = ?');
+        $stmt->execute([$token]);
+    }
+
+    private function prepareIsExpired(array $row): bool
+    {
+        $created = strtotime((string) $row['created_at'] . ' UTC');
+        if ($created === false) return false;
+        return (time() - $created) > self::PREPARE_TTL_SECONDS;
+    }
+
+    private function purgeExpiredPrepare(): void
+    {
+        $cutoff = gmdate('Y-m-d H:i:s', time() - self::PREPARE_TTL_SECONDS);
+        $stmt = db()->prepare('DELETE FROM diagram_prepare WHERE created_at < ?');
+        $stmt->execute([$cutoff]);
+    }
+
     // ── helpers ─────────────────────────────────────────────────────────────
 
     private function loadAccessible(array $args, array $user): array
@@ -610,6 +1095,10 @@ final class McpController
         if (array_key_exists('edgeBend', $layout)
             && is_array($layout['edgeBend']) && $layout['edgeBend'] === []) {
             $layout['edgeBend'] = new \stdClass();
+        }
+        if (array_key_exists('grounding', $layout)
+            && is_array($layout['grounding']) && $layout['grounding'] === []) {
+            $layout['grounding'] = new \stdClass();
         }
         $enc = json_encode($layout, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         if ($enc === false || strlen($enc) > 262144) {

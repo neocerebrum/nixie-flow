@@ -340,6 +340,12 @@ return [
     // ── JS strings (prefixed js. — stripped for frontend) ──
 
     // common
+    'js.grounding.verified'     => 'Verified',
+    'js.grounding.contradicted' => 'Contradicted',
+    'js.grounding.unverified'   => 'Unverified',
+    'js.grounding.na'           => 'N/A',
+    'js.grounding.stale'        => 'note changed since verification',
+    'js.grounding.evidence'     => 'Evidence',
     'js.common.cancel'          => 'Cancel',
     'js.common.confirm'         => 'Confirm',
     'js.common.alert'           => 'Notice',

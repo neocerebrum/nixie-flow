@@ -88,7 +88,7 @@ final class Json
                 $v['edgeBend'] = new \stdClass();
             }
         }
-        foreach (['nodeStyles', 'subgraphStyles', 'edgeStyles'] as $bucket) {
+        foreach (['nodeStyles', 'subgraphStyles', 'edgeStyles', 'grounding'] as $bucket) {
             if (is_array($v) && array_key_exists($bucket, $v)
                 && is_array($v[$bucket]) && $v[$bucket] === []) {
                 $v[$bucket] = new \stdClass();

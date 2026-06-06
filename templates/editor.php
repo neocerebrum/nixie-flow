@@ -99,6 +99,7 @@
             <div id="notesEmpty" class="notes-empty">
                 <?= __('editor.notes_empty') ?>
             </div>
+            <div id="notesGrounding" class="notes-grounding hidden"></div>
             <textarea id="notesTextarea" class="hidden"
                       spellcheck="false"
                       placeholder="<?= __('editor.notes_placeholder') ?>"></textarea>

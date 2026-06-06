@@ -31,8 +31,8 @@ use App\Slug;
  *
  * Tools exposed (mirror the API's verbs but identified by slug instead of internal id):
  *   - list_diagrams                         → owned + shared, excluding deleted
- *   - get_diagram(slug)                     → source + layout + revision_id
- *   - save_diagram(slug, source, expected_version[, layout, message])  (DEPRECATED → prepare/commit)
+ *   - get_diagram(slug)                     → source + grounding + revision_id (no layout: positions are the editor's concern)
+ *   - save_diagram(slug, source, expected_version[, message])  (DEPRECATED → prepare/commit)
  *   - create_diagram(title[, slug, source]) → first revision
  *   - delete_diagram(slug)                  → soft delete (owner only)
  *   - get_layout(slug)                      → just the positions sidecar
@@ -40,7 +40,7 @@ use App\Slug;
  *
  * Grounding gate (notes-as-code-contracts): verdicts live in layout.grounding, bound to
  * the note text by noteHash; a 'verified'/'contradicted' without a matching receipt is rejected.
- *   - prepare_save(slug, source, expected_version[, layout]) → token + requires_grounding
+ *   - prepare_save(slug, source, expected_version) → token + requires_grounding
  *   - commit_save(token, grounding[, message])               → snapshot with grounding
  *   - set_grounding(slug, grounding, expected_version)        → re-verify in-place (no snapshot)
  */
@@ -69,7 +69,7 @@ Principle: Aquata never sees the code. The server only checks a receipt's FORM a
 
 Procedure:
 1. Pin the commit: `git -C . rev-parse --short HEAD` → $COMMIT. Sanity-check that cwd is the repo this diagram describes; if it clearly is not, stop and ask the user.
-2. Fetch: call get_diagram("{{SLUG}}"). Read EVERY `%% [<id>] <text>` note and any existing layout.grounding. Keep the revision_id (it is the expected_version for writes).
+2. Fetch: call get_diagram("{{SLUG}}"). Read EVERY `%% [<id>] <text>` note and any existing `grounding`. Keep the revision_id (it is the expected_version for writes).
 3. For each note that makes a claim about code:
    a. Anchor: the files/symbols it names. If the code is unreachable from cwd (a separate repo, an external API), status = "unverified" with an explicit reason — never fake-verify what you cannot see.
    b. Read the anchored code at HEAD.
@@ -314,7 +314,7 @@ TXT;
             ],
             [
                 'name' => 'get_diagram',
-                'description' => 'Fetch a diagram by slug. Returns source, layout, revision_id, title, lock state. ' . $notesDoc,
+                'description' => 'Fetch a diagram by slug. Returns source, revision_id, title, lock state, and the existing grounding verdicts. It deliberately does NOT return the layout sidecar (node positions, styles, palettes): that is the user\'s editor concern, is pure noise for you, and is preserved automatically when you re-save the source — you never read or send it. ' . $notesDoc,
                 'inputSchema' => [
                     'type' => 'object',
                     'properties' => ['slug' => ['type' => 'string']],
@@ -323,14 +323,13 @@ TXT;
             ],
             [
                 'name' => 'save_diagram',
-                'description' => 'DEPRECATED — prefer prepare_save → commit_save, which records grounding verdicts for the notes you changed (save_diagram writes the source with NO grounding receipts). Still supported for plain saves where grounding is not wanted. Creates a new immutable snapshot from the live working copy. expected_version is the snapshot id the working copy is currently based on (null/0 on a never-saved diagram); mismatch returns a conflict error. Auto-acquires the edit lock. The source MUST be a Mermaid flowchart (flowchart/graph TD|LR|TB|BT|RL); other Mermaid diagram types (sequence, class, ER, state, gantt, etc.) are not supported by the editor. Do NOT include style directives, classDef, or per-node fill/stroke/color: visual styling is managed by the user via the editor palette and stored separately. ' . $notesDoc,
+                'description' => 'DEPRECATED — prefer prepare_save → commit_save, which records grounding verdicts for the notes you changed (save_diagram writes the source with NO grounding receipts). Still supported for plain saves where grounding is not wanted. Creates a new immutable snapshot from the live working copy. expected_version is the snapshot id the working copy is currently based on (null/0 on a never-saved diagram); mismatch returns a conflict error. Auto-acquires the edit lock. The source MUST be a Mermaid flowchart (flowchart/graph TD|LR|TB|BT|RL); other Mermaid diagram types (sequence, class, ER, state, gantt, etc.) are not supported by the editor. Do NOT include style directives, classDef, or per-node fill/stroke/color: visual styling is managed by the user via the editor palette and stored separately. The layout sidecar (node positions, styles, palettes) is carried over UNCHANGED from the current revision — you do not (and cannot) send it. ' . $notesDoc,
                 'inputSchema' => [
                     'type' => 'object',
                     'properties' => [
                         'slug'             => ['type' => 'string'],
                         'source'           => ['type' => 'string', 'description' => 'Mermaid flowchart source. Plain nodes/edges/subgraphs only — no style/classDef/colors. ' . $notesDoc],
                         'expected_version' => ['type' => 'integer'],
-                        'layout'           => ['type' => 'object'],
                         'message'          => ['type' => 'string'],
                     ],
                     'required' => ['slug', 'source', 'expected_version'],
@@ -383,21 +382,20 @@ TXT;
             ],
             [
                 'name' => 'prepare_save',
-                'description' => 'Stage a new source for a GATED save and find out which notes need re-grounding. Returns a short-lived prepare token plus `requires_grounding`: the note ids whose text is new or changed since the current revision — exactly the notes whose truth claims must be re-checked against the code. Ground those notes locally (read the code, collect {ref, quote} evidence at the pinned commit), then call commit_save with the token and the grounding receipts. prepare_save does NOT create a snapshot and changes nothing on the diagram; it only stages the source/layout under a token (TTL ' . self::PREPARE_TTL_SECONDS . 's). Prefer this over save_diagram when you want note verdicts recorded alongside the save. ' . self::NOTES_CONVENTION_DOC,
+                'description' => 'Stage a new source for a GATED save and find out which notes need re-grounding. Returns a short-lived prepare token plus `requires_grounding`: the note ids whose text is new or changed since the current revision — exactly the notes whose truth claims must be re-checked against the code. Ground those notes locally (read the code, collect {ref, quote} evidence at the pinned commit), then call commit_save with the token and the grounding receipts. prepare_save does NOT create a snapshot and changes nothing on the diagram; it only stages the source under a token (TTL ' . self::PREPARE_TTL_SECONDS . 's). The layout sidecar (positions, styles, palettes) is carried over UNCHANGED at commit time — you never send it. Prefer this over save_diagram when you want note verdicts recorded alongside the save. ' . self::NOTES_CONVENTION_DOC,
                 'inputSchema' => [
                     'type' => 'object',
                     'properties' => [
                         'slug'             => ['type' => 'string'],
                         'source'           => ['type' => 'string', 'description' => 'Mermaid flowchart source. Plain nodes/edges/subgraphs only — no style/classDef/colors. ' . self::NOTES_CONVENTION_DOC],
                         'expected_version' => ['type' => 'integer'],
-                        'layout'           => ['type' => 'object'],
                     ],
                     'required' => ['slug', 'source', 'expected_version'],
                 ],
             ],
             [
                 'name' => 'commit_save',
-                'description' => 'Finalize a save started with prepare_save. Pass the prepare `token` and a `grounding` map of receipts. The server validates the FORM of each receipt and binds it to the staged source by noteHash, then creates the snapshot (same optimistic-concurrency as save_diagram, re-checked against the staged base) and stores the grounding in the layout. ' . self::GROUNDING_DOC,
+                'description' => 'Finalize a save started with prepare_save. Pass the prepare `token` and a `grounding` map of receipts. The server validates the FORM of each receipt and binds it to the staged source by noteHash, then creates the snapshot (same optimistic-concurrency as save_diagram, re-checked against the staged base) and stores the grounding in the layout. Receipts MERGE onto the existing grounding: notes you omit keep their current verdict, so you only need to send receipts for the notes prepare flagged in `requires_grounding`. The one exception is automatic — a previously verified/contradicted note whose text you changed has its now-stale verdict dropped unless you re-ground it. ' . self::GROUNDING_DOC,
                 'inputSchema' => [
                     'type' => 'object',
                     'properties' => [
@@ -410,7 +408,7 @@ TXT;
             ],
             [
                 'name' => 'set_grounding',
-                'description' => 'Record or update grounding verdicts for the CURRENT revision WITHOUT changing the source (re-verification against newer code). Pass expected_version and a `grounding` map. Same form + noteHash binding as commit_save, checked against the current source. Updates the layout in-place (no snapshot), like set_layout. ' . self::GROUNDING_DOC,
+                'description' => 'Record or update grounding verdicts for the CURRENT revision WITHOUT changing the source (re-verification against newer code). Pass expected_version and a `grounding` map. Same form + noteHash binding as commit_save, checked against the current source. Updates the layout in-place (no snapshot), like set_layout. Receipts MERGE onto the existing grounding — send only the notes you re-checked; every other note keeps its current verdict (send an explicit `unverified` to clear one). ' . self::GROUNDING_DOC,
                 'inputSchema' => [
                     'type' => 'object',
                     'properties' => [
@@ -526,6 +524,12 @@ TXT;
         $current = Revision::current((int) $diagram['id']);
         $sourceRevId = $current && $current['source_revision_id'] !== null
             ? (int) $current['source_revision_id'] : null;
+        // Surface ONLY the grounding verdicts from the layout sidecar; the rest of
+        // the layout (positions, styles, palettes) is the editor's concern and noise
+        // for an LLM, so we never hand it over. It is preserved untouched on re-save.
+        $layout    = $current && $current['layout'] !== null ? json_decode($current['layout'], true) : null;
+        $grounding = (is_array($layout) && !empty($layout['grounding']) && is_array($layout['grounding']))
+            ? $layout['grounding'] : new \stdClass();
         return $this->structuredResult([
             'slug'        => $diagram['slug'],
             'title'       => $diagram['title'],
@@ -533,7 +537,7 @@ TXT;
             'revision_id' => $sourceRevId,
             'parent_id'   => null,
             'source'      => $current ? $current['source'] : null,
-            'layout'      => $current && $current['layout'] !== null ? json_decode($current['layout'], true) : null,
+            'grounding'   => $grounding,
             'updated_at'  => $diagram['updated_at'],
             'lock'        => Lock::state($diagram),
         ]);
@@ -544,7 +548,6 @@ TXT;
         $slug   = $this->requireString($args, 'slug');
         $source = $this->requireString($args, 'source');
         $expected = $this->requireInt($args, 'expected_version');
-        $layout = isset($args['layout']) ? $args['layout'] : null;
         $message = isset($args['message']) ? (string) $args['message'] : null;
 
         $diagram = Diagram::bySlug($slug);
@@ -556,7 +559,10 @@ TXT;
             throw new McpToolException('locked: another user is currently editing this diagram');
         }
 
-        $layoutJson = $this->encodeLayout($layout);
+        // Carry the existing layout (positions/styles/palettes/grounding) over
+        // — a source-only save must never wipe the user's arrangement — pruning
+        // entries for ids the new source dropped so orphans don't accumulate.
+        $layoutJson = $this->carryLayoutJson((int) $diagram['id'], $source);
         try {
             $owner = User::byId((int) $diagram['owner_id']) ?? $user;
             $payloadBytes = strlen($source) + strlen($layoutJson ?? '');
@@ -714,14 +720,15 @@ TXT;
         // 0 means "never saved" (no source_revision_id yet); store as NULL so
         // it matches the nullable optimistic-lock check in snapshotCurrent.
         $base     = $expected === 0 ? null : $expected;
-        $layout   = $args['layout'] ?? null;
 
         $diagram = Diagram::bySlug($slug);
         if ($diagram === null || !Diagram::canWrite($diagram, $user) || Diagram::isDeleted($diagram)) {
             throw new McpToolException("Not found or no edit permission: $slug");
         }
 
-        $layoutJson = $this->encodeLayout($layout);
+        // No layout is staged: it is read fresh and preserved at commit time so
+        // edits the user makes in the editor between prepare and commit survive.
+        $layoutJson = null;
 
         $current      = Revision::current((int) $diagram['id']);
         $currentNotes = $this->parseNotes($current['source'] ?? '');
@@ -797,10 +804,17 @@ TXT;
         // The gate: form + noteHash binding against the staged source.
         $grounding = $this->validateGrounding($args['grounding'], $source);
 
-        $layout = ($row['staged_layout'] !== null && $row['staged_layout'] !== '')
-            ? json_decode((string) $row['staged_layout'], true) : [];
+        // Carry the user's CURRENT layout (never a stale staged one), prune
+        // entries whose ids the staged source dropped, then merge in the fresh
+        // grounding — preserves positions/styles, accumulates no orphans.
+        $current = Revision::current((int) $diagram['id']);
+        $layout  = ($current && $current['layout'] !== null && $current['layout'] !== '')
+            ? json_decode((string) $current['layout'], true) : [];
         if (!is_array($layout)) $layout = [];
-        $layout['grounding'] = $grounding === [] ? new \stdClass() : $grounding;
+        $layout = $this->pruneLayout($layout, $source);
+        $existing = (isset($layout['grounding']) && is_array($layout['grounding'])) ? $layout['grounding'] : [];
+        $merged = $this->mergeGrounding($existing, $grounding, $source);
+        $layout['grounding'] = $merged === [] ? new \stdClass() : $merged;
         $layoutJson = $this->encodeLayout($layout);
 
         if (!Lock::tryClaimIfFree((int) $diagram['id'], (int) $user['id'])) {
@@ -862,7 +876,9 @@ TXT;
         $layout = ($current['layout'] !== null && $current['layout'] !== '')
             ? json_decode((string) $current['layout'], true) : [];
         if (!is_array($layout)) $layout = [];
-        $layout['grounding'] = $grounding === [] ? new \stdClass() : $grounding;
+        $existing = (isset($layout['grounding']) && is_array($layout['grounding'])) ? $layout['grounding'] : [];
+        $merged = $this->mergeGrounding($existing, $grounding, (string) $current['source']);
+        $layout['grounding'] = $merged === [] ? new \stdClass() : $merged;
         $layoutJson = $this->encodeLayout($layout);
 
         if (!Lock::tryClaimIfFree((int) $diagram['id'], (int) $user['id'])) {
@@ -1016,6 +1032,39 @@ TXT;
         return $out;
     }
 
+    /**
+     * Merge freshly-validated receipts onto the existing grounding so a save
+     * that only re-grounds the changed notes does NOT wipe the verdicts of the
+     * untouched ones. An existing verified/contradicted is carried only while
+     * its noteHash still matches the note in $source (a changed note's stale
+     * verdict is dropped → grey); unverified/n/a and still-matching verdicts are
+     * kept; the incoming receipt wins on conflict.
+     *
+     * @param array<string,mixed> $existing
+     * @param array<string,array<string,mixed>> $incoming  already validated
+     * @return array<string,array<string,mixed>>
+     */
+    private function mergeGrounding(array $existing, array $incoming, string $source): array
+    {
+        $notes  = $this->parseNotes($source);
+        $merged = [];
+        foreach ($existing as $id => $rec) {
+            if (!is_array($rec) || !isset($notes[(string) $id])) continue;  // note gone — drop
+            $status = is_string($rec['status'] ?? null) ? $rec['status'] : '';
+            if ($status === 'verified' || $status === 'contradicted') {
+                $h = $rec['noteHash'] ?? '';
+                if (!is_string($h) || !hash_equals($this->noteHashOf($notes[(string) $id]), $h)) {
+                    continue;  // stale: the note text changed since this verdict
+                }
+            }
+            $merged[(string) $id] = $rec;
+        }
+        foreach ($incoming as $id => $rec) {
+            $merged[(string) $id] = $rec;  // fresh verdict wins
+        }
+        return $merged;
+    }
+
     private function loadPrepare(string $token): ?array
     {
         if (!preg_match('/^[a-f0-9]{64}$/', $token)) return null;
@@ -1076,6 +1125,65 @@ TXT;
         if (is_int($v)) return $v;
         if (is_string($v) && ctype_digit($v)) return (int) $v;
         throw new McpToolException("missing or non-integer arg: $key");
+    }
+
+    /**
+     * Carry the current working copy's layout onto a new source, used to keep
+     * the user's positions/styles/palettes/grounding across a source-only
+     * re-save (the LLM surface never sends layout). Entries referencing ids no
+     * longer in the source are pruned so orphans don't accumulate; new ids get
+     * no entry and fall back to the editor's defaults.
+     */
+    private function carryLayoutJson(int $diagramId, string $newSource): ?string
+    {
+        $current = Revision::current($diagramId);
+        if (!$current || $current['layout'] === null) return null;
+        $layout = json_decode((string) $current['layout'], true);
+        if (!is_array($layout)) return (string) $current['layout'];
+        return $this->encodeLayout($this->pruneLayout($layout, $newSource));
+    }
+
+    /**
+     * Drop layout entries whose ids are absent from the source. Conservative by
+     * design: an entry is removed only when its id (or, for an edge, one of its
+     * endpoints) appears NOWHERE as a token in the source — a live id always
+     * appears in its declaration/edge, so this never discards a valid entry.
+     */
+    private function pruneLayout(array $layout, string $source): array
+    {
+        preg_match_all('/[A-Za-z0-9_.-]+/', $source, $m);
+        $tok = array_fill_keys($m[0], true);
+        $idLives   = static fn($id): bool => isset($tok[(string) $id]);
+        $edgeLives = static function ($key) use ($tok): bool {
+            $p = explode('|', (string) $key);
+            if (count($p) < 2) return true;                 // unknown shape — keep
+            return isset($tok[$p[0]]) && isset($tok[$p[1]]);
+        };
+
+        foreach (['positions', 'nodeStyles', 'subgraphStyles'] as $b) {
+            if (isset($layout[$b]) && is_array($layout[$b])) {
+                $layout[$b] = array_filter($layout[$b], $idLives, ARRAY_FILTER_USE_KEY);
+            }
+        }
+        foreach (['edgeAnchors', 'edgeBend', 'edgeStyles'] as $b) {
+            if (isset($layout[$b]) && is_array($layout[$b])) {
+                $layout[$b] = array_filter($layout[$b], $edgeLives, ARRAY_FILTER_USE_KEY);
+            }
+        }
+        foreach (['collapsibleIds', 'collapsedIds', 'lockedIds', 'frameLockedIds'] as $b) {
+            if (isset($layout[$b]) && is_array($layout[$b])) {
+                $layout[$b] = array_values(array_filter($layout[$b], $idLives));
+            }
+        }
+        if (isset($layout['grounding']) && is_array($layout['grounding'])) {
+            $noteIds = $this->parseNotes($source);
+            $layout['grounding'] = array_filter(
+                $layout['grounding'],
+                static fn($id): bool => isset($noteIds[(string) $id]),
+                ARRAY_FILTER_USE_KEY
+            );
+        }
+        return $layout;
     }
 
     private function encodeLayout(mixed $layout): ?string

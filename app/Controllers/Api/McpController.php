@@ -237,7 +237,7 @@ TXT;
     {
         if (($req['method'] ?? '') !== 'tools/call') return false;
         $name = $req['params']['name'] ?? '';
-        return in_array($name, ['save_diagram', 'create_diagram', 'delete_diagram', 'set_layout', 'prepare_save', 'commit_save', 'set_grounding'], true);
+        return in_array($name, ['save_diagram', 'create_diagram', 'delete_diagram', 'set_layout', 'prepare_save', 'commit_save', 'set_grounding', 'set_note'], true);
     }
 
     /**
@@ -419,6 +419,21 @@ TXT;
                     'required' => ['slug', 'grounding', 'expected_version'],
                 ],
             ],
+            [
+                'name' => 'set_note',
+                'description' => 'Set (or clear) the note of a SINGLE node/subgraph WITHOUT resending the whole source — the surgical alternative to rewriting the Mermaid just to edit one comment. Pass the element `id` and the new `text` (raw, multi-line allowed: the server applies the inline encoding for you). An empty/omitted `text` removes the note. The id must already be a declared node or subgraph in the diagram. Creates a new snapshot (same optimistic-concurrency as save_diagram; pass expected_version, null/0 if never saved). Because the note IS the code-contract, changing its text invalidates any prior verified/contradicted verdict for that id (its noteHash no longer matches) — the verdict drops to grey/unverified and must be re-grounded via prepare_save → commit_save or set_grounding. This tool can only ever clear a verdict, never set one, so it cannot bypass the grounding gate. ' . self::NOTES_CONVENTION_DOC,
+                'inputSchema' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'slug'             => ['type' => 'string'],
+                        'id'               => ['type' => 'string', 'description' => 'The node or subgraph id whose note to set.'],
+                        'text'             => ['type' => 'string', 'description' => 'New note text (raw, multi-line allowed). Empty or omitted removes the note.'],
+                        'expected_version' => ['type' => 'integer'],
+                        'message'          => ['type' => 'string'],
+                    ],
+                    'required' => ['slug', 'id', 'expected_version'],
+                ],
+            ],
         ];
     }
 
@@ -470,6 +485,7 @@ TXT;
             case 'prepare_save':   return $this->toolPrepareSave($args, $user);
             case 'commit_save':    return $this->toolCommitSave($args, $user);
             case 'set_grounding':  return $this->toolSetGrounding($args, $user);
+            case 'set_note':       return $this->toolSetNote($args, $user);
             default:
                 throw new McpToolException("Unknown tool: $name");
         }
@@ -908,6 +924,106 @@ TXT;
         ]);
     }
 
+    /**
+     * Set or clear the note of one node/subgraph without resending the source.
+     * Edits the single `%% [<id>] …` line in the current source and snapshots.
+     * A note-text change invalidates that id's verified/contradicted verdict
+     * (stale noteHash) → the verdict is dropped to grey; this tool never records
+     * a verdict, so it cannot lift a note to green.
+     */
+    private function toolSetNote(array $args, array $user): array
+    {
+        $slug     = $this->requireString($args, 'slug');
+        $id       = $this->requireString($args, 'id');
+        $expected = $this->requireInt($args, 'expected_version');
+        // 0 means "never saved": store as NULL to match the nullable lock check.
+        $base     = $expected === 0 ? null : $expected;
+        $text     = isset($args['text']) ? (string) $args['text'] : '';
+        $message  = isset($args['message']) ? (string) $args['message'] : null;
+
+        if (!preg_match('/^[A-Za-z0-9_]+$/', $id)) {
+            throw new McpToolException('invalid id: must match [A-Za-z0-9_]+');
+        }
+
+        $diagram = Diagram::bySlug($slug);
+        if ($diagram === null || !Diagram::canWrite($diagram, $user) || Diagram::isDeleted($diagram)) {
+            throw new McpToolException("Not found or no edit permission: $slug");
+        }
+
+        $current = Revision::current((int) $diagram['id']);
+        $source  = (string) ($current['source'] ?? '');
+        $lines   = explode("\n", $source);
+
+        // The id must exist in the diagram — either already carrying a note or
+        // declared as a node/subgraph. Refuse to attach a note to a phantom id.
+        $hasNote = array_key_exists($id, $this->parseNotes($source));
+        $hasDecl = $this->findDeclLine($lines, $id) !== null;
+        if (!$hasNote && !$hasDecl) {
+            throw new McpToolException("no node or subgraph '$id' in this diagram");
+        }
+
+        $encoded   = $this->encodeNote($text);   // '' → removes the note
+        $newSource = $this->upsertNoteInSource($source, $id, $encoded);
+
+        if ($newSource === $source) {
+            // Identical text, or clearing a note that isn't there: nothing to do.
+            $sourceRevId = $current && $current['source_revision_id'] !== null
+                ? (int) $current['source_revision_id'] : null;
+            return $this->structuredResult([
+                'slug'                  => $diagram['slug'],
+                'revision_id'           => $sourceRevId,
+                'changed'               => false,
+                'grounding_invalidated' => false,
+                'updated_at'            => $diagram['updated_at'],
+            ]);
+        }
+
+        // Carry the user's layout over the new source, prune orphans, then drop
+        // any now-stale verdict (no incoming receipts → mergeGrounding only
+        // keeps still-matching verdicts and drops the changed note's verdict).
+        $layout = ($current && $current['layout'] !== null && $current['layout'] !== '')
+            ? json_decode((string) $current['layout'], true) : [];
+        if (!is_array($layout)) $layout = [];
+        $layout   = $this->pruneLayout($layout, $newSource);
+        $existing = (isset($layout['grounding']) && is_array($layout['grounding'])) ? $layout['grounding'] : [];
+        $prevRec  = $existing[$id] ?? null;
+        $wasGreen = is_array($prevRec) && in_array($prevRec['status'] ?? '', ['verified', 'contradicted'], true);
+        $merged   = $this->mergeGrounding($existing, [], $newSource);
+        $invalidated = $wasGreen && !isset($merged[$id]);
+        $layout['grounding'] = $merged === [] ? new \stdClass() : $merged;
+        $layoutJson = $this->encodeLayout($layout);
+
+        if (!Lock::tryClaimIfFree((int) $diagram['id'], (int) $user['id'])) {
+            throw new McpToolException('locked: another user is currently editing this diagram');
+        }
+        try {
+            $owner = User::byId((int) $diagram['owner_id']) ?? $user;
+            $payloadBytes = strlen($newSource) + strlen($layoutJson ?? '');
+            Quota::checkCanAddRevision((int) $diagram['id'], $owner, $user, $payloadBytes);
+        } catch (QuotaExceeded $q) {
+            throw new McpToolException($q->getMessage());
+        }
+
+        try {
+            $rev = Revision::snapshotCurrent(
+                (int) $diagram['id'], $base, $newSource, $layoutJson, (int) $user['id'], $message
+            );
+        } catch (RevisionConflict $c) {
+            throw new McpToolException("conflict: current is now based on revision {$c->currentRevisionId}, expected $expected");
+        }
+
+        $fresh = Diagram::byId((int) $diagram['id']);
+        return $this->structuredResult([
+            'slug'                  => $fresh['slug'],
+            'revision_id'           => (int) $rev['id'],
+            'parent_id'             => $rev['parent_id'] !== null ? (int) $rev['parent_id'] : null,
+            'changed'               => true,
+            'note_removed'          => $encoded === '',
+            'grounding_invalidated' => $invalidated,
+            'updated_at'            => $fresh['updated_at'],
+        ]);
+    }
+
     // ── Grounding helpers ───────────────────────────────────────────────────
 
     /**
@@ -942,6 +1058,78 @@ TXT;
     private function noteHashOf(string $encoded): string
     {
         return hash('sha256', $this->canonicalizeNote($encoded));
+    }
+
+    // ── Single-note source editing (port of editor.js upsertNoteInSource) ────
+
+    /** Mermaid node-shape bodies, longest-match first. Mirror of editor.js. */
+    private const NODE_SHAPE_BODY = <<<'RE'
+(?:\[\[[^\]\n]*\]\]|\[\([^)\n]*\)\]|\(\[[^\]\n]*\]\)|\[\/[^\\\n]*\\\]|\[\\[^\/\n]*\/\]|\[\/[^\/\n]*\/\]|\[\\[^\\\n]*\\\]|\[[^\]\n]*\]|\(\(\([^)\n]*\)\)\)|\(\([^)\n]*\)\)|\([^)\n]*\)|\{\{[^}\n]*\}\}|\{[^}\n]*\}|>[^\]\n]*\])
+RE;
+
+    /** Encode raw note text for the inline `%% [id] …` form: `\` → `\\`, newline → `\n`. */
+    private function encodeNote(string $text): string
+    {
+        $text = str_replace('\\', '\\\\', $text);
+        $text = preg_replace('/\r\n?/', "\n", $text);
+        return str_replace("\n", '\\n', $text);
+    }
+
+    /**
+     * Locate the declaration line of `id` (node decl or subgraph header) so a
+     * new note can be placed adjacent to it. Returns ['idx'=>int,'indent'=>str]
+     * or null (e.g. an id that only appears on edges).
+     * @param array<int,string> $lines
+     */
+    private function findDeclLine(array $lines, string $id): ?array
+    {
+        $idEsc      = preg_quote($id, '~');
+        $nodeDeclRe = '~^(\s*)' . $idEsc . '\s*' . self::NODE_SHAPE_BODY . '(?:\s*:::\s*\w+)?\s*$~';
+        $sgHeaderRe = '~^(\s*)subgraph\s+' . $idEsc . '(?:\s|\[|$)~i';
+        foreach ($lines as $i => $line) {
+            if (preg_match($nodeDeclRe, $line, $m)) return ['idx' => (int) $i, 'indent' => $m[1]];
+            if (preg_match($sgHeaderRe, $line, $m)) return ['idx' => (int) $i, 'indent' => $m[1]];
+        }
+        return null;
+    }
+
+    /**
+     * Return $source with the note for $id set to $encoded (already inline-
+     * encoded), or removed when $encoded is ''. The first canonical `%% [id] …`
+     * line is updated in place; a brand-new note is inserted right after the
+     * element's declaration (or appended at end for ids with no declaration).
+     * Only the bracketed form is matched (the server's notion of a note), so a
+     * plain `%% comment` banner is never clobbered.
+     */
+    private function upsertNoteInSource(string $source, string $id, string $encoded): string
+    {
+        $lines    = explode("\n", $source);
+        $foundIdx = -1;
+        $foundIndent = '';
+        foreach ($lines as $i => $line) {
+            if (preg_match('/^(\s*)%%\s*\[([A-Za-z0-9_]+)\]/', $line, $m) && $m[2] === $id) {
+                $foundIdx = (int) $i;
+                $foundIndent = $m[1];
+                break;
+            }
+        }
+        $isEmpty = ($encoded === '');
+        if ($foundIdx !== -1) {
+            if ($isEmpty) {
+                array_splice($lines, $foundIdx, 1);
+                return implode("\n", $lines);
+            }
+            $lines[$foundIdx] = $foundIndent . '%% [' . $id . '] ' . $encoded;
+            return implode("\n", $lines);
+        }
+        if ($isEmpty) return $source;
+        $decl = $this->findDeclLine($lines, $id);
+        if ($decl !== null) {
+            array_splice($lines, $decl['idx'] + 1, 0, [$decl['indent'] . '%% [' . $id . '] ' . $encoded]);
+            return implode("\n", $lines);
+        }
+        if ($source !== '' && substr($source, -1) !== "\n") $source .= "\n";
+        return $source . '%% [' . $id . '] ' . $encoded . "\n";
     }
 
     /**

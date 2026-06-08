@@ -5501,6 +5501,18 @@
   // a cluster's bounding envelope as nodes ∪ inner-cluster-rects, instead of
   // nodes-only — otherwise nested subgraph rects (with their own internal
   // padding) get ignored and the outer cluster's margins go asymmetric.
+  // Strip edge labels (|...|) and node-shape text ([...], (...), {...}) so a
+  // word that is only an edge LABEL — e.g. the `MCP` in `what_needs -->|MCP|
+  // needs_mcp` — is never mistaken for a subgraph member. Mirrors the stripping
+  // in computeNodeSubgraphOwners; only the ids OUTSIDE the brackets are real.
+  function stripLabelText(line) {
+    return line
+      .replace(/\|[^|\n]*\|/g, " ")
+      .replace(/\[[^\]\n]*\]/g, " ")
+      .replace(/\([^)\n]*\)/g, " ")
+      .replace(/\{[^}\n]*\}/g, " ");
+  }
+
   function findSubgraphDirectChildren(source, id) {
     const idEsc = regexEscape(id);
     const headerRe = new RegExp(`^\\s*subgraph\\s+${idEsc}(\\s|\\[|$)`, "i");
@@ -5526,7 +5538,7 @@
       }
       if (endRe.test(line)) { depth--; if (depth === 0) break; continue; }
       if (depth !== 1) continue;
-      const matches = line.match(wordRe) || [];
+      const matches = stripLabelText(line).match(wordRe) || [];
       for (const w of matches) {
         if (nodeMap[w]) result.nodes.add(w);
       }
@@ -5553,7 +5565,7 @@
       if (/^\s*%%/.test(line)) continue; // comments never declare membership
       if (anySubgraphRe.test(line)) { depth++; continue; }
       if (endRe.test(line)) { depth--; if (depth === 0) break; continue; }
-      const matches = line.match(wordRe) || [];
+      const matches = stripLabelText(line).match(wordRe) || [];
       for (const w of matches) {
         if (nodeMap[w]) members.add(w);
       }

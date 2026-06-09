@@ -18,7 +18,7 @@
 <body>
 <?php include __DIR__ . '/partials/icons.php'; ?>
 <header class="ed-header">
-    <a href="/dashboard" class="ed-back" title="<?= __('editor.back') ?>"><?= __('editor.back_short') ?></a>
+    <a href="<?= e($bootstrap['back'] ?? '/dashboard') ?>" class="ed-back" title="<?= __('editor.back') ?>"><?= __('editor.back_short') ?></a>
     <a id="originBackBtn" class="ed-back ed-origin-back hidden" href="#"></a>
 
     <div class="ed-toolbar">
@@ -189,6 +189,11 @@
             <span><?= __('editor.modal.rename.field_title') ?></span>
             <input id="renameTitleInput" type="text" autocomplete="off">
         </label>
+        <label class="field">
+            <span><?= __('editor.modal.rename.field_slug') ?></span>
+            <input id="renameSlugInput" type="text" autocomplete="off" spellcheck="false">
+        </label>
+        <p class="muted-small"><?= __('editor.modal.rename.slug_warning') ?></p>
         <div id="renameError"></div>
         <div class="modal-buttons">
             <button id="renameCancelBtn"><?= __('common.cancel') ?></button>

@@ -7,6 +7,7 @@ use App\Auth;
 use App\Models\Diagram;
 use App\Models\Lock;
 use App\Models\MergeRequest;
+use App\Models\Project;
 use App\Models\Revision;
 use App\Response;
 use App\View;
@@ -54,6 +55,7 @@ final class EditorController
             ],
             'lock'        => Lock::state($diagram),
             'merge'       => $this->mergeContext($diagram, $user),
+            'back'        => $this->backLink($diagram, $user),
         ];
 
         // Editor is a full-page application: render WITHOUT the standard layout
@@ -62,6 +64,23 @@ final class EditorController
             'diagram'   => $diagram,
             'bootstrap' => $bootstrap,
         ]);
+    }
+
+    /**
+     * Where the editor's "exit" button returns to: the diagram's project page
+     * when it is filed under a project the user can still access, otherwise the
+     * dashboard. Without this, a diagram opened from inside a project sends the
+     * user back to the dashboard root instead of the project they came from.
+     */
+    private function backLink(array $diagram, array $user): string
+    {
+        if (!empty($diagram['project_id'])) {
+            $project = Project::byId((int) $diagram['project_id']);
+            if ($project !== null && empty($project['deleted_at']) && Project::canAccess($project, $user)) {
+                return '/project/' . rawurlencode((string) $project['slug']);
+            }
+        }
+        return '/dashboard';
     }
 
     /**

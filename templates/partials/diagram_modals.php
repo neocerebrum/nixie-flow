@@ -55,6 +55,11 @@
             <span><?= __('dashboard.modal.rename.field_title') ?></span>
             <input id="renameDiagramTitle" type="text" autocomplete="off">
         </label>
+        <label class="field">
+            <span><?= __('dashboard.modal.rename.field_slug') ?></span>
+            <input id="renameDiagramSlug" type="text" autocomplete="off" spellcheck="false">
+        </label>
+        <p class="muted-small"><?= __('dashboard.modal.rename.slug_warning') ?></p>
         <div id="renameDiagramError"></div>
         <div class="modal-buttons">
             <button id="renameDiagramCancelBtn"><?= __('common.cancel') ?></button>

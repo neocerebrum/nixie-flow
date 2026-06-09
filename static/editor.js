@@ -8702,6 +8702,8 @@
   function openRenameModal() {
     const modal = document.getElementById("renameModal");
     document.getElementById("renameTitleInput").value = currentTitle;
+    const slugInput = document.getElementById("renameSlugInput");
+    if (slugInput) slugInput.value = slug;
     document.getElementById("renameError").textContent = "";
     modal.classList.remove("hidden");
     setTimeout(() => document.getElementById("renameTitleInput").focus(), 0);
@@ -8711,16 +8713,25 @@
   }
   async function submitRenameModal() {
     const newTitle = document.getElementById("renameTitleInput").value.trim();
+    const slugInput = document.getElementById("renameSlugInput");
+    const newSlug = slugInput ? slugInput.value.trim() : "";
     const errorEl = document.getElementById("renameError");
     errorEl.textContent = "";
     if (!newTitle) { errorEl.textContent = "title required"; return; }
-    if (newTitle === currentTitle) { closeRenameModal(); return; }
+    const slugChanged = newSlug && newSlug !== slug;
+    if (newTitle === currentTitle && !slugChanged) { closeRenameModal(); return; }
+    const payload = { title: newTitle };
+    if (slugChanged) payload.slug = newSlug;
     try {
-      const { status, json } = await api("PATCH", `/api/diagrams/${encodeURIComponent(slug)}`, {
-        title: newTitle,
-      });
+      const { status, json } = await api("PATCH", `/api/diagrams/${encodeURIComponent(slug)}`, payload);
       if (status !== 200 || !json) {
         errorEl.textContent = (json && json.error) || `HTTP ${status}`;
+        return;
+      }
+      // The slug is captured as a const at init and threaded through every
+      // API URL; on a slug change, redirect to the canonical new URL instead.
+      if (slugChanged && json.slug && json.slug !== slug) {
+        window.location.href = `/editor/${encodeURIComponent(json.slug)}`;
         return;
       }
       currentTitle = json.title;

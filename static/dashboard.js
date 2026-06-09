@@ -341,12 +341,14 @@
 
   const renameModal = document.getElementById("renameDiagramModal");
   const renameInput = document.getElementById("renameDiagramTitle");
+  const renameSlugInput = document.getElementById("renameDiagramSlug");
   const renameError = document.getElementById("renameDiagramError");
   let renameCurrentSlug = null;
 
   function openRenameModal(slug, title) {
     renameCurrentSlug = slug;
     renameInput.value = title || "";
+    if (renameSlugInput) renameSlugInput.value = slug || "";
     renameError.textContent = "";
     renameModal.classList.remove("hidden");
     setTimeout(() => { renameInput.focus(); renameInput.select(); }, 0);
@@ -358,13 +360,20 @@
   async function submitRename() {
     if (!renameCurrentSlug) return;
     const newTitle = renameInput.value.trim();
+    const newSlug = renameSlugInput ? renameSlugInput.value.trim() : "";
     renameError.textContent = "";
     if (!newTitle) { renameError.textContent = __("dashboard.title_required"); return; }
+    const payload = { title: newTitle };
+    const slugChanged = newSlug && newSlug !== renameCurrentSlug;
+    if (slugChanged) payload.slug = newSlug;
     try {
       const { status, json } = await api("PATCH",
         `/api/diagrams/${encodeURIComponent(renameCurrentSlug)}`,
-        { title: newTitle });
+        payload);
       if (status === 200) {
+        // A changed slug invalidates every URL/data-slug reference in the DOM;
+        // reload rather than patch them all in place.
+        if (slugChanged) { window.location.reload(); return; }
         // Aggiorna in-place le card che puntano a questo slug
         for (const btn of document.querySelectorAll(`[data-slug="${CSS.escape(renameCurrentSlug)}"]`)) {
           btn.dataset.title = newTitle;

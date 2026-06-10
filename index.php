@@ -53,6 +53,7 @@ $router->patch('/api/diagrams/{slug}/draft',    [App\Controllers\Api\DiagramCont
 $router->patch('/api/diagrams/{slug}',          [App\Controllers\Api\DiagramController::class, 'patch']);
 $router->delete('/api/diagrams/{slug}',         [App\Controllers\Api\DiagramController::class, 'delete']);
 $router->get('/api/diagrams/{slug}/history',    [App\Controllers\Api\DiagramController::class, 'history']);
+$router->get('/api/diagrams/{slug}/siblings',   [App\Controllers\Api\DiagramController::class, 'siblings']);
 $router->post('/api/diagrams/{slug}/checkout',  [App\Controllers\Api\DiagramController::class, 'checkout']);
 $router->post('/api/diagrams/{slug}/restore',   [App\Controllers\Api\DiagramController::class, 'restore']);
 $router->post('/api/diagrams/{slug}/move',      [App\Controllers\Api\DiagramController::class, 'move']);

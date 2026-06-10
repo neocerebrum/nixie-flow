@@ -7,6 +7,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
     <title><?= e($diagram['title']) ?> — Aquata</title>
+    <link rel="icon" type="image/svg+xml" href="<?= e(asset('/static/aquata_favicon.svg')) ?>">
     <meta name="csrf-token" content="<?= e(\App\Csrf::token()) ?>">
     <meta name="aquata-slug" content="<?= e($diagram['slug']) ?>">
     <link rel="stylesheet" href="<?= e(asset('/static/app.css')) ?>">
@@ -120,6 +121,20 @@
             <span><?= __('editor.modal.new_node.label') ?><small><?= __('editor.modal.new_node.label_hint') ?></small></span>
             <input id="nodeLabelInput" type="text" autocomplete="off">
         </label>
+        <div class="field">
+            <span><?= __('editor.modal.new_node.link') ?><small><?= __('editor.modal.new_node.link_hint') ?></small></span>
+            <div id="nodeLinkControl" class="node-link-control">
+                <button type="button" id="nodeLinkBtn" class="node-link-picker">
+                    <svg class="icon" aria-hidden="true"><use href="#icon-arrow-link"/></svg>
+                    <span id="nodeLinkText" class="node-link-text"></span>
+                    <span class="node-link-caret" aria-hidden="true"></span>
+                </button>
+                <button type="button" id="nodeLinkClear" class="node-link-clear hidden" title="<?= __('editor.modal.new_node.link_clear') ?>">
+                    <svg class="icon" aria-hidden="true"><use href="#icon-x"/></svg>
+                </button>
+                <div id="nodeLinkMenu" class="node-link-menu hidden" role="listbox"></div>
+            </div>
+        </div>
         <div class="field">
             <span><?= __('editor.modal.new_node.shape') ?></span>
             <div id="shapeGrid"></div>

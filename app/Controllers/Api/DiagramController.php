@@ -87,6 +87,31 @@ final class DiagramController
         ]);
     }
 
+    // Diagrams filed under the same project as {slug}, for the editor's node
+    // "link to another diagram" picker. Excludes the diagram itself and any the
+    // caller can't read. Empty list when the diagram isn't filed in a project.
+    public function siblings(array $args): never
+    {
+        $user = $this->apiUser(false);
+        $diagram = $this->loadOr404($args['slug'], $user);
+        $out = [];
+        if ($diagram['project_id'] !== null) {
+            foreach (Diagram::listForProject((int) $diagram['project_id']) as $d) {
+                if ((int) $d['id'] === (int) $diagram['id']) {
+                    continue;
+                }
+                if (!Diagram::canAccess($d, $user)) {
+                    continue;
+                }
+                $out[] = [
+                    'slug'  => $d['slug'],
+                    'title' => $d['title'],
+                ];
+            }
+        }
+        Response::json($out);
+    }
+
     public function create(array $args): never
     {
         $user = $this->apiUser(true);

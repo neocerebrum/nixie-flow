@@ -1001,9 +1001,18 @@
   // ── Render ──────────────────────────────────────────────────────────────
 
   async function renderDiagram() {
-    const parsed = await mermaid.parse(currentSource);
+    // Swap each node `link:<slug>` token for a fixed-width spacer before handing
+    // the source to Mermaid: it sizes nodes from the label's getBBox width, so
+    // we feed it a caption-plus-spacer that reserves room for the badge (the raw
+    // slug would size the node for the whole — hidden — token instead). The
+    // spacer is stripped back out post-render in renderNodeLinks(). Never empty,
+    // so a node whose whole label is the token keeps a valid declaration.
+    // currentSource is left untouched: renderNodeLinks() still needs the token
+    // to detect the link and place the badge.
+    const renderSource = currentSource.replace(NODE_LINK_RE_G, NODE_LINK_PAD);
+    const parsed = await mermaid.parse(renderSource);
     if (parsed === false) throw new Error(__("editor.err.source_invalid"));
-    const { svg } = await mermaid.render("mmd-out", currentSource);
+    const { svg } = await mermaid.render("mmd-out", renderSource);
     diagramEl.innerHTML = svg;
     const svgEl = diagramEl.querySelector("svg");
     svgEl.removeAttribute("style");
@@ -1107,6 +1116,11 @@
   const NODE_LINK_RE = /link:([A-Za-z0-9][A-Za-z0-9_-]*)/;
   const NODE_LINK_RE_G = /\s*link:[A-Za-z0-9][A-Za-z0-9_-]*/g;
   const NODE_LINK_BADGE = 20; // world units (scales with the diagram)
+  // Inked spacer swapped in for the `link:<slug>` token before Mermaid sizes
+  // the node, so the box reserves room for the badge (Mermaid sizes nodes from
+  // label.getBBox().width — trailing whitespace reserves nothing). The leading
+  // NBSP keeps it on the caption's line (no wrap); it's stripped post-render.
+  const NODE_LINK_PAD = " MMM";
 
   function renderNodeLinks() {
     const SVG_NS = "http://www.w3.org/2000/svg";
@@ -1121,21 +1135,35 @@
       // Open `dest` carrying the breadcrumb trail so it can offer a back path
       // here (capped + cycle-collapsed — see nodeLinkUrl).
       const url = nodeLinkUrl(dest);
-      // Drop the token from the rendered caption (leaf text/tspan nodes only).
+      const textEl = findLabelTextElement(g);
+      if (!textEl) continue;
+      // Width Mermaid reserved for caption + spacer (it sized the node for both).
+      let fullW = 0; try { fullW = textEl.getBBox().width; } catch (_) {}
+      // Remove the spacer from the rendered caption (leaf text/tspan nodes only).
       for (const t of g.querySelectorAll("text, tspan")) {
         if (t.children.length) continue;
-        if (NODE_LINK_RE.test(t.textContent)) {
-          t.textContent = t.textContent.replace(NODE_LINK_RE_G, "").trim();
+        if (t.textContent.includes(NODE_LINK_PAD)) {
+          t.textContent = t.textContent.split(NODE_LINK_PAD).join("").trim();
         }
       }
       // Anchor the badge inline, just after the end of the caption — node shapes
       // can be diamonds/circles/etc., so a fixed top-right corner would fall
-      // outside the shape. We measure the (already stripped) label text and sit
-      // the badge to its right, vertically centred on the text. The badge is
-      // appended as a SIBLING of the text so getBBox()'s coords line up.
-      const textEl = findLabelTextElement(g);
-      if (!textEl) continue;
+      // outside the shape. We sit the badge to the caption's right, vertically
+      // centred on the text. The badge is appended as a SIBLING of the text so
+      // getBBox()'s coords line up.
       let bb; try { bb = textEl.getBBox(); } catch (_) { continue; }
+      // Stripping the spacer re-centres the (now shorter) caption on its anchor,
+      // which would leave the reserved room split evenly on both sides. Shift the
+      // caption left by half the reserved width so caption + badge read as one
+      // centred unit, the badge filling the room on the right.
+      const reserve = Math.max(0, fullW - bb.width);
+      if (reserve > 0.5) {
+        for (const t of g.querySelectorAll("text, tspan")) {
+          const xv = parseFloat(t.getAttribute("x"));
+          if (!Number.isNaN(xv)) t.setAttribute("x", xv - reserve / 2);
+        }
+        try { bb = textEl.getBBox(); } catch (_) {}
+      }
       const sz = bb.height > 0 ? bb.height * 1.15 : NODE_LINK_BADGE;
       const gap = sz * 0.3;
       const x = bb.x + bb.width + gap;
@@ -8236,6 +8264,122 @@
       if (okBtn) okBtn.textContent = __("common.create");
     }
   }
+  // ── Node-link picker (add/edit-node modal) ───────────────────────────────
+  // `_modalLinkSlug` is the diagram the node links to (null = none). It's a UI
+  // convenience only: on submit it's recomposed into the label as a
+  // `link:<slug>` token so the link stays visible in the Mermaid source itself
+  // (e.g. an AI reading the diagram still sees it). Project siblings are fetched
+  // when the modal opens and cached for its lifetime.
+  let _modalLinkSlug = null;
+  let _modalSiblings = null; // null = not fetched yet; array once loaded
+
+  // Split a raw node label into its visible caption and the linked slug.
+  function splitNodeLabelLink(raw) {
+    const s = raw || "";
+    const m = s.match(NODE_LINK_RE);
+    return { caption: s.replace(NODE_LINK_RE_G, "").trim(), slug: m ? m[1] : null };
+  }
+  // Recompose caption + optional link slug into a label string. Strips any
+  // stray token the user typed into the caption so we never double it up.
+  function composeNodeLabel(caption, slug) {
+    const base = (caption || "").replace(NODE_LINK_RE_G, "").trim();
+    if (!slug) return base;
+    return (base ? base + " " : "") + "link:" + slug;
+  }
+
+  function renderModalLinkControl() {
+    const txt = document.getElementById("nodeLinkText");
+    const clear = document.getElementById("nodeLinkClear");
+    if (!txt || !clear) return;
+    if (_modalLinkSlug) {
+      const sib = (_modalSiblings || []).find((d) => d.slug === _modalLinkSlug);
+      txt.textContent = sib && sib.title ? sib.title : _modalLinkSlug;
+      txt.classList.remove("placeholder");
+      clear.classList.remove("hidden");
+    } else {
+      txt.textContent = __("editor.modal.new_node.link_none");
+      txt.classList.add("placeholder");
+      clear.classList.add("hidden");
+    }
+  }
+
+  function renderModalLinkMenu() {
+    const menu = document.getElementById("nodeLinkMenu");
+    if (!menu) return;
+    menu.innerHTML = "";
+    if (_modalSiblings === null || _modalSiblings.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "node-link-menu-empty";
+      empty.textContent = _modalSiblings === null
+        ? __("editor.modal.new_node.link_loading")
+        : __("editor.modal.new_node.link_empty");
+      menu.appendChild(empty);
+      return;
+    }
+    for (const d of _modalSiblings) {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "node-link-menu-item" + (d.slug === _modalLinkSlug ? " active" : "");
+      item.setAttribute("role", "option");
+      const t = document.createElement("span");
+      t.className = "node-link-menu-title";
+      t.textContent = d.title || d.slug;
+      const s = document.createElement("span");
+      s.className = "node-link-menu-slug";
+      s.textContent = d.slug;
+      item.appendChild(t); item.appendChild(s);
+      item.addEventListener("click", () => {
+        _modalLinkSlug = d.slug;
+        closeModalLinkMenu();
+        renderModalLinkControl();
+      });
+      menu.appendChild(item);
+    }
+  }
+
+  function openModalLinkMenu() {
+    const menu = document.getElementById("nodeLinkMenu");
+    const btn = document.getElementById("nodeLinkBtn");
+    if (!menu) return;
+    renderModalLinkMenu();
+    menu.classList.remove("hidden");
+    if (btn) btn.classList.add("open");
+  }
+  function closeModalLinkMenu() {
+    const menu = document.getElementById("nodeLinkMenu");
+    const btn = document.getElementById("nodeLinkBtn");
+    if (menu) menu.classList.add("hidden");
+    if (btn) btn.classList.remove("open");
+  }
+  function toggleModalLinkMenu() {
+    const menu = document.getElementById("nodeLinkMenu");
+    if (!menu) return;
+    if (menu.classList.contains("hidden")) openModalLinkMenu();
+    else closeModalLinkMenu();
+  }
+
+  async function loadModalSiblings() {
+    try {
+      const { status, json } = await api(
+        "GET", `/api/diagrams/${encodeURIComponent(slug)}/siblings`);
+      _modalSiblings = (status === 200 && Array.isArray(json)) ? json : [];
+    } catch (_) {
+      _modalSiblings = [];
+    }
+    renderModalLinkControl();
+    const menu = document.getElementById("nodeLinkMenu");
+    if (menu && !menu.classList.contains("hidden")) renderModalLinkMenu();
+  }
+
+  // Reset + populate the link picker each time the modal opens.
+  function initModalLinkPicker(linkSlug) {
+    _modalLinkSlug = linkSlug || null;
+    _modalSiblings = null;
+    closeModalLinkMenu();
+    renderModalLinkControl();
+    loadModalSiblings();
+  }
+
   function openAddNodeModal() {
     if (!requireValidSource("add node")) return;
     _editNodeOriginalId = null;
@@ -8266,13 +8410,15 @@
     document.getElementById("nodeIdInput").value = "";
     document.getElementById("nodeLabelInput").value = "";
     selectShape(SHAPES[0]);
+    initModalLinkPicker(null);
     setTimeout(() => document.getElementById("nodeIdInput").focus(), 0);
   }
   function openEditNodeModal(nodeId) {
     if (!requireValidSource("edit node")) return;
     if (!nodeMap[nodeId]) { setStatus(`node '${nodeId}' not found`, true); return; }
     const shape = detectNodeShapeInSource(currentSource, nodeId) || SHAPES[0];
-    const label = getNodeLabelInSource(currentSource, nodeId) ?? "";
+    const rawLabel = getNodeLabelInSource(currentSource, nodeId) ?? "";
+    const { caption, slug: linkSlug } = splitNodeLabelLink(rawLabel);
     _editNodeOriginalId = nodeId;
     _addNodeTargetSubgraph = null;
     setNodeModalMode(true);
@@ -8281,8 +8427,9 @@
     const hint = document.getElementById("addNodeSubgraphHint");
     if (hint) { hint.textContent = ""; hint.classList.add("hidden"); }
     document.getElementById("nodeIdInput").value = nodeId;
-    document.getElementById("nodeLabelInput").value = label;
+    document.getElementById("nodeLabelInput").value = caption;
     selectShape(shape);
+    initModalLinkPicker(linkSlug);
     setTimeout(() => {
       const inp = document.getElementById("nodeIdInput");
       inp.focus(); inp.select();
@@ -8292,13 +8439,16 @@
     document.getElementById("addNodeModal").classList.add("hidden");
     _addNodeTargetSubgraph = null;
     _editNodeOriginalId = null;
+    _modalLinkSlug = null;
+    _modalSiblings = null;
+    closeModalLinkMenu();
     setNodeModalMode(false);
   }
 
   async function submitAddNodeModal() {
     if (_editNodeOriginalId) { await submitEditNodeModal(); return; }
     const id = document.getElementById("nodeIdInput").value.trim();
-    const label = document.getElementById("nodeLabelInput").value.trim();
+    const label = composeNodeLabel(document.getElementById("nodeLabelInput").value.trim(), _modalLinkSlug);
     const errorEl = document.getElementById("modalError");
     errorEl.textContent = "";
     if (!id) { errorEl.textContent = __("editor.err.id_required"); return; }
@@ -8321,7 +8471,7 @@
   async function submitEditNodeModal() {
     const oldId = _editNodeOriginalId;
     const newId = document.getElementById("nodeIdInput").value.trim();
-    const newLabel = document.getElementById("nodeLabelInput").value.trim();
+    const newLabel = composeNodeLabel(document.getElementById("nodeLabelInput").value.trim(), _modalLinkSlug);
     const errorEl = document.getElementById("modalError");
     errorEl.textContent = "";
     if (!newId) { errorEl.textContent = __("editor.err.id_required"); return; }
@@ -9598,6 +9748,21 @@
       else if (e.key === "Escape") { e.preventDefault(); closeAddNodeModal(); }
     });
   }
+  // Node-link picker: toggle the dropdown, clear the link, and close the menu
+  // on any click elsewhere inside the modal.
+  document.getElementById("nodeLinkBtn").addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleModalLinkMenu();
+  });
+  document.getElementById("nodeLinkClear").addEventListener("click", (e) => {
+    e.stopPropagation();
+    _modalLinkSlug = null;
+    closeModalLinkMenu();
+    renderModalLinkControl();
+  });
+  document.getElementById("addNodeModal").addEventListener("click", (e) => {
+    if (!e.target.closest("#nodeLinkControl")) closeModalLinkMenu();
+  });
 
   document.getElementById("confirmDialogOkBtn").addEventListener("click", () => _confirmDialogClose(true));
   document.getElementById("confirmDialogCancelBtn").addEventListener("click", () => _confirmDialogClose(false));

@@ -5210,7 +5210,10 @@
 
     notesEmpty.classList.add("hidden");
     notesTextarea.classList.remove("hidden");
-    notesTextarea.disabled = isReadOnly || !canWrite;
+    // readOnly (not disabled) for view-only users: a disabled textarea can't be
+    // selected or scrolled, but spectators still need to read/copy long notes.
+    // readOnly blocks editing while keeping selection, focus and wheel-scroll.
+    notesTextarea.readOnly = isReadOnly || !canWrite;
     renderNotesGrounding(id);
   }
 

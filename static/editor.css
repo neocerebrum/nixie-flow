@@ -275,8 +275,10 @@ body.source-invalid #resizer { background: #bf616a; }
     font-size: 13px; line-height: 1.5;
     tab-size: 4;
 }
-#notesTextarea:disabled { opacity: 0.5; cursor: not-allowed; }
-body.readonly #notesTextarea { opacity: 0.55; pointer-events: none; }
+/* View-only / no-scepter: not editable, but note text stays selectable (copy)
+   and the box stays scrollable. Never pointer-events:none here — it would kill
+   selection and wheel-scroll. */
+#notesTextarea:read-only { opacity: 0.7; cursor: text; }
 
 #canvas { flex: 1; overflow: hidden; background: #1e2530;
           position: relative; min-width: 0;

@@ -7445,8 +7445,11 @@
     if (additive) {
       // Shift/Ctrl/Cmd+click: toggle membership without disturbing existing
       // subgraph selection (mixed node+cluster groups). Edges are mutually
-      // exclusive with nodes/clusters — additive node-click drops them.
-      deselectEdge();
+      // exclusive with nodes/clusters, so they can't be merged in — but an
+      // additive click while edges are selected is almost always a stray click
+      // during edge multi-selection. Keep the edges intact and ignore it rather
+      // than dropping the whole selection.
+      if (selectedEdgeKeys.size > 0) return;
       if (selectedNodeIds.has(id)) {
         selectedNodeIds.delete(id);
         if (nodeMap[id]) nodeMap[id].g.classList.remove("selected");
@@ -7580,8 +7583,11 @@
     if (additive) {
       // Shift/Ctrl/Cmd+click: toggle membership without disturbing nodes
       // already in the selection. Edges are mutually exclusive with nodes/
-      // clusters — additive cluster-click drops them.
-      deselectEdge();
+      // clusters, so they can't be merged in — but an additive click while
+      // edges are selected is almost always a stray click during edge multi-
+      // selection. Keep the edges intact and ignore it rather than dropping
+      // the whole selection.
+      if (selectedEdgeKeys.size > 0) return;
       if (selectedClusterIds.has(id)) {
         selectedClusterIds.delete(id);
         if (clusterMap[id]) clusterMap[id].g.classList.remove("selected");

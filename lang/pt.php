@@ -101,6 +101,8 @@ return [
     'dashboard.modal.new.create'        => 'Criar',
     'dashboard.modal.rename.title'      => 'Renomear diagrama',
     'dashboard.modal.rename.field_title' => 'Título',
+    'dashboard.modal.rename.field_slug' => 'Slug',
+    'dashboard.modal.rename.slug_warning' => 'Atenção: alterar o slug quebra os links existentes (favoritos, URLs partilhados, clientes MCP) que usam o atual.',
     'dashboard.modal.rename.save'       => 'Salvar',
     'dashboard.modal.share.title'       => 'Compartilhar ',
     'dashboard.modal.share.help'        => 'O usuário precisa ter uma conta no Aquata. "view" = somente leitura, "edit" = pode editar.',
@@ -192,6 +194,8 @@ return [
     'editor.modal.new_subgraph.label_hint' => '(vazio = usar ID)',
     'editor.modal.rename.title'         => 'Renomear diagrama',
     'editor.modal.rename.field_title'   => 'Título',
+    'editor.modal.rename.field_slug'    => 'Slug',
+    'editor.modal.rename.slug_warning'  => 'Atenção: alterar o slug quebra os links existentes (favoritos, URLs partilhados, clientes MCP) que usam o atual.',
     'editor.modal.edge_label.title'     => 'Editar rótulo da ligação',
     'editor.modal.edge_label.field'     => 'Rótulo',
     'editor.modal.history.title'        => 'Histórico de revisões',
@@ -342,6 +346,12 @@ return [
 
     // common
     'js.common.cancel'          => 'Cancelar',
+    'js.grounding.verified'     => 'Verificada',
+    'js.grounding.contradicted' => 'Contradita',
+    'js.grounding.unverified'   => 'Não verificada',
+    'js.grounding.na'           => 'N/D',
+    'js.grounding.stale'        => 'nota alterada desde a verificação',
+    'js.grounding.evidence'     => 'Evidências',
     'js.common.confirm'         => 'Confirmar',
     'js.common.alert'           => 'Aviso',
     'js.common.ok'              => 'OK',
@@ -520,6 +530,18 @@ return [
     'js.editor.lock.yield'              => 'Ceder cetro',
     'js.editor.lock.deny'               => 'Recusar',
 
+    // editor JS — merge requests
+    'js.editor.merge.fork_of'           => 'Cópia de %s',
+    'js.editor.merge.request_btn'       => 'Pedir merge',
+    'js.editor.merge.requested'         => 'Merge pedido',
+    'js.editor.merge.cancel'            => 'Cancelar',
+    'js.editor.merge.prompt_note'       => 'Adicione uma nota para o proprietário (opcional):',
+    'js.editor.merge.incoming'          => '%s propõe um merge',
+    'js.editor.merge.preview'           => 'Pré-visualização',
+    'js.editor.merge.accept'            => 'Aceitar',
+    'js.editor.merge.decline'           => 'Recusar',
+    'js.editor.merge.accept_confirm'    => 'Aceitar esta variante como a nova versão? O conteúdo atual é substituído (mantido no histórico).',
+
     // editor JS — toast
     'js.editor.toast.moved_tab'         => 'Edição movida para outra aba sua. Tente novamente.',
     'js.editor.toast.lost_scepter'      => 'Você não tem mais o cetro — outra pessoa está editando.',
@@ -532,6 +554,10 @@ return [
     'js.editor.toast.request_failed'    => 'Não foi possível enviar a solicitação.',
     'js.editor.toast.request_denied'    => 'Solicitação recusada.',
     'js.editor.toast.scepter_yielded'   => 'Cetro cedido.',
+    'js.editor.toast.merge_sent'        => 'Pedido de merge enviado.',
+    'js.editor.toast.merge_failed'      => 'Não foi possível concluir o pedido de merge.',
+    'js.editor.toast.merge_denied'      => 'O teu pedido de merge foi recusado.',
+    'js.editor.toast.merge_accepted'    => 'Variante integrada.',
 
     // editor JS — follow
     'js.editor.follow.active'           => 'Seguindo pan/zoom — clique para parar',

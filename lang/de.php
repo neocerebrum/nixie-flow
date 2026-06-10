@@ -101,6 +101,8 @@ return [
     'dashboard.modal.new.create'        => 'Erstellen',
     'dashboard.modal.rename.title'      => 'Diagramm umbenennen',
     'dashboard.modal.rename.field_title' => 'Titel',
+    'dashboard.modal.rename.field_slug' => 'Slug',
+    'dashboard.modal.rename.slug_warning' => 'Achtung: Wenn du den Slug änderst, brechen vorhandene Links (Lesezeichen, geteilte URLs, MCP-Clients), die den aktuellen verwenden.',
     'dashboard.modal.rename.save'       => 'Speichern',
     'dashboard.modal.share.title'       => 'Teilen ',
     'dashboard.modal.share.help'        => 'Der Benutzer muss ein Konto bei Aquata haben. „view" = nur Lesen, „edit" = kann bearbeiten.',
@@ -192,6 +194,8 @@ return [
     'editor.modal.new_subgraph.label_hint' => '(leer = ID verwenden)',
     'editor.modal.rename.title'         => 'Diagramm umbenennen',
     'editor.modal.rename.field_title'   => 'Titel',
+    'editor.modal.rename.field_slug'    => 'Slug',
+    'editor.modal.rename.slug_warning'  => 'Achtung: Wenn du den Slug änderst, brechen vorhandene Links (Lesezeichen, geteilte URLs, MCP-Clients), die den aktuellen verwenden.',
     'editor.modal.edge_label.title'     => 'Kantenbeschriftung bearbeiten',
     'editor.modal.edge_label.field'     => 'Beschriftung',
     'editor.modal.history.title'        => 'Revisionsverlauf',
@@ -342,6 +346,12 @@ return [
 
     // common
     'js.common.cancel'          => 'Abbrechen',
+    'js.grounding.verified'     => 'Verifiziert',
+    'js.grounding.contradicted' => 'Widersprochen',
+    'js.grounding.unverified'   => 'Nicht verifiziert',
+    'js.grounding.na'           => 'k. A.',
+    'js.grounding.stale'        => 'Notiz seit der Überprüfung geändert',
+    'js.grounding.evidence'     => 'Belege',
     'js.common.confirm'         => 'Bestätigen',
     'js.common.alert'           => 'Hinweis',
     'js.common.ok'              => 'OK',
@@ -520,6 +530,18 @@ return [
     'js.editor.lock.yield'              => 'Zepter abgeben',
     'js.editor.lock.deny'               => 'Ablehnen',
 
+    // editor JS — merge requests
+    'js.editor.merge.fork_of'           => 'Kopie von %s',
+    'js.editor.merge.request_btn'       => 'Zusammenführung anfragen',
+    'js.editor.merge.requested'         => 'Zusammenführung angefragt',
+    'js.editor.merge.cancel'            => 'Abbrechen',
+    'js.editor.merge.prompt_note'       => 'Notiz für den Eigentümer hinzufügen (optional):',
+    'js.editor.merge.incoming'          => '%s schlägt eine Zusammenführung vor',
+    'js.editor.merge.preview'           => 'Vorschau',
+    'js.editor.merge.accept'            => 'Annehmen',
+    'js.editor.merge.decline'           => 'Ablehnen',
+    'js.editor.merge.accept_confirm'    => 'Diese Variante als neue Version annehmen? Der aktuelle Inhalt wird ersetzt (bleibt im Verlauf).',
+
     // editor JS — toast
     'js.editor.toast.moved_tab'         => 'Bearbeitung in einen anderen Ihrer Tabs verschoben. Versuchen Sie es erneut.',
     'js.editor.toast.lost_scepter'      => 'Sie haben das Zepter nicht mehr — jemand anderes bearbeitet.',
@@ -532,6 +554,10 @@ return [
     'js.editor.toast.request_failed'    => 'Anfrage konnte nicht gesendet werden.',
     'js.editor.toast.request_denied'    => 'Anfrage abgelehnt.',
     'js.editor.toast.scepter_yielded'   => 'Zepter abgegeben.',
+    'js.editor.toast.merge_sent'        => 'Zusammenführungsanfrage gesendet.',
+    'js.editor.toast.merge_failed'      => 'Zusammenführungsanfrage konnte nicht abgeschlossen werden.',
+    'js.editor.toast.merge_denied'      => 'Deine Zusammenführungsanfrage wurde abgelehnt.',
+    'js.editor.toast.merge_accepted'    => 'Variante zusammengeführt.',
 
     // editor JS — follow
     'js.editor.follow.active'           => 'Pan/Zoom wird synchronisiert — klicken zum Beenden',

@@ -10,6 +10,7 @@ $noNav = $noNav ?? false;
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><?= e($title) ?></title>
+    <link rel="icon" type="image/svg+xml" href="<?= e(asset('/static/aquata_favicon.svg')) ?>">
     <?php if ($currentUser !== null): ?>
         <meta name="csrf-token" content="<?= e(\App\Csrf::token()) ?>">
     <?php endif; ?>

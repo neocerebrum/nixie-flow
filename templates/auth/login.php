@@ -3,7 +3,7 @@
 /** @var ?string $error */
 ?>
 <div class="auth-card">
-    <h1><?= __('login.heading') ?></h1>
+    <img class="auth-logo" src="<?= e(asset('/static/aquata_logo.svg')) ?>" alt="Aquata">
     <p class="muted"><?= __('login.subtitle') ?></p>
     <?php if (!empty($error)): ?>
         <div class="flash flash-error"><?= e($error) ?></div>

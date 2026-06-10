@@ -95,6 +95,7 @@ main {
   border: 1px solid var(--border);
   border-radius: 6px;
 }
+.auth-logo { display: block; width: 220px; height: 220px; margin: 0 auto 1.25rem; }
 .auth-card h1 { text-align: center; margin-bottom: 0.3rem; }
 .auth-card .muted { text-align: center; margin-bottom: 1.5rem; }
 .auth-card .hp-field {

@@ -182,12 +182,12 @@ final class MergeRequestController
         if ($diagram === null) {
             Response::error('Not found', 404);
         }
-        $isAdmin = ($user['role'] ?? '') === 'admin';
-        $isOwner = (int) $diagram['owner_id'] === (int) $user['id'];
-        if (!$isAdmin && !$isOwner) {
+        // Managing merge requests targeting the diagram is owner-only; admins
+        // keep read oversight but are not elevated to accept/reject others' work.
+        if ((int) $diagram['owner_id'] !== (int) $user['id']) {
             Response::error('Not found', 404);
         }
-        if (Diagram::isDeleted($diagram) && !$isAdmin) {
+        if (Diagram::isDeleted($diagram)) {
             Response::error('Not found', 404);
         }
         return $diagram;

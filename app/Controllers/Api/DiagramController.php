@@ -338,9 +338,8 @@ final class DiagramController
         $user = $this->apiUser(true);
         Csrf::requireValidApi();
         $diagram = $this->loadWritableOr404($args['slug'], $user);
-        // Only owner or admin can delete; shared-edit users cannot.
-        $isAdmin = ($user['role'] ?? '') === 'admin';
-        if (!$isAdmin && (int) $diagram['owner_id'] !== (int) $user['id']) {
+        // Owner only; shared-edit users and admins cannot delete others' work.
+        if ((int) $diagram['owner_id'] !== (int) $user['id']) {
             Response::error('Only the owner can delete this diagram', 403);
         }
         Diagram::softDelete((int) $diagram['id']);
@@ -381,8 +380,8 @@ final class DiagramController
         Csrf::requireValidApi();
         $diagram = $this->loadOr404($args['slug'], $user);
 
-        $isAdmin = ($user['role'] ?? '') === 'admin';
-        if (!$isAdmin && (int) $diagram['owner_id'] !== (int) $user['id']) {
+        // Owner only; admins are not elevated for filing others' diagrams.
+        if ((int) $diagram['owner_id'] !== (int) $user['id']) {
             Response::error('Only the owner can move this diagram', 403);
         }
 

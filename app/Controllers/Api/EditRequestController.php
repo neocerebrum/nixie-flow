@@ -85,8 +85,7 @@ final class EditRequestController
             Response::error('Request is not pending', 400);
         }
 
-        if (!Lock::heldBy($diagram, (int) $user['id'])
-            && ($user['role'] ?? '') !== 'admin') {
+        if (!Lock::heldBy($diagram, (int) $user['id'])) {
             Response::error('Only the current holder can accept this request', 403);
         }
 
@@ -117,8 +116,7 @@ final class EditRequestController
             Response::error('Request is not pending', 400);
         }
 
-        if (!Lock::heldBy($diagram, (int) $user['id'])
-            && ($user['role'] ?? '') !== 'admin') {
+        if (!Lock::heldBy($diagram, (int) $user['id'])) {
             Response::error('Only the current holder can decline this request', 403);
         }
 

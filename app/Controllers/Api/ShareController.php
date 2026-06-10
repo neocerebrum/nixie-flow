@@ -79,12 +79,11 @@ final class ShareController
         if ($diagram === null) {
             Response::error('Not found', 404);
         }
-        $isAdmin = ($user['role'] ?? '') === 'admin';
-        $isOwner = (int) $diagram['owner_id'] === (int) $user['id'];
-        if (!$isAdmin && !$isOwner) {
+        // Managing a diagram's shares is owner-only; admins are not elevated.
+        if ((int) $diagram['owner_id'] !== (int) $user['id']) {
             Response::error('Not found', 404);
         }
-        if (Diagram::isDeleted($diagram) && !$isAdmin) {
+        if (Diagram::isDeleted($diagram)) {
             Response::error('Not found', 404);
         }
         return $diagram;

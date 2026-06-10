@@ -339,12 +339,11 @@ final class Presence
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
             $uid = (int) $row['user_id'];
             $isOwner = $uid === (int) $row['owner_id'];
-            $isAdmin = ($row['user_role'] ?? '') === 'admin';
-            // Project-level edit share cascades to every diagram filed under it,
-            // mirroring Diagram::sharedPermission(); without this, a user who can
-            // only reach the diagram via a shared project is never eligible to
-            // receive the scepter.
-            $canEdit = $isOwner || $isAdmin
+            // Scepter eligibility follows write permission only: owner or an
+            // edit share (direct or cascaded from a shared project, mirroring
+            // Diagram::sharedPermission()). Admins are not elevated — on content
+            // they don't own they participate exactly as their share allows.
+            $canEdit = $isOwner
                 || ($row['share_permission'] === 'edit')
                 || ($row['project_permission'] === 'edit');
             if (!$canEdit) {

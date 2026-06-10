@@ -141,32 +141,38 @@ final class Project
         $stmt->execute([$projectId]);
     }
 
-    /** True if the user may manage (rename/delete/share/file into) this project. */
+    /**
+     * True if the user may manage (rename/delete/share/file into) this project.
+     * Owner only — admins get read oversight via canAccess but no management
+     * elevation on projects they don't own.
+     */
     public static function canManage(array $project, array $user): bool
     {
-        if (($user['role'] ?? '') === 'admin') {
-            return true;
-        }
         return (int) $project['owner_id'] === (int) $user['id'];
     }
 
     /** True if the user may open this project (owner, admin, or shared view/edit). */
     public static function canAccess(array $project, array $user): bool
     {
-        if (self::canManage($project, $user)) {
+        if (($user['role'] ?? '') === 'admin') {
+            return true;
+        }
+        if ((int) $project['owner_id'] === (int) $user['id']) {
             return true;
         }
         return ProjectShare::get((int) $project['id'], (int) $user['id']) !== null;
     }
 
-    /** Returns the user's permission on the project: 'owner' | 'edit' | 'view' | null. */
+    /**
+     * Returns the user's permission on the project: 'owner' | 'edit' | 'view' |
+     * null. Admins are NOT elevated: on a project they don't own they get their
+     * actual share permission (or null), so the project view stays read-only
+     * unless they were explicitly granted edit.
+     */
     public static function permissionFor(array $project, array $user): ?string
     {
         if ((int) $project['owner_id'] === (int) $user['id']) {
             return 'owner';
-        }
-        if (($user['role'] ?? '') === 'admin') {
-            return 'edit';
         }
         $share = ProjectShare::get((int) $project['id'], (int) $user['id']);
         return $share['permission'] ?? null;

@@ -260,26 +260,28 @@ final class Diagram
         return MergeRequest::ownerCanPreview((int) $diagram['id'], (int) $user['id']);
     }
 
-    /** True if user can write to the diagram (owner, admin, or shared with edit). */
+    /**
+     * True if user can write to the diagram (owner, or shared with edit).
+     * Admins get read oversight via canAccess but no write elevation: on
+     * content they don't own they are treated as an ordinary share recipient.
+     */
     public static function canWrite(array $diagram, array $user): bool
     {
-        if (($user['role'] ?? '') === 'admin') {
-            return true;
-        }
         if ((int) $diagram['owner_id'] === (int) $user['id']) {
             return true;
         }
         return self::sharedPermission($diagram, (int) $user['id']) === Share::PERM_EDIT;
     }
 
-    /** Returns 'owner' | 'edit' | 'view' | null. */
+    /**
+     * Returns 'owner' | 'edit' | 'view' | null. Admins are NOT elevated here:
+     * on a diagram they don't own they get exactly their share permission (or
+     * null), so the editor exposes the same write surface as for any user.
+     */
     public static function permissionFor(array $diagram, array $user): ?string
     {
         if ((int) $diagram['owner_id'] === (int) $user['id']) {
             return 'owner';
-        }
-        if (($user['role'] ?? '') === 'admin') {
-            return 'edit';
         }
         return self::sharedPermission($diagram, (int) $user['id']);
     }

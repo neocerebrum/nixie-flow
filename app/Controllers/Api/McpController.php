@@ -652,8 +652,8 @@ TXT;
     private function toolDeleteDiagram(array $args, array $user): array
     {
         $diagram = $this->loadAccessible($args, $user);
-        $isAdmin = ($user['role'] ?? '') === 'admin';
-        if (!$isAdmin && (int) $diagram['owner_id'] !== (int) $user['id']) {
+        // Owner only; admins are not elevated to delete others' diagrams.
+        if ((int) $diagram['owner_id'] !== (int) $user['id']) {
             throw new McpToolException('only the owner can delete this diagram');
         }
         Diagram::softDelete((int) $diagram['id']);

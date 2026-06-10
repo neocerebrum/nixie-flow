@@ -110,7 +110,7 @@ final class EditorController
             }
         }
 
-        $manage = ($user['role'] ?? '') === 'admin' || (int) $diagram['owner_id'] === $me;
+        $manage = (int) $diagram['owner_id'] === $me;
 
         return [
             'origin'      => $origin,

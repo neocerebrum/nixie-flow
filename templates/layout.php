@@ -35,6 +35,8 @@ $noNav = $noNav ?? false;
             <?php endif; ?>
         <?php endforeach; ?>
     </div>
+<?php else: ?>
+    <footer class="site-footer">&copy; <?= gmdate('Y') ?> Neocerebrum.ai</footer>
 <?php endif; ?>
 </body>
 </html>

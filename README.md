@@ -1,6 +1,10 @@
-# Aquata
+<p align="center">
+  <img src="static/aquata_logo.svg" alt="Aquata" width="200">
+</p>
 
-**Mermaid diagrams as a shared language between humans and AI coding agents.**
+<p align="center">
+  <strong>Mermaid diagrams as a shared language between humans and AI coding agents.</strong>
+</p>
 
 Aquata is a self-hostable web app that stores [Mermaid](https://mermaid.js.org/) diagrams and exposes them to AI agents over [MCP](https://modelcontextprotocol.io/) (Model Context Protocol). Humans edit diagrams in a rich visual editor; agents read and write the same diagrams through a clean semantic interface. Neither side has to put up with the other's format.
 

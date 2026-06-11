@@ -19,6 +19,7 @@ final class Db
         $driver = Config::get('DB_DRIVER', 'sqlite');
 
         if ($driver === 'sqlite') {
+            self::requirePdoDriver('sqlite', 'pdo_sqlite');
             $path = Config::get('DB_SQLITE_PATH', 'data/aquata.sqlite');
             if (!str_starts_with($path, '/')) {
                 $path = dirname(__DIR__) . '/' . $path;
@@ -31,6 +32,7 @@ final class Db
             $pdo->exec('PRAGMA foreign_keys = ON');
             $pdo->exec('PRAGMA journal_mode = WAL');
         } elseif ($driver === 'mysql') {
+            self::requirePdoDriver('mysql', 'pdo_mysql');
             $host = Config::get('DB_HOST', 'localhost');
             $port = Config::int('DB_PORT', 3306);
             $name = Config::get('DB_NAME') ?? throw new RuntimeException('DB_NAME required for mysql');
@@ -75,5 +77,22 @@ final class Db
     public static function driver(): string
     {
         return Config::get('DB_DRIVER', 'sqlite');
+    }
+
+    /**
+     * Turn PDO's cryptic "could not find driver" into an actionable message.
+     * The matching PHP extension is often present but not enabled (a common
+     * first-run snag, e.g. pdo_sqlite on a minimal PHP install).
+     */
+    private static function requirePdoDriver(string $driver, string $ext): void
+    {
+        if (!in_array($driver, PDO::getAvailableDrivers(), true)) {
+            throw new RuntimeException(
+                "PDO driver '$driver' is not available — the PHP extension '$ext' is not loaded. "
+                . "Enable it (uncomment 'extension=$ext' in your php.ini, or install it via your "
+                . "package manager) and retry. Loaded PDO drivers: "
+                . (PDO::getAvailableDrivers() ? implode(', ', PDO::getAvailableDrivers()) : '(none)') . '.'
+            );
+        }
     }
 }

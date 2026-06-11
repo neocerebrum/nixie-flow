@@ -19,8 +19,12 @@ Ordered checklist for taking Aquata public. Living document — check items off 
 - [x] **Fix the quick start**: added `scripts/dev_router.php` (serves `/static/` directly,
       delegates the rest to `index.php`; excluded from deploy), README updated. Verified:
       static 200, `.env` 404, app routes OK.
-- [ ] Verify the whole quick start on a clean checkout: clone → `.env` → seed admin →
-      login → create diagram → connect MCP token.
+- [x] Verify the whole quick start on a clean checkout — done on a pristine clone: clone →
+      `cp .env.example .env` → seed admin → dev server (static served) → real login (302 →
+      dashboard) → create diagram via API (201) → mint token in UI → MCP initialize/tools/list/
+      get_diagram round-trips the web-created diagram. One UX wart found & fixed: when the PDO
+      driver isn't loaded (e.g. pdo_sqlite on minimal PHP), `Db::connect` now throws an
+      actionable message instead of PDO's cryptic "could not find driver".
 - [x] Translate the pending merge-request i18n keys — verified: all 9 languages carry the
       full 519-key set (0 missing, 0 extra) and the merge keys are genuinely localized.
 - [ ] Decide initial version (suggest `1.0.0`), add `CHANGELOG.md`, tag the release

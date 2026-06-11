@@ -30,9 +30,12 @@ Ordered checklist for taking Aquata public. Living document — check items off 
 - [x] Decide initial version, add `CHANGELOG.md`, tag the release — chose `0.7.0` (mature
       beta; 1.0 reserved until the roadmap + experiments settle). `CHANGELOG.md` added,
       MCP `SERVER_VERSION` aligned to 0.7.0, tagged `v0.7.0`.
-- [ ] GitHub repo metadata: description ("Mermaid diagrams as a shared language between humans
-      and AI coding agents"), topics (`mermaid`, `mcp`, `diagrams`, `ai-agents`, `php`,
-      `self-hosted`, `documentation`), social preview image (logo on dark background)
+- [ ] GitHub repo "About" (doable now, while private — the **About** box on the repo home,
+      gear icon — NOT Settings). Ready-to-paste:
+      - **Description:** `Mermaid diagrams as a shared language between humans and AI coding agents — a self-hostable editor + MCP server with code-grounded, verifiable notes.`
+      - **Website:** `https://aquata.neocerebrum.work`
+      - **Topics:** `mermaid mcp model-context-protocol ai-agents claude claude-code llm diagrams diagram-editor living-documentation documentation-as-code architecture-diagrams self-hosted php sqlite agpl`
+      - (Social preview image moved to Phase 2 — GitHub hides that section on private repos.)
 
 ### Security pass (2026-06-11)
 
@@ -63,10 +66,13 @@ Deferred hardening (none blocking the demo):
 ## Phase 2 — Go public
 
 - [ ] Make the GitHub repo public
+- [ ] Set the **social preview** image (Settings → General → Social preview) — this section
+      only appears once the repo is public. 1280×640 PNG: logo on a dark background, ideally
+      with the editor screenshot faint behind it for scroll-stopping unfurls on X/Slack.
 - [ ] Enable private vulnerability reporting (Settings → Security) — SECURITY.md points there
 - [ ] Enable Discussions (low-friction questions without polluting Issues)
 - [ ] Branch protection on `main` (no force-push)
-- [ ] Publish the v1.0.0 GitHub Release with readable release notes
+- [ ] Publish the `v0.7.0` GitHub Release from the existing tag, using the CHANGELOG 0.7.0 entry as the notes
 
 ## Phase 3 — Documentation (minimum for adoption)
 

@@ -304,6 +304,7 @@ return [
     'error.account_disabled'    => '계정이 비활성화되었습니다. 관리자에게 문의하세요.',
     'error.email_unverified'    => '이메일이 인증되지 않았습니다. 받은편지함을 확인하거나 새 링크를 요청하세요.',
     'error.invalid_credentials' => '이메일 또는 비밀번호가 올바르지 않습니다.',
+    'error.session_expired'     => '세션이 만료되었습니다. 다시 시도해 주세요.',
     'error.too_many_attempts'   => '시도 횟수가 너무 많습니다. 몇 분 후에 다시 시도하세요.',
     'error.email_confirm_sent'  => '유효한 이메일인 경우 확인 링크를 보내드립니다.',
     'error.form_too_fast'       => '양식이 너무 빨리 제출되었습니다. 다시 시도하세요.',

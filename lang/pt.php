@@ -304,6 +304,7 @@ return [
     'error.account_disabled'    => 'Conta desativada. Entre em contato com um administrador.',
     'error.email_unverified'    => 'Email não verificado. Verifique sua caixa de entrada ou solicite um novo link.',
     'error.invalid_credentials' => 'Email ou senha incorretos.',
+    'error.session_expired'     => 'A sua sessao expirou. Tente novamente.',
     'error.too_many_attempts'   => 'Muitas tentativas. Tente novamente em alguns minutos.',
     'error.email_confirm_sent'  => 'Se o email for válido, você receberá um link de confirmação.',
     'error.form_too_fast'       => 'Formulário enviado rápido demais, tente novamente.',

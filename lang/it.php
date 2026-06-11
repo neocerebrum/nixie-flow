@@ -306,6 +306,7 @@ return [
     'error.account_disabled'    => 'Account disabilitato. Contatta un amministratore.',
     'error.email_unverified'    => 'Email non verificata. Controlla la tua casella o richiedi un nuovo link.',
     'error.invalid_credentials' => 'Email o password non corretti.',
+    'error.session_expired'     => 'Sessione scaduta. Riprova.',
     'error.too_many_attempts'   => 'Troppi tentativi. Riprova tra qualche minuto.',
     'error.email_confirm_sent'  => "Se l'email è valida, riceverai un link di conferma.",
     'error.form_too_fast'       => 'Form inviato troppo velocemente, riprova.',

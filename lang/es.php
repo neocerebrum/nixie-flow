@@ -304,6 +304,7 @@ return [
     'error.account_disabled'    => 'Cuenta deshabilitada. Contacta a un administrador.',
     'error.email_unverified'    => 'Email no verificado. Revisa tu bandeja de entrada o solicita un nuevo enlace.',
     'error.invalid_credentials' => 'Email o contrasena incorrectos.',
+    'error.session_expired'     => 'Tu sesion ha caducado. Intentalo de nuevo.',
     'error.too_many_attempts'   => 'Demasiados intentos. Vuelve a intentarlo en unos minutos.',
     'error.email_confirm_sent'  => 'Si el email es valido, recibiras un enlace de confirmacion.',
     'error.form_too_fast'       => 'Formulario enviado demasiado rapido, intentalo de nuevo.',

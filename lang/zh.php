@@ -304,6 +304,7 @@ return [
     'error.account_disabled'    => '账户已被禁用。请联系管理员。',
     'error.email_unverified'    => '邮箱未验证。请检查收件箱或请求新的链接。',
     'error.invalid_credentials' => '邮箱或密码不正确。',
+    'error.session_expired'     => '会话已过期，请重试。',
     'error.too_many_attempts'   => '尝试次数过多。请稍后几分钟再试。',
     'error.email_confirm_sent'  => '如果邮箱有效，您将收到一封确认链接。',
     'error.form_too_fast'       => '表单提交过快，请重试。',

@@ -45,6 +45,11 @@ if (PHP_SAPI !== 'cli') {
     $sessionLifetime = App\Config::int('SESSION_LIFETIME', 86400);
     $secureCookie = App\Http::isHttps();
     session_name($sessionName);
+    // Keep server-side GC aligned with the cookie lifetime. Otherwise PHP's
+    // default gc_maxlifetime (~1440s) can reap the session — and with it the
+    // CSRF token — while the cookie is still valid, yielding intermittent
+    // "Invalid CSRF token" errors on forms left open longer than ~24 min.
+    ini_set('session.gc_maxlifetime', (string) $sessionLifetime);
     session_set_cookie_params([
         'lifetime' => $sessionLifetime,
         'path'     => '/',

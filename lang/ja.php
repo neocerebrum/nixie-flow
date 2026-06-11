@@ -304,6 +304,7 @@ return [
     'error.account_disabled'    => 'アカウントが無効化されています。管理者にお問い合わせください。',
     'error.email_unverified'    => 'メールアドレスが未認証です。受信トレイを確認するか、新しいリンクをリクエストしてください。',
     'error.invalid_credentials' => 'メールアドレスまたはパスワードが正しくありません。',
+    'error.session_expired'     => 'セッションの有効期限が切れました。もう一度お試しください。',
     'error.too_many_attempts'   => '試行回数が多すぎます。数分後に再度お試しください。',
     'error.email_confirm_sent'  => 'メールアドレスが有効な場合、確認リンクをお送りします。',
     'error.form_too_fast'       => 'フォームの送信が早すぎます。もう一度お試しください。',

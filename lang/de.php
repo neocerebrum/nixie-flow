@@ -304,6 +304,7 @@ return [
     'error.account_disabled'    => 'Konto deaktiviert. Wenden Sie sich an einen Administrator.',
     'error.email_unverified'    => 'E-Mail nicht bestätigt. Prüfen Sie Ihren Posteingang oder fordern Sie einen neuen Link an.',
     'error.invalid_credentials' => 'E-Mail oder Passwort falsch.',
+    'error.session_expired'     => 'Ihre Sitzung ist abgelaufen. Bitte erneut versuchen.',
     'error.too_many_attempts'   => 'Zu viele Versuche. Versuchen Sie es in einigen Minuten erneut.',
     'error.email_confirm_sent'  => 'Falls die E-Mail gültig ist, erhalten Sie einen Bestätigungslink.',
     'error.form_too_fast'       => 'Formular zu schnell abgeschickt. Bitte erneut versuchen.',

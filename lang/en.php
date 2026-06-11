@@ -306,6 +306,7 @@ return [
     'error.account_disabled'    => 'Account disabled. Contact an administrator.',
     'error.email_unverified'    => 'Email not verified. Check your inbox or request a new link.',
     'error.invalid_credentials' => 'Incorrect email or password.',
+    'error.session_expired'     => 'Your session expired. Please try again.',
     'error.too_many_attempts'   => 'Too many attempts. Try again in a few minutes.',
     'error.email_confirm_sent'  => "If the email is valid, you'll receive a confirmation link.",
     'error.form_too_fast'       => 'Form submitted too quickly, try again.',

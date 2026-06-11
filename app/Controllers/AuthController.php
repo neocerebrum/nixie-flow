@@ -27,11 +27,18 @@ final class AuthController
 
     public function login(array $args): never
     {
-        Csrf::requireValid();
+        $next = self::safeNext((string) ($_POST['next'] ?? '/dashboard'));
+
+        // A stale CSRF token here almost always means the session expired while
+        // the login page sat open, not an attack. Fail gracefully back to the
+        // form with a fresh token instead of a raw 403, so the user can retry.
+        if (!Csrf::verify(is_string($_POST['_csrf'] ?? null) ? $_POST['_csrf'] : null)) {
+            self::flash('error', __('error.session_expired'));
+            Response::redirect('/login' . ($next !== '/dashboard' ? '?next=' . urlencode($next) : ''));
+        }
 
         $email    = trim((string) ($_POST['email'] ?? ''));
         $password = (string) ($_POST['password'] ?? '');
-        $next     = self::safeNext((string) ($_POST['next'] ?? '/dashboard'));
 
         if ($email === '' || $password === '') {
             self::flash('error', __('error.empty_credentials'));

@@ -1,12 +1,12 @@
-/* Aquata editor — ported from Ariel mermaid_editor with adaptations.
+/* Aquata editor — ported from the original prototype with adaptations.
  *
- * Differences from Ariel:
+ * Differences from the prototype:
  *  - No filesystem paths: a single diagram identified by `state.slug`
  *  - Source + layout saved atomically via POST /api/diagrams/{slug}
  *  - Optimistic locking via expected_revision_id; 409 → conflict modal
- *  - In-RAM undo/redo (per-action, ported from Ariel) — DB revision created only on Save
+ *  - In-RAM undo/redo (per-action, ported from the prototype) — DB revision created only on Save
  *  - SSE replaced by 5s polling (visibility-aware)
- *  - All POST/PATCH/DELETE always send Content-Type + body (Plesk header-stripping quirk)
+ *  - All POST/PATCH/DELETE always send Content-Type + body (shared-hosting header-stripping quirk)
  *  - History modal + checkout endpoint
  */
 
@@ -1577,7 +1577,7 @@
   }
 
   function getNodeTranslate(g) {
-    // Firefox fix (Ariel commit ccbfbf4): consolidate() may return null
+    // Firefox fix (inherited from the prototype): consolidate() may return null
     const t = g.transform.baseVal.consolidate();
     if (t) return { x: t.matrix.e, y: t.matrix.f };
     return { x: 0, y: 0 };

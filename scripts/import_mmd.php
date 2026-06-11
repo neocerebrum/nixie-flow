@@ -2,19 +2,19 @@
 declare(strict_types=1);
 
 /**
- * One-shot: import Ariel-style `.mmd` files (with optional `.mmd.layout.json`
+ * One-shot: import `.mmd` files (with optional `.mmd.layout.json`
  * sidecars) into the Aquata DB as fresh diagrams owned by a given user.
  *
  * Usage:
- *   php scripts/import_from_ariel.php --source=/path/to/Ariel/docs/diagrams --owner=admin@example.com
+ *   php scripts/import_mmd.php --source=/path/to/diagrams --owner=admin@example.com
  *
  * Optional flags:
  *   --dry-run       parse + report what would be created, no DB writes
  *   --prefix=foo    prepend "foo-" to every imported slug (avoids collisions)
  *   --overwrite     if a slug already exists, append a new revision instead of skipping
  *
- * On the Plesk server use:
- *   /opt/plesk/php/8.4/bin/php scripts/import_from_ariel.php --source=... --owner=...
+ * On hosts with multiple PHP versions (e.g. Plesk), use the per-version binary:
+ *   /opt/plesk/php/8.4/bin/php scripts/import_mmd.php --source=... --owner=...
  */
 
 require __DIR__ . '/../app/bootstrap.php';
@@ -32,7 +32,7 @@ $prefix = isset($opts['prefix']) && $opts['prefix'] !== '' ? trim((string) $opts
 $overwrite = array_key_exists('overwrite', $opts);
 
 if (!$source || !$owner) {
-    fwrite(STDERR, "Usage: php scripts/import_from_ariel.php --source=<dir> --owner=<email> [--dry-run] [--prefix=<str>] [--overwrite]\n");
+    fwrite(STDERR, "Usage: php scripts/import_mmd.php --source=<dir> --owner=<email> [--dry-run] [--prefix=<str>] [--overwrite]\n");
     exit(2);
 }
 
@@ -112,7 +112,7 @@ foreach ($files as $mmdPath) {
                 $sourceText,
                 $layoutJson,
                 (int) $user['id'],
-                'imported from Ariel'
+                'imported from filesystem'
             );
             fwrite(STDOUT, "  + $slugCandidate (new revision)\n");
             $updated++;

@@ -1,18 +1,18 @@
 # Aquata — Design Decisions
 
-Snapshot of architectural decisions agreed before implementation. This file is the stable reference; the conversation context that produced it is not.
+Historical snapshot of architectural decisions agreed before implementation. A few details were superseded during implementation (noted inline where relevant) — the code is the source of truth.
 
 ## Goals
 
-Port Ariel (single-user, local FastAPI + filesystem `.mmd`) to a multi-user remote service hosted on AlmaLinux + Plesk, accessible by both human editors (browser) and Claude (MCP HTTP) from any location, all writing to a single source of truth.
+Turn the original prototype (single-user, local, filesystem `.mmd` files) into a multi-user remote service, accessible by both human editors (browser) and AI agents (MCP HTTP) from any location, all writing to a single source of truth.
 
 ## Stack
 
 - **PHP 8.3+**, no Composer, no framework, no build step
 - **SQLite** initial; PDO-based driver-agnostic code → switch to MySQL/MariaDB in a few hours
-- **Apache + mod_rewrite** (Plesk default) → all requests rewritten to `public/index.php`
-- **Frontend**: vanilla JS (ported from Ariel), CodeMirror + mermaid.js loaded from CDN
-- **No server-side rendering**: client-only via mermaid.js. Drops Ariel's Playwright dependency entirely.
+- **Apache + mod_rewrite** → all requests rewritten to `index.php`
+- **Frontend**: vanilla JS (ported from the prototype), CodeMirror + mermaid.js loaded from CDN
+- **No server-side rendering**: client-only via mermaid.js. Drops the prototype's Playwright dependency entirely.
 
 ## Persistence model: revision DAG
 
@@ -24,7 +24,7 @@ Diagrams are not files. Each diagram has a chain of immutable `diagram_revisions
 - **Branching** = if user undoes 3 steps then edits, the new revision branches off. The abandoned tip is still reachable; user can name it via `branches` table to preserve it explicitly.
 - **No GC initially**. Cheap to keep all revisions; revisit if storage becomes an issue.
 
-Rationale: avoids destructive undo (Ariel currently keeps undo only in browser RAM — lost on reload). Persists across sessions, devices, and users. Enables "blame" and time-travel for free.
+Rationale: avoids destructive undo (the prototype kept undo only in browser RAM — lost on reload). Persists across sessions, devices, and users. Enables "blame" and time-travel for free.
 
 ## Concurrency model: turn-based lock
 
@@ -56,7 +56,7 @@ Rationale: covers 95% of real workflows (sequential collaboration). Implementabl
 
 - **Transport**: HTTP (Streamable, MCP spec). Endpoint: `POST /mcp`. Single PHP handler implementing JSON-RPC 2.0.
 - **Auth**: `Authorization: Bearer <token>`. Token plaintext is shown only at creation time; DB stores `sha256(token)` in `api_tokens`.
-- **Tools exposed** (subset of Ariel's MCP):
+- **Tools exposed** (initial set):
   - `list_diagrams` — only those visible to the authenticated user
   - `get_diagram(slug)` — returns source + version
   - `save_diagram(slug, source, expected_version)` — optimistic lock; conflict if version mismatch
@@ -75,9 +75,9 @@ Rationale: covers 95% of real workflows (sequential collaboration). Implementabl
 - **Registration is closed**: only admins create users (admin CRUD UI in Phase 1).
 - Passwords stored as `password_hash(PASSWORD_BCRYPT)`. Verification via `password_verify`.
 
-## Layout for Plesk
+## Web root layout
 
-Plesk binds the domain document root to a single directory. We expose only `public/`; everything else (`app/`, `data/`, `.env`) lives above docroot and is unreachable via HTTP.
+As designed: expose only `public/`; everything else (`app/`, `data/`, `.env`) lives above docroot and is unreachable via HTTP.
 
 ```
 public/         ← docroot, contains only index.php + .htaccess + static/
@@ -85,6 +85,8 @@ app/            ← code (not web-served)
 data/           ← SQLite + uploads (not web-served; writable by PHP-FPM user)
 .env            ← secrets (not web-served, even if accidentally moved into public/ the .htaccess denies dotfiles)
 ```
+
+**Superseded:** the shipped layout is flat (everything in the web root) because jailed FTP hosting cannot place files above the docroot. Internal directories and dotfiles are denied via `.htaccess` instead.
 
 ## Decisions explicitly out of scope (for now)
 
@@ -106,9 +108,9 @@ To keep the same schema running on SQLite and MySQL with minimal adaptation:
 - Foreign keys: enabled per-connection (`PRAGMA foreign_keys = ON` for SQLite; default in InnoDB)
 - Booleans: store as INTEGER 0/1 (SQLite has no native BOOL; MySQL accepts both)
 
-## Plesk hosting quirks
+## Shared hosting quirks
 
-The shared Plesk plan hosting `aquata.neocerebrum.work` strips custom HTTP headers (notably `X-CSRF-Token`) from POST requests that have **no body and no Content-Type**. Confirmed during Phase 2 verification: bodyless POSTs to `/api/diagrams/{slug}/undo|redo|restore` failed CSRF, while identical tokens worked when the same request included `Content-Type: application/json` and at minimum `{}` as body.
+Some shared hosting stacks (observed on a Plesk plan) strip custom HTTP headers (notably `X-CSRF-Token`) from POST requests that have **no body and no Content-Type**. Confirmed during Phase 2 verification: bodyless POSTs to `/api/diagrams/{slug}/undo|redo|restore` failed CSRF, while identical tokens worked when the same request included `Content-Type: application/json` and at minimum `{}` as body.
 
 **Implication for all API clients:**
 
@@ -137,7 +139,7 @@ Each phase ends with a runnable, testable system. No phase is partial.
 - **Phase 0** (done): scaffold + schema + health check
 - **Phase 1** (done): login + admin can CRUD users; one admin seeded; logout works
 - **Phase 2** (done): diagram CRUD via API; revisions stored; undo/redo endpoints; no editor UI yet (test via curl)
-- **Phase 4** (done — done before Phase 3 by user request): full editor UI ported from Ariel, wired to Phase 2 endpoints. Single-user safe; multi-user has 5s polling + conflict modal but no real lock yet.
+- **Phase 4** (done — done before Phase 3 by user request): full editor UI ported from the prototype, wired to Phase 2 endpoints. Single-user safe; multi-user has 5s polling + conflict modal but no real lock yet.
 - **Phase 3** (done): turn-based lock (90s TTL, 30s heartbeat) with acquire/heartbeat/release endpoints; edit-request handover with 30s grant window; per-diagram sharing (view/edit) with owner-managed CRUD; dashboard surfaces both owned and shared diagrams; editor shows lock banner with role-aware actions and incoming-request banner for the editor.
 - **Phase 5** (done): `POST /mcp` endpoint (JSON-RPC 2.0, Streamable HTTP transport) with `initialize`, `ping`, `tools/list`, `tools/call`. Bearer-token auth via `Authorization: Bearer aqt_...`; tokens managed under `/profile/tokens` (one-shot plaintext display + ready-to-paste Claude config snippet). Tools: `list_diagrams`, `get_diagram`, `save_diagram`, `create_diagram`, `delete_diagram`, `get_layout`, `set_layout`. All tools share the same ACL as the web (Diagram::canAccess/canWrite) and the same lock model (auto-acquire on save/set_layout, error if held by other user).
-- **Phase 6** (done): `scripts/import_from_ariel.php --source=<dir> --owner=<email>` reads `*.mmd` + `*.mmd.layout.json` and creates Aquata diagrams owned by the given user. Supports `--dry-run`, `--prefix=`, `--overwrite` (append a new revision instead of skipping).
+- **Phase 6** (done): `scripts/import_mmd.php --source=<dir> --owner=<email>` reads `*.mmd` + `*.mmd.layout.json` and creates Aquata diagrams owned by the given user. Supports `--dry-run`, `--prefix=`, `--overwrite` (append a new revision instead of skipping).

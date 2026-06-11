@@ -53,12 +53,16 @@ For production, point an Apache vhost at the project root (the bundled `.htacces
 
 ### Deploying to shared hosting
 
-`deploy.sh` uploads files over FTP for hosts without git/SSH (e.g. Plesk-jailed FTP):
+Aquata runs fine on plain shared hosting where your only access is FTP — no git, no SSH, no Composer needed. Just upload the whole tree to the web root with any FTP client (skip `data/`, `docs/`, `.env*`, `deploy.sh`, `.deploy-config*`), then create `.env` on the server.
+
+The bundled `deploy.sh` automates this. Put your FTP credentials in `.deploy-config` (gitignored, never uploaded):
 
 ```bash
-cp .deploy-config.example .deploy-config   # FTP credentials (gitignored)
-./lint.sh && ./deploy.sh --all             # or ./deploy.sh <file1> [file2 ...]
+cp .deploy-config.example .deploy-config   # then edit: FTP_HOST, FTP_USER, FTP_PASS, FTP_REMOTE_DIR
+./lint.sh && ./deploy.sh --all             # full upload — or ./deploy.sh <file1> [file2 ...]
 ```
+
+It uploads only application files, automatically excluding local-only ones (`.env*`, `data/`, `docs/`, the deploy tooling itself).
 
 If you lose all admin access, `scripts/reset_password.php <email>` is the CLI escape hatch.
 

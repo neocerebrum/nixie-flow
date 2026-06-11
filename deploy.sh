@@ -54,6 +54,8 @@ if [[ "$1" == "--all" ]]; then
         FILES+=("$f")
     done < <(find "$SCRIPT_DIR" -type f \
         ! -path '*/.git/*' \
+        ! -path '*/.claude/*' \
+        ! -path '*/tmp/*' \
         ! -path '*/data/*' \
         ! -path '*/docs/*' \
         ! -name '.env' \

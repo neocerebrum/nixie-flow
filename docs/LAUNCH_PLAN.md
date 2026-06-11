@@ -63,14 +63,13 @@ Deferred hardening (none blocking the demo):
 
 ## Phase 3 — Documentation (minimum for adoption)
 
-- [ ] `docs/grounding.md` — the grounding protocol spec: per-element notes as contracts,
-      receipts `{ref, quote}`, noteHash binding, verdict lifecycle, `prepare_save` →
-      `commit_save` / `set_grounding` flow. This is the differentiator; today it lives only
-      in the MCP prompt.
-- [ ] `docs/getting-started.md` — "your first diagram with Claude Code": create a token,
-      register the MCP server, have the agent draw the architecture, ground it, see verdicts
-      in the editor.
-- [ ] Link both from the README
+- [x] `docs/grounding.md` — the grounding protocol spec: per-element notes as contracts,
+      receipts `{ref, quote}`, noteHash binding, the verification gate, verdict lifecycle,
+      `prepare_save` → `commit_save` / `set_grounding` / `set_note` flows. Written against the
+      actual McpController implementation.
+- [x] `docs/getting-started.md` — "your first diagram with an AI agent": account → token →
+      MCP registration → agent draws → arrange in editor → ground → the loop, plus troubleshooting.
+- [x] Link both from the README
 
 ## Phase 4 — Demo & media (friction killers)
 

@@ -84,9 +84,13 @@ claude mcp add --transport http aquata https://your-host/mcp \
 
 The agent can then list, read, create and save diagrams. The Mermaid source it receives is the pure semantic layer — layout and styling are stored separately and never pollute it.
 
+→ **New here? Follow [`docs/getting-started.md`](docs/getting-started.md)** — account → token → MCP → first diagram → grounding, end to end.
+
 ### Grounding
 
 Per-element notes (`%% [id] text`) carry intent — *why* an element exists, what contract it represents. The `ground` MCP prompt walks an agent through verification: read the code, collect `{ref, quote}` evidence for each note, and record a verdict (`verified` / `contradicted`) via `prepare_save` → `commit_save` (or `set_grounding` for an unchanged diagram). The server never sees your code — it only enforces the receipt's form and binds it to the note by hash. Verdict freshness is visible in the editor, so stale or broken contracts are immediately apparent.
+
+See [`docs/grounding.md`](docs/grounding.md) for the full protocol: the receipt format, the noteHash binding, the verification gate, and the prepare/commit/set-grounding flows.
 
 ## i18n
 

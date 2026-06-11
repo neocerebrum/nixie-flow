@@ -8,6 +8,8 @@
 
 Aquata is a self-hostable web app that stores [Mermaid](https://mermaid.js.org/) diagrams and exposes them to AI agents over [MCP](https://modelcontextprotocol.io/) (Model Context Protocol). Humans edit diagrams in a rich visual editor; agents read and write the same diagrams through a clean semantic interface. Neither side has to put up with the other's format.
 
+![The Aquata editor — source pane, visual canvas, per-element notes with grounding evidence](docs/assets/editor.png)
+
 ## Why
 
 When you reason about software with an AI agent, words alone are often not enough — diagrams are the natural shared medium. But humans and LLMs want opposite things from a diagram:

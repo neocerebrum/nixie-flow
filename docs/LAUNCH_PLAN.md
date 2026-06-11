@@ -21,7 +21,8 @@ Ordered checklist for taking Aquata public. Living document — check items off 
       static 200, `.env` 404, app routes OK.
 - [ ] Verify the whole quick start on a clean checkout: clone → `.env` → seed admin →
       login → create diagram → connect MCP token.
-- [ ] Translate the pending merge-request i18n keys (currently English-only in some languages — see backlog)
+- [x] Translate the pending merge-request i18n keys — verified: all 9 languages carry the
+      full 519-key set (0 missing, 0 extra) and the merge keys are genuinely localized.
 - [ ] Decide initial version (suggest `1.0.0`), add `CHANGELOG.md`, tag the release
 - [ ] GitHub repo metadata: description ("Mermaid diagrams as a shared language between humans
       and AI coding agents"), topics (`mermaid`, `mcp`, `diagrams`, `ai-agents`, `php`,

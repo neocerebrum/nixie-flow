@@ -48,7 +48,7 @@ final class McpController
 {
     private const PROTOCOL_VERSION = '2024-11-05';
     private const SERVER_NAME      = 'aquata';
-    private const SERVER_VERSION   = '0.1.0';
+    private const SERVER_VERSION   = '0.7.0';
 
     /** Sent in the initialize response; primes the client on the grounding contract. */
     private const SERVER_INSTRUCTIONS =

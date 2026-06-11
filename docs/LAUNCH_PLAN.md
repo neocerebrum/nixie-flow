@@ -27,7 +27,9 @@ Ordered checklist for taking Aquata public. Living document — check items off 
       actionable message instead of PDO's cryptic "could not find driver".
 - [x] Translate the pending merge-request i18n keys — verified: all 9 languages carry the
       full 519-key set (0 missing, 0 extra) and the merge keys are genuinely localized.
-- [ ] Decide initial version (suggest `1.0.0`), add `CHANGELOG.md`, tag the release
+- [x] Decide initial version, add `CHANGELOG.md`, tag the release — chose `0.7.0` (mature
+      beta; 1.0 reserved until the roadmap + experiments settle). `CHANGELOG.md` added,
+      MCP `SERVER_VERSION` aligned to 0.7.0, tagged `v0.7.0`.
 - [ ] GitHub repo metadata: description ("Mermaid diagrams as a shared language between humans
       and AI coding agents"), topics (`mermaid`, `mcp`, `diagrams`, `ai-agents`, `php`,
       `self-hosted`, `documentation`), social preview image (logo on dark background)

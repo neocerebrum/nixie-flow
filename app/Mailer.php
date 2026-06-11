@@ -28,6 +28,15 @@ final class Mailer
 {
     public static function send(string $to, string $subject, string $textBody): bool
     {
+        // Defense in depth against header injection: a CR/LF in the recipient or
+        // subject would let it smuggle extra mail/SMTP headers. Callers already
+        // validate emails (FILTER_VALIDATE_EMAIL) and subjects come from i18n,
+        // but reject here too so the Mailer is safe regardless of the caller.
+        if (preg_match('/[\r\n]/', $to) || preg_match('/[\r\n]/', $subject)) {
+            error_log('[Aquata Mailer] refused: CR/LF in recipient or subject');
+            return false;
+        }
+
         $from   = self::fromAddress();
         $appUrl = self::appUrl();
         $headers = [

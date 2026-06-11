@@ -27,6 +27,32 @@ Ordered checklist for taking Aquata public. Living document — check items off 
       and AI coding agents"), topics (`mermaid`, `mcp`, `diagrams`, `ai-agents`, `php`,
       `self-hosted`, `documentation`), social preview image (logo on dark background)
 
+### Security pass (2026-06-11)
+
+Full read-through audit before exposing a public demo. No critical/high code
+vulnerabilities found; authz, CSRF, token auth, injection, XSS handling, rate
+limiting, lockout and the password-reset/signup flows are all sound. Production
+`.env` verified hardened (debug off, `.env` not HTTP-reachable, Secure cookie +
+HSTS + CSP live, SMTP working, quotas/limits on); `TRUSTED_PROXIES` empty is
+correct here (PHP sees real client IPs). Done:
+
+- [x] `.htaccess`: deny `lang/` and `tmp/` over HTTP (defense in depth)
+- [x] Mailer: reject CR/LF in recipient/subject (header-injection guard)
+
+Deferred hardening (none blocking the demo):
+
+- [ ] **Tighten CSP — remove `script-src 'unsafe-inline'`.** Defense-in-depth
+      only (no XSS sink exists: Mermaid `htmlLabels:false` + strict, systematic
+      `escapeHtml`/`textContent`). Not a quick edit: needs a per-request nonce
+      threaded into the 5 inline `<script>` JSON blocks (layout/editor/project)
+      AND refactoring 7 inline event handlers (`onclick`/`onsubmit`/`onchange`
+      in profile_tokens, nav, admin/users_list, layout) to `addEventListener`.
+      Do it on its own branch with UI testing.
+- [ ] `APP_FORCE_HTTPS=true` in the production `.env` — optional belt-and-braces
+      (HTTPS is already detected, so Secure/HSTS work today).
+- [ ] Global account cap / periodic wipe for the public demo — abuse control
+      against many self-signups (each up to the 50MB quota). Operational + code.
+
 ## Phase 2 — Go public
 
 - [ ] Make the GitHub repo public

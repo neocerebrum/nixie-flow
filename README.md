@@ -48,7 +48,7 @@ git clone https://github.com/neocerebrum/Aquata.git
 cd Aquata
 cp .env.example .env        # defaults are fine for a local try
 php scripts/seed_admin.php  # create the first admin user (interactive)
-php -S localhost:8080 index.php
+php -S localhost:8080 scripts/dev_router.php
 ```
 
 Open `http://localhost:8080` and log in.

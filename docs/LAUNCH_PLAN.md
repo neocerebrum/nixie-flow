@@ -16,10 +16,11 @@ Ordered checklist for taking Aquata public. Living document — check items off 
 
 ## Phase 1 — Pre-public fixes
 
-- [ ] **Fix the quick start**: `php -S localhost:8080 index.php` does not serve `static/` files.
-      Add `scripts/dev_router.php` (serve static files, delegate the rest to `index.php`) and
-      update README. Then verify the whole quick start on a clean checkout: clone → `.env` →
-      seed admin → login → create diagram → connect MCP token.
+- [x] **Fix the quick start**: added `scripts/dev_router.php` (serves `/static/` directly,
+      delegates the rest to `index.php`; excluded from deploy), README updated. Verified:
+      static 200, `.env` 404, app routes OK.
+- [ ] Verify the whole quick start on a clean checkout: clone → `.env` → seed admin →
+      login → create diagram → connect MCP token.
 - [ ] Translate the pending merge-request i18n keys (currently English-only in some languages — see backlog)
 - [ ] Decide initial version (suggest `1.0.0`), add `CHANGELOG.md`, tag the release
 - [ ] GitHub repo metadata: description ("Mermaid diagrams as a shared language between humans

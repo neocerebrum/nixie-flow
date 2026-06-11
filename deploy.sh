@@ -45,7 +45,7 @@ if [[ $# -eq 0 ]]; then
 fi
 
 # Protected files: never uploaded (contain credentials or local data)
-PROTECTED_FILES=(".env" ".env.example" ".deploy-config" ".deploy-config.example" "deploy.sh" "lint.sh" "test_api.sh" "aquata.sqlite" "debug.log" ".gitignore")
+PROTECTED_FILES=(".env" ".env.example" ".deploy-config" ".deploy-config.example" "deploy.sh" "lint.sh" "test_api.sh" "dev_router.php" "aquata.sqlite" "debug.log" ".gitignore")
 
 # Build file list
 FILES=()
@@ -66,6 +66,7 @@ if [[ "$1" == "--all" ]]; then
         ! -name 'deploy.sh' \
         ! -name 'lint.sh' \
         ! -name 'test_api.sh' \
+        ! -name 'dev_router.php' \
         ! -name '*.sqlite' \
         ! -name '*.sqlite-journal' \
         ! -name '*.sqlite-wal' \

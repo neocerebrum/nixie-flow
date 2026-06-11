@@ -1,6 +1,11 @@
 # Getting started: your first diagram with an AI agent
 
-This walks you from a fresh Aquata account to a diagram your coding agent draws, you arrange, and the agent grounds against your code. It assumes you have an Aquata instance running (see the [README](../README.md) for setup) and uses [Claude Code](https://claude.com/claude-code) as the agent — any MCP-capable client works the same way.
+Aquata supports two complementary workflows:
+
+- **Document existing code** — point the agent at a codebase, have it draw the structure, and ground the notes against the code. The diagram becomes living, verified documentation.
+- **Design before you write** — start from a blank canvas and co-design the structure with the agent as a diagram with intent notes, argue about it until you both agree, and only *then* write code against it. Grounding runs forward, turning the diagram into a live acceptance contract.
+
+This guide sets up the first workflow end to end (steps 1–7), then shows the second with a worked example ([Design-first](#design-first-agreeing-on-the-structure-before-writing-code)). It assumes you have an Aquata instance running (see the [README](../README.md) for setup) and uses [Claude Code](https://claude.com/claude-code) as the agent — any MCP-capable client works the same way.
 
 ## 1. Create an account
 
@@ -70,6 +75,47 @@ From here it's a cycle:
 4. Re-grounding flags any note the code has drifted away from.
 
 The diagram stays readable for you and clean for the agent, and grounding keeps it honest about the code. That's the whole point of Aquata.
+
+## Design-first: agreeing on the structure before writing code
+
+The walkthrough above documents code that already exists. The other way to use Aquata is the reverse, and it's where the diagram does its most interesting work: **the diagram comes first, as the design you and the agent agree on before a line of code is written.**
+
+Say you're adding a webhook ingestion pipeline.
+
+**1. Sketch the intent.** Start a diagram and write notes that say what you *want*, not what exists. A few nodes is enough:
+
+```mermaid
+flowchart LR
+    recv[Webhook receiver]
+    %% [recv] Verifies the HMAC signature and rejects anything older than 5 min, then returns 200 fast.
+    queue[/Ingest queue/]
+    %% [queue] Decouples receipt from processing. At-least-once delivery, so consumers must be idempotent.
+    worker[Processor]
+    %% [worker] Idempotent on event id; writes to the ledger exactly once.
+    recv --> queue --> worker
+```
+
+You can draw this in the editor, or ask the agent to scaffold it from a description — either way, it's a sketch of *intent*, not a map of code.
+
+**2. Discuss it with the agent.** Ask it to read the design and push back on it:
+
+> Read the `webhook-pipeline` diagram. Does this handle retries and duplicate deliveries correctly? What's missing?
+
+The agent fetches it with `get_diagram`, critiques the contracts in the notes (*"the receiver returns 200 before the event is durably queued — a crash between the two loses the webhook"*), and proposes changes. It can edit nodes and notes directly (`set_note`, `prepare_save` → `commit_save`) or suggest and let you decide.
+
+**3. Iterate — both sides.** You re-arrange and refine notes in the editor for the way *you* think about it; the agent fills gaps, flags "ghosts" (components the design implies but doesn't show), and tightens each note into a precise contract. The structure sharpens into a spec that reads well to both of you.
+
+**4. Converge.** When the diagram convinces *both* of you — every node carries a clear, agreed contract — the design phase is done. **Nothing has been written yet.** That's the point: you front-loaded the disagreements into the cheap medium.
+
+**5. Now write the code, against the diagram.** As each piece lands, ground it:
+
+```
+/ground webhook-pipeline
+```
+
+Here grounding runs *forward*. A note flips from grey to `verified` when the code fulfils its contract, and to `contradicted` when the implementation diverged from what you agreed. The diagram becomes a live progress board against the blueprint: **grey = not built yet, green = built as designed, red = drifted from the design.**
+
+The diagram precedes the code and outlives the conversation. It's the artifact you both committed to — and grounding keeps the code honest to it instead of the other way around.
 
 ## Troubleshooting
 

@@ -573,4 +573,7 @@ return [
     'js.editor.nothing_to_move'         => '이동할 대상 없음',
     'js.editor.select_1_source'         => '먼저 1개 노드 또는 1개 서브그래프를 출발로 선택하세요',
     'js.editor.select_1_or_more'        => '먼저 1개 이상의 노드 또는 1개 서브그래프를 선택하세요',
+
+    // footer
+    'footer.source'                     => '소스 코드',
 ];

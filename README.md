@@ -1,114 +1,101 @@
 # Aquata
 
-Mermaid editor + MCP server: essential syntax for LLMs, rich visual layout for humans. Sister project of [Ariel](../Ariel/) (the original single-user local editor).
+**Mermaid diagrams as a shared language between humans and AI coding agents.**
 
-## Architecture
+Aquata is a self-hostable web app that stores [Mermaid](https://mermaid.js.org/) diagrams and exposes them to AI agents over [MCP](https://modelcontextprotocol.io/) (Model Context Protocol). Humans edit diagrams in a rich visual editor; agents read and write the same diagrams through a clean semantic interface. Neither side has to put up with the other's format.
 
-- **Web editor** (PHP 8.3+): browser UI for human editing, served by Apache + PHP-FPM (Plesk-friendly)
-- **MCP HTTP endpoint** (`/mcp`): Streamable HTTP transport, Bearer-token auth, exposes diagrams to Claude Desktop/Code
-- **Storage**: SQLite (default) or MySQL/MariaDB, single source of truth
-- **Collaboration**: turn-based locking with viewer polling and edit-handover requests
-- **History**: immutable revision DAG with branching (no destructive undo)
+## Why
 
-No Composer, no build step. Everything runs on plain LAMP.
+When you reason about software with an AI agent, words alone are often not enough — diagrams are the natural shared medium. But humans and LLMs want opposite things from a diagram:
 
-## Workflow
+- an **LLM** wants clean semantics: stable IDs, explicit intent, no visual noise;
+- a **human** wants readability: position, colour, grouping, emphasis.
 
-Local machine is for **editing + syntax check only**. The application runs on the remote Plesk server. Deploy is via FTP using `deploy.sh`.
+Mixing the two (inline `style` directives, meaning carried only by colour or placement) degrades both. Aquata separates them:
 
-```
-local edits → ./lint.sh → ./deploy.sh --all → live on aquata.neoverebrum.work
-```
+- **Mermaid source = semantic layer.** Stable element IDs, per-element notes (`%% [id] text`) that record authorial intent, no orphans, no presentation noise. This is what agents read and write via MCP.
+- **Layout JSON = presentation layer.** Positions, per-element colours, custom palettes, collapsed subgraph "capsules". The web editor manages it; agents never see it.
 
-Local SQLite + dev server are not used for normal work; the canonical state lives on the server.
+On top sits the **grounding protocol**: per-element notes are not mere descriptions — they are *contracts about the code*. An agent can verify each note against the actual codebase and mark it `verified` or `contradicted`, backed by an evidence receipt (file reference + literal quote) cryptographically bound to the note text. Diagrams stop being documentation that rots; they become a maintained, verified source of truth.
+
+## Features
+
+- **Visual editor** — selection-driven toolbar (Figma-style), drag positioning, per-type custom palettes, collapsible subgraph capsules, multi-select, zoom-aware selection halo. Vanilla JS, CodeMirror + Mermaid from CDN.
+- **MCP server** — Streamable HTTP endpoint (`/mcp`) with Bearer-token auth. Tools: `list_diagrams`, `get_diagram`, `create_diagram`, `save_diagram`, `delete_diagram`, `get_layout`, `set_layout`, `set_note`, plus the grounding flow (`prepare_save`, `commit_save`, `set_grounding`) and a canonical `ground` prompt.
+- **Revision history** — immutable revision DAG: undo/redo across sessions and devices, branching, no destructive operations.
+- **Collaboration** — turn-based edit locking with live viewers, edit handover requests, per-diagram sharing (view/edit), merge requests, projects (folders), presence indicators.
+- **Multi-user SaaS-ready** — self-service signup with email verification, per-user quotas, rate limiting, login lockout, security headers (CSP, HSTS).
+- **i18n** — 9 languages: English, Italian, French, German, Spanish, Portuguese, Chinese, Japanese, Korean.
+- **Zero-dependency stack** — plain PHP 8.3+, no Composer, no framework, no build step. SQLite by default, MySQL/MariaDB supported. Runs on any LAMP host, including jailed shared hosting.
 
 ## Requirements
 
-**Local machine** (for syntax check only):
-- PHP **8.3+** (`php -l` is enough — no extensions required for linting)
+- PHP **8.3+** with `pdo`, `pdo_sqlite` (or `pdo_mysql`), `json`, `mbstring`, `openssl`
+- Apache with `mod_rewrite` (or any server that routes everything to `index.php`)
+- A writable `data/` directory (SQLite database, caches)
+- The editor loads CodeMirror and Mermaid from CDN, so browsers need internet access
 
-**Remote server** (Plesk on AlmaLinux):
-- PHP 8.3+ selected for the (sub)domain in Plesk PHP Settings
-- Extensions: `pdo`, `pdo_sqlite` (or `pdo_mysql`), `json`, `mbstring`, `openssl`
-- Apache with `mod_rewrite` (Plesk default)
-- `data/` directory writable by the PHP-FPM user
-
-## Setup
-
-### Local
+## Quick start
 
 ```bash
-cp .env.example .env                # adjust if needed (defaults are fine)
-cp .deploy-config.example .deploy-config   # set FTP_HOST, FTP_USER, FTP_PASS, FTP_REMOTE_DIR
-chmod +x deploy.sh lint.sh
-./lint.sh                            # validate PHP syntax
+git clone https://github.com/neocerebrum/Aquata.git
+cd Aquata
+cp .env.example .env        # defaults are fine for a local try
+php scripts/seed_admin.php  # create the first admin user (interactive)
+php -S localhost:8080 index.php
 ```
 
-### First deploy
+Open `http://localhost:8080` and log in.
+
+For production, point an Apache vhost at the project root (the bundled `.htaccess` handles rewriting and denies access to `app/`, `data/`, `scripts/`, `docs/` and dotfiles), set `APP_URL`, `APP_FORCE_HTTPS=true` and a real `MAIL_TRANSPORT` in `.env`, and switch `DB_DRIVER=mysql` if you prefer MariaDB/MySQL. The schema is created and migrated automatically on first request (`app/Schema.php`).
+
+> **Note for MySQL/MariaDB:** the app expects the DB session to run in UTC (`time_zone='+00:00'`, set automatically on connect).
+
+### Deploying to shared hosting
+
+`deploy.sh` uploads files over FTP for hosts without git/SSH (e.g. Plesk-jailed FTP):
 
 ```bash
-./lint.sh && ./deploy.sh --all
+cp .deploy-config.example .deploy-config   # FTP credentials (gitignored)
+./lint.sh && ./deploy.sh --all             # or ./deploy.sh <file1> [file2 ...]
 ```
 
-The DB schema is created automatically on the first request (see `app/Schema.php`).
-After deploy, seed the admin user — on the server via SSH, **always use the Plesk per-version PHP binary** (the system `php` on AlmaLinux is too old):
+If you lose all admin access, `scripts/reset_password.php <email>` is the CLI escape hatch.
+
+## Connecting an AI agent (MCP)
+
+1. In Aquata, go to **Profile → API tokens** and create a token.
+2. Register the server with your agent — e.g. for Claude Code:
 
 ```bash
-/opt/plesk/php/8.4/bin/php scripts/seed_admin.php
+claude mcp add --transport http aquata https://your-host/mcp \
+  --header "Authorization: Bearer <your-token>"
 ```
 
-(adjust `8.4` to whatever Plesk has at `/opt/plesk/php/`)
+The agent can then list, read, create and save diagrams. The Mermaid source it receives is the pure semantic layer — layout and styling are stored separately and never pollute it.
 
-Then open `https://aquata.neocerebrum.work/` — should redirect to `/login`.
+### Grounding
 
-### Lockout fallback
+Per-element notes (`%% [id] text`) carry intent — *why* an element exists, what contract it represents. The `ground` MCP prompt walks an agent through verification: read the code, collect `{ref, quote}` evidence for each note, and record a verdict (`verified` / `contradicted`) via `prepare_save` → `commit_save` (or `set_grounding` for an unchanged diagram). The server never sees your code — it only enforces the receipt's form and binds it to the note by hash. Verdict freshness is visible in the editor, so stale or broken contracts are immediately apparent.
 
-If you ever lose the admin password and no other admin can log in, use the CLI escape hatch:
+## i18n
 
-```bash
-/opt/plesk/php/8.4/bin/php scripts/reset_password.php admin@example.com
-```
+Translations live in `lang/{en,it,fr,de,es,pt,zh,ja,ko}.php` as flat arrays with dot-notation keys. To add a language, create `lang/xx.php` with all keys and add `'xx'` to `I18n::SUPPORTED` (`app/I18n.php`). Language detection: `aquata_lang` cookie → `Accept-Language` header → English fallback.
 
-### Subsequent deploys
+## Architecture notes
 
-```bash
-./lint.sh && ./deploy.sh app/Controllers/UserController.php static/app.js
-# or
-./lint.sh && ./deploy.sh --all
-```
+See [`docs/DESIGN.md`](docs/DESIGN.md) for the design decisions: revision DAG persistence, turn-based concurrency model, sharing/permission model, and why there is deliberately no real-time CRDT editing.
 
-## Project layout
+## Contributing
 
-Layout is **flat** because Plesk's FTP user is jailed inside `httpdocs/` (or the subdomain root). Internal directories are protected via `.htaccess`.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). All code, comments and documentation are in English; only `lang/*.php` files contain non-English text.
 
-```
-Aquata/                ← project root (on local; mirrored to httpdocs/ on remote)
-├── index.php          ← front controller
-├── .htaccess          ← rewrite + deny app/, scripts/, data/, docs/, dotfiles
-├── static/            ← CSS, JS, images (publicly served)
-├── app/               ← PHP source (denied via .htaccess); app/Schema.php auto-creates the DB
-├── scripts/           ← CLI utilities, seed_admin etc. (denied via .htaccess)
-├── data/              ← SQLite file (denied via .htaccess; never deployed — server-only)
-├── docs/              ← design notes (not deployed)
-├── .env               ← config secrets (denied via .htaccess; never deployed — server-managed)
-├── .env.example       ← template (not deployed)
-├── deploy.sh          ← FTP upload (not deployed)
-├── lint.sh            ← syntax check (not deployed)
-└── .deploy-config     ← FTP credentials (not deployed; gitignored)
-```
+## Security
 
-Files **never** deployed (excluded by `deploy.sh`): `.env`, `.env.example`, `.deploy-config*`, `deploy.sh`, `lint.sh`, `data/**`, `docs/**`, `*.sqlite*`, `*.log`, `.git/**`, `.gitignore`.
+Please report vulnerabilities privately — see [`SECURITY.md`](SECURITY.md).
 
-## Roadmap
+## License
 
-| Phase | Scope | Status |
-|---|---|---|
-| 0 | Scaffold — structure, DB schema, bootstrap, health check, deploy pipeline | done |
-| 1 | Auth: login/logout/sessions + admin user CRUD + soft-disable | done |
-| 2 | Diagram + Revision models, REST API, undo/redo via DAG, soft-delete | done |
-| 4 | Editor frontend (port from Ariel `mermaid_editor.{js,html}`) | done |
-| 3 | Turn-based locking, edit requests, sharing | pending |
-| 5 | MCP HTTP endpoint with Bearer-token auth | pending |
-| 6 | One-shot import script from Ariel filesystem `.mmd` files | pending |
+[GNU AGPL-3.0](LICENSE). Copyright © 2026 Lamberto Tedaldi (Neocerebrum.ai).
 
-See `docs/DESIGN.md` for architectural decisions.
+You are free to use, study, modify and self-host Aquata. If you offer a modified version of it to others as a network service, the AGPL requires you to make your modified source available to its users.

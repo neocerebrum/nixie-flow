@@ -573,4 +573,7 @@ return [
     'js.editor.nothing_to_move'         => 'nichts zu verschieben',
     'js.editor.select_1_source'         => 'wählen Sie zuerst 1 Knoten oder 1 Subgraph als Quelle',
     'js.editor.select_1_or_more'        => 'wählen Sie zuerst 1+ Knoten oder 1 Subgraph',
+
+    // footer
+    'footer.source'                     => 'Quellcode',
 ];

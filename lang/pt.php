@@ -573,4 +573,7 @@ return [
     'js.editor.nothing_to_move'         => 'nada para mover',
     'js.editor.select_1_source'         => 'selecione primeiro 1 nó ou 1 subgraph como origem',
     'js.editor.select_1_or_more'        => 'selecione primeiro 1+ nós ou 1 subgraph',
+
+    // footer
+    'footer.source'                     => 'Código-fonte',
 ];

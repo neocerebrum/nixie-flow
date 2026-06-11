@@ -573,4 +573,7 @@ return [
     'js.editor.nothing_to_move'         => '没有可移动的项目',
     'js.editor.select_1_source'         => '请先选择 1 个节点或 1 个子图作为源',
     'js.editor.select_1_or_more'        => '请先选择 1 个或多个节点，或 1 个子图',
+
+    // footer
+    'footer.source'                     => '源代码',
 ];

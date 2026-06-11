@@ -575,4 +575,7 @@ return [
     'js.editor.nothing_to_move'         => 'niente da spostare',
     'js.editor.select_1_source'         => 'seleziona prima 1 nodo o 1 subgraph come sorgente',
     'js.editor.select_1_or_more'        => 'seleziona prima 1+ nodi o 1 subgraph',
+
+    // footer
+    'footer.source'                     => 'Codice sorgente',
 ];

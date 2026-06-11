@@ -573,4 +573,7 @@ return [
     'js.editor.nothing_to_move'         => '移動するものがありません',
     'js.editor.select_1_source'         => 'まず1つのノードまたは1つのサブグラフを始点として選択してください',
     'js.editor.select_1_or_more'        => 'まず1つ以上のノードまたは1つのサブグラフを選択してください',
+
+    // footer
+    'footer.source'                     => 'ソースコード',
 ];

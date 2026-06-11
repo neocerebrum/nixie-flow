@@ -34,9 +34,10 @@ $noNav = $noNav ?? false;
                 <a href="#" onclick="document.cookie='aquata_lang=<?= $loc ?>;path=/;max-age=31536000';location.reload();return false"><?= strtoupper($loc) ?></a>
             <?php endif; ?>
         <?php endforeach; ?>
+        &middot; <a href="https://github.com/neocerebrum/Aquata" target="_blank" rel="noopener"><?= __('footer.source') ?></a> (AGPL-3.0)
     </div>
 <?php else: ?>
-    <footer class="site-footer">&copy; <?= gmdate('Y') ?> Neocerebrum.ai</footer>
+    <footer class="site-footer">&copy; <?= gmdate('Y') ?> Neocerebrum.ai &middot; <a href="https://github.com/neocerebrum/Aquata" target="_blank" rel="noopener"><?= __('footer.source') ?></a> (AGPL-3.0)</footer>
 <?php endif; ?>
 </body>
 </html>

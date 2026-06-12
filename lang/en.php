@@ -526,6 +526,7 @@ return [
     'js.editor.lock.other_tab'          => 'Open in another tab of yours. Click here to edit in this one.',
     'js.editor.lock.other_tab_btn'      => 'Edit here',
     'js.editor.lock.other_user'         => 'Editing: %s — read only.',
+    'js.editor.lock.agent_editing'      => '«%s» (AI) is editing — read only.',
     'js.editor.lock.requesting'         => 'Request sent, waiting… (auto-transfers after 10 min of inactivity)',
     'js.editor.lock.request_cancel'     => 'Cancel request',
     'js.editor.lock.request_btn'        => 'Request scepter',

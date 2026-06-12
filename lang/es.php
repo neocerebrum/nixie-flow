@@ -524,6 +524,7 @@ return [
     'js.editor.lock.other_tab'          => 'Abierto en otra pestana tuya. Haz clic aqui para editar en esta.',
     'js.editor.lock.other_tab_btn'      => 'Editar aqui',
     'js.editor.lock.other_user'         => 'Editando: %s — solo lectura.',
+    'js.editor.lock.agent_editing'      => '«%s» (IA) está editando — solo lectura.',
     'js.editor.lock.requesting'         => 'Solicitud enviada, esperando… (se transfiere automaticamente tras 10 min de inactividad)',
     'js.editor.lock.request_cancel'     => 'Cancelar solicitud',
     'js.editor.lock.request_btn'        => 'Solicitar cetro',

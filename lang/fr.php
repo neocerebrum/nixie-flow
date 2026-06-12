@@ -524,6 +524,7 @@ return [
     'js.editor.lock.other_tab'          => 'Ouvert dans un autre de vos onglets. Cliquez ici pour éditer dans celui-ci.',
     'js.editor.lock.other_tab_btn'      => 'Éditer ici',
     'js.editor.lock.other_user'         => 'En cours d\'édition : %s — lecture seule.',
+    'js.editor.lock.agent_editing'      => '«%s» (IA) est en train de modifier — lecture seule.',
     'js.editor.lock.requesting'         => 'Demande envoyée, en attente… (transfert automatique après 10 min d\'inactivité)',
     'js.editor.lock.request_cancel'     => 'Annuler la demande',
     'js.editor.lock.request_btn'        => 'Demander le sceptre',

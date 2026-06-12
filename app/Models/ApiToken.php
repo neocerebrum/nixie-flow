@@ -74,6 +74,20 @@ final class ApiToken
         return $plaintext;
     }
 
+    /**
+     * The human-given label of a token, by its hash, or null if unknown/blank.
+     * Used to give an agent's (MCP) scepter hold a display name.
+     */
+    public static function labelByHash(string $tokenHash): ?string
+    {
+        $stmt = db()->prepare('SELECT label FROM api_tokens WHERE token_hash = ?');
+        $stmt->execute([$tokenHash]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row === false) return null;
+        $label = $row['label'] ?? null;
+        return ($label !== null && $label !== '') ? (string) $label : null;
+    }
+
     /** Revoke a token by its hash (lookup is by hash since plaintext isn't stored). */
     public static function revokeByHash(int $userId, string $tokenHash): bool
     {

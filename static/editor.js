@@ -8744,9 +8744,10 @@
         return;
       }
 
-      // If I hold the lock, the divergence is from my own autosave: just
-      // refresh the baseline and don't reload (would clobber my in-flight RAM).
-      if (lockHeldByMe()) {
+      // Skip reload only for same-revision autosave/draft-flush from my own session
+      // (I hold the lock as human and the revision_id didn't change — just updated_at).
+      // If revChanged, someone else created a new snapshot → always mirror.
+      if (!revChanged && lockHeldByMe() && !presenceState.lock?.agent_label) {
         lastUpdatedAt = json.updated_at || lastUpdatedAt;
         return;
       }
@@ -9079,18 +9080,45 @@
     const hid = presenceState.holder_id;
     if (!hid) return "";
     if (hid === me.id) return "you";
+    const agentLabel = presenceState.lock?.agent_label;
+    if (agentLabel) return agentLabel;
     const v = (presenceState.viewers || []).find(x => x.user_id === hid);
     return v ? (v.display_name || v.email || ("user #" + hid)) : ("user #" + hid);
   }
 
   function renderLockBanner() {
     if (!lockBannerEl) return;
-    lockBannerEl.classList.remove("hidden", "lock-mine", "lock-other", "lock-free", "lock-readonly");
+    lockBannerEl.classList.remove("hidden", "lock-mine", "lock-other", "lock-agent", "lock-free", "lock-readonly");
     lockActionsEl.innerHTML = "";
 
     if (permission === "view") {
       lockBannerEl.classList.add("lock-readonly");
       lockMessageEl.textContent = __("editor.lock.readonly");
+      return;
+    }
+
+    // Agent hold takes priority: show even when holder_id === me.id (same user
+    // can hold via MCP while browsing — the banner informs them the AI is writing).
+    const _agentLabel = presenceState.lock?.agent_label;
+    if (_agentLabel && presenceState.lock?.is_active) {
+      lockBannerEl.classList.add("lock-agent");
+      lockMessageEl.textContent = __("editor.lock.agent_editing", _agentLabel);
+      if (myEditRequest && myEditRequest.status === "pending") {
+        const span = document.createElement("span");
+        span.textContent = __("editor.lock.requesting");
+        span.style.marginRight = "10px";
+        const cancelBtn = document.createElement("button");
+        cancelBtn.textContent = __("editor.lock.request_cancel");
+        cancelBtn.addEventListener("click", cancelMyRequest);
+        lockActionsEl.appendChild(span);
+        lockActionsEl.appendChild(cancelBtn);
+      } else {
+        const reqBtn = document.createElement("button");
+        reqBtn.className = "primary";
+        reqBtn.textContent = __("editor.lock.request_btn");
+        reqBtn.addEventListener("click", requestEdit);
+        lockActionsEl.appendChild(reqBtn);
+      }
       return;
     }
 

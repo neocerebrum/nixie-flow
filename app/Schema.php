@@ -8,7 +8,7 @@ use RuntimeException;
 
 final class Schema
 {
-    private const BASELINE_VERSION = 19;
+    private const BASELINE_VERSION = 21;
 
     private const BASELINE_SQL = <<<'SQL'
 CREATE TABLE users (
@@ -32,6 +32,7 @@ CREATE TABLE diagrams (
   head_revision_id INTEGER,
   edit_lock_user   INTEGER,
   edit_lock_at     TIMESTAMP,
+  edit_lock_agent_label TEXT,
   created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   deleted_at        TIMESTAMP NULL,
@@ -121,6 +122,7 @@ CREATE TABLE edit_requests (
   created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   resolved_at  TIMESTAMP,
   note         TEXT NULL,
+  agent_label  TEXT NULL,
   FOREIGN KEY (diagram_id)   REFERENCES diagrams(id),
   FOREIGN KEY (requester_id) REFERENCES users(id)
 );
@@ -220,27 +222,12 @@ SQL;
     // BRIDGE: one-shot upgrade from previous baseline to current. Set both
     // constants when a schema change ships, then delete after every running
     // instance is on BASELINE_VERSION.
-    private const BRIDGE_FROM = 18;
-    // v19: grounding gate — staging area for the prepare_save → commit_save
-    // handshake. prepare_save stores the staged source/layout + the note ids
-    // that need a grounding receipt (noteHash changed/new) under a short-lived
-    // token; commit_save validates the receipts' form and then snapshots. New
-    // `diagram_prepare` table only; additive.
+    private const BRIDGE_FROM = 20;
+    // v21: agent_label on edit_requests. When an agent files a turn request,
+    // its API-token label is stored here so the accept handler can re-stamp
+    // edit_lock_agent_label atomically on transfer, eliminating the banner flash.
     private const BRIDGE_SQL  = <<<'SQL'
-CREATE TABLE diagram_prepare (
-  token              CHAR(64) PRIMARY KEY,
-  diagram_id         INTEGER NOT NULL,
-  user_id            INTEGER NOT NULL,
-  base_version       INTEGER,
-  staged_source      TEXT NOT NULL,
-  staged_layout      TEXT,
-  requires_grounding TEXT,
-  created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (diagram_id) REFERENCES diagrams(id),
-  FOREIGN KEY (user_id)    REFERENCES users(id)
-);
-CREATE INDEX idx_prepare_diagram ON diagram_prepare(diagram_id);
-CREATE INDEX idx_prepare_created ON diagram_prepare(created_at);
+ALTER TABLE edit_requests ADD COLUMN agent_label TEXT;
 SQL;
 
     private static bool $checked = false;

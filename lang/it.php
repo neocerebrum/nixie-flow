@@ -526,6 +526,7 @@ return [
     'js.editor.lock.other_tab'          => "Aperto in un'altra tua scheda. Clicca qui per modificare in questa.",
     'js.editor.lock.other_tab_btn'      => 'Modifica qui',
     'js.editor.lock.other_user'         => 'Sta modificando: %s — sola lettura.',
+    'js.editor.lock.agent_editing'      => '«%s» (AI) sta modificando — sola lettura.',
     'js.editor.lock.requesting'         => "Richiesta inviata, in attesa… (passa automaticamente dopo 10 min di inattività)",
     'js.editor.lock.request_cancel'     => 'Annulla richiesta',
     'js.editor.lock.request_btn'        => 'Chiedi lo scettro',

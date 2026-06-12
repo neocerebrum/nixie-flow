@@ -524,6 +524,7 @@ return [
     'js.editor.lock.other_tab'          => '已在您的另一个标签页中打开。点击此处在当前标签页编辑。',
     'js.editor.lock.other_tab_btn'      => '在此编辑',
     'js.editor.lock.other_user'         => '正在编辑：%s——只读。',
+    'js.editor.lock.agent_editing'      => '«%s»（AI）正在编辑——只读。',
     'js.editor.lock.requesting'         => '请求已发送，等待中…（不活跃 10 分钟后自动转移）',
     'js.editor.lock.request_cancel'     => '取消请求',
     'js.editor.lock.request_btn'        => '请求权杖',

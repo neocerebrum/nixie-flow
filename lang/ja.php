@@ -524,6 +524,7 @@ return [
     'js.editor.lock.other_tab'          => '別のタブで開いています。ここをクリックするとこのタブで編集できます。',
     'js.editor.lock.other_tab_btn'      => 'ここで編集',
     'js.editor.lock.other_user'         => '編集中: %s — 閲覧のみ。',
+    'js.editor.lock.agent_editing'      => '«%s»（AI）が編集中です — 閲覧のみ。',
     'js.editor.lock.requesting'         => 'リクエスト送信済み、待機中…（10分間操作がない場合、自動で編集権が移ります）',
     'js.editor.lock.request_cancel'     => 'リクエストをキャンセル',
     'js.editor.lock.request_btn'        => '編集権をリクエスト',

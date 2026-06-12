@@ -90,7 +90,11 @@ final class EditRequestController
         }
 
         // Atomic transfer: change scepter holder, mark request granted+resolved.
-        Lock::transfer((int) $diagram['id'], (int) $req['requester_id']);
+        // For agent requests, pass the stored agent_label so the banner updates
+        // immediately in the browser — no intermediate "Editing: name" flash.
+        $agentLabel = isset($req['agent_label']) && $req['agent_label'] !== null
+            ? (string) $req['agent_label'] : null;
+        Lock::transfer((int) $diagram['id'], (int) $req['requester_id'], $agentLabel);
         EditRequest::setStatus((int) $req['id'], 'granted');
 
         // If the requester has since dropped from presence, run promotion to

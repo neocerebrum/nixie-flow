@@ -66,13 +66,13 @@ final class EditRequest
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    public static function create(int $diagramId, int $requesterId, ?string $note): int
+    public static function create(int $diagramId, int $requesterId, ?string $note, ?string $agentLabel = null): int
     {
         $stmt = db()->prepare(
-            "INSERT INTO edit_requests (diagram_id, requester_id, status, note)
-             VALUES (?, ?, 'pending', ?)"
+            "INSERT INTO edit_requests (diagram_id, requester_id, status, note, agent_label)
+             VALUES (?, ?, 'pending', ?, ?)"
         );
-        $stmt->execute([$diagramId, $requesterId, $note]);
+        $stmt->execute([$diagramId, $requesterId, $note, $agentLabel]);
         return (int) db()->lastInsertId();
     }
 

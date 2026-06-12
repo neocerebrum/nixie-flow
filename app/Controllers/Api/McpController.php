@@ -9,7 +9,9 @@ use App\Exceptions\QuotaExceeded;
 use App\Exceptions\RevisionConflict;
 use App\Models\ApiToken;
 use App\Models\Diagram;
+use App\Models\EditRequest;
 use App\Models\Lock;
+use App\Models\Presence;
 use App\Models\Revision;
 use App\Models\User;
 use App\Quota;
@@ -50,6 +52,12 @@ final class McpController
     private const SERVER_NAME      = 'aquata';
     private const SERVER_VERSION   = '0.7.0';
 
+    /**
+     * Display label for this request's agent scepter holds — the API-token's
+     * human-given name (e.g. "claude", "my-bot"). Set per request in handle().
+     */
+    private ?string $agentLabel = null;
+
     /** Sent in the initialize response; primes the client on the grounding contract. */
     private const SERVER_INSTRUCTIONS =
         "Aquata hosts Mermaid diagrams whose per-element notes (`%% [<id>] <text>`) are contracts about code. "
@@ -59,7 +67,12 @@ final class McpController
         . "enforces a receipt's form and binds it to the note by noteHash. Use the `ground` prompt for the full "
         . "procedure. To save with verdicts use prepare_save → commit_save; to re-verify an unchanged diagram use "
         . "set_grounding. Plain saves still work via save_diagram. Grey/unverified notes are always free; the gate "
-        . "only forbids a 'verified'/'contradicted' without a well-formed, note-bound receipt.";
+        . "only forbids a 'verified'/'contradicted' without a well-formed, note-bound receipt. "
+        . "Editing is turn-based and shared with live human editors: write tools auto-acquire the edit turn (scepter) "
+        . "and hold it on a short lease. If someone has the diagram open in the editor, your write registers a polite "
+        . "request and returns 'turn held' — the human sees a yield prompt in the editor; retry the same write shortly "
+        . "after they yield (or after ~60 s if they step away). When a write result reports \"human_waiting\": true, "
+        . "finish up and call release_edit(slug) to yield the turn promptly.";
 
     /** Body of the `ground` MCP prompt. {{SLUG}} is substituted in prompts/get. */
     private const GROUND_PROMPT = <<<'TXT'
@@ -103,6 +116,8 @@ TXT;
         }
 
         $tokenHash = $this->bearerTokenHash();
+        // The token's label names the agent when it holds the scepter.
+        $this->agentLabel = $tokenHash !== null ? ApiToken::labelByHash($tokenHash) : null;
 
         $raw = file_get_contents('php://input') ?: '';
         $msg = json_decode($raw, true);
@@ -434,6 +449,15 @@ TXT;
                     'required' => ['slug', 'id', 'expected_version'],
                 ],
             ],
+            [
+                'name' => 'release_edit',
+                'description' => 'Yield the edit turn (scepter) on a diagram once you are done changing it — the courteous "release" half of the co-editing protocol. The write tools (save_diagram, commit_save, set_note, set_layout, set_grounding) auto-acquire the turn for you and hold it on a short lease; call release_edit when your batch of edits is finished so a human collaborator waiting in the editor gets control immediately instead of waiting for the lease to lapse. Especially do this when a write result reports "human_waiting": true. Idempotent and safe to call even if you do not hold the turn (returns released=false). You do NOT need this for one-off edits on a diagram nobody else is viewing — the lease cleans up on its own — but it is good hygiene whenever you may be co-editing with a person.',
+                'inputSchema' => [
+                    'type' => 'object',
+                    'properties' => ['slug' => ['type' => 'string']],
+                    'required' => ['slug'],
+                ],
+            ],
         ];
     }
 
@@ -486,6 +510,7 @@ TXT;
             case 'commit_save':    return $this->toolCommitSave($args, $user);
             case 'set_grounding':  return $this->toolSetGrounding($args, $user);
             case 'set_note':       return $this->toolSetNote($args, $user);
+            case 'release_edit':   return $this->toolReleaseEdit($args, $user);
             default:
                 throw new McpToolException("Unknown tool: $name");
         }
@@ -496,6 +521,140 @@ TXT;
         return [
             'content' => [['type' => 'text', 'text' => json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)]],
         ];
+    }
+
+    /**
+     * Take the edit scepter for this write as a leased, presence-less agent
+     * holder — the AI's turn in the co-editing protocol.
+     *
+     * Protocol:
+     *  1. If we already hold the scepter (from a previous write or a yield/transfer
+     *     by the human): refresh the lease and proceed immediately.
+     *  2. If any human with edit permission currently has the editor open (fresh
+     *     presence row), request the turn politely and throw — the caller should
+     *     retry shortly, or the human can yield from the editor.
+     *  3. If nobody is present: take the scepter freely (prune stale holds first).
+     *
+     * Rule 2 means the agent always ASKS before editing whenever a human is
+     * watching — even when the scepter is nominally free — so no one ends up
+     * in read-only without a warning.
+     */
+    private function acquireTurn(array $diagram, array $user): void
+    {
+        $did = (int) $diagram['id'];
+        $uid = (int) $user['id'];
+
+        // Fast path: we already hold the scepter (our prior agent hold, or one
+        // granted via transfer after a human yielded). Just refresh and proceed.
+        $current = Diagram::byId($did);
+        $currentHolder = isset($current['edit_lock_user']) && $current['edit_lock_user'] !== null
+            ? (int) $current['edit_lock_user'] : null;
+        if ($currentHolder === $uid) {
+            Lock::tryClaimAgent($did, $uid, $this->agentLabel);
+            return;
+        }
+
+        // If any OTHER human editor (different user_id) currently has the editor
+        // open, request the turn politely rather than taking silently. The request
+        // surfaces in their editor as the familiar "yield / deny" prompt.
+        // The same user's own browser session does NOT block their agent — the
+        // agent can take from itself, and the banner informs them.
+        if ($this->hasLiveEditViewers($did, $uid)) {
+            if (EditRequest::pendingForUser($did, $uid) === null) {
+                $note = ($this->agentLabel !== null ? $this->agentLabel . ' (agent)' : 'agent')
+                    . ' requests the edit turn';
+                EditRequest::create($did, $uid, $note, $this->agentLabel);
+            }
+            $holderId = $currentHolder;
+            $who = 'a collaborator';
+            if ($holderId !== null) {
+                $h = User::byId($holderId);
+                if ($h !== null) {
+                    $who = ($h['display_name'] ?? '') !== '' ? $h['display_name']
+                         : (($h['email'] ?? '') !== '' ? $h['email'] : 'user ' . $holderId);
+                }
+            }
+            $ctx = $holderId !== null
+                ? "$who is currently editing this diagram"
+                : "$who has this diagram open";
+            throw new McpToolException(
+                "turn held: $ctx. Your request for the edit turn has been registered "
+                . "— retry shortly, or ask them to yield."
+            );
+        }
+
+        // No other live human viewers — take the scepter freely (or prune a
+        // stale hold first and then take).
+        if (Lock::tryClaimAgent($did, $uid, $this->agentLabel)) {
+            return;
+        }
+        Presence::ensureHolder($did);
+        if (Lock::tryClaimAgent($did, $uid, $this->agentLabel)) {
+            return;
+        }
+
+        // Shouldn't normally reach here (another agent in a concurrent race).
+        $fresh = Diagram::byId($did);
+        $holderId = isset($fresh['edit_lock_user']) && $fresh['edit_lock_user'] !== null
+            ? (int) $fresh['edit_lock_user'] : null;
+        if ($holderId !== null && $holderId !== $uid && EditRequest::pendingForUser($did, $uid) === null) {
+            $note = ($this->agentLabel !== null ? $this->agentLabel . ' (agent)' : 'agent')
+                . ' requests the edit turn';
+            EditRequest::create($did, $uid, $note);
+        }
+        $who = 'another agent';
+        throw new McpToolException(
+            "turn held: $who is currently editing this diagram. Your request has been "
+            . "registered — retry shortly."
+        );
+    }
+
+    /**
+     * True if at least one human with edit permission (other than $excludeUserId)
+     * currently has the diagram open. View-only viewers are excluded — they can't
+     * hold the scepter so the agent taking doesn't affect them.
+     * The same user's own browser session ($excludeUserId) is intentionally
+     * excluded: a user's agent can take from their own browser session.
+     */
+    private function hasLiveEditViewers(int $diagramId, int $excludeUserId): bool
+    {
+        $cutoff = gmdate('Y-m-d H:i:s', time() - Presence::TTL_SECONDS);
+        $stmt = db()->prepare(
+            "SELECT 1 FROM diagram_viewers v
+             INNER JOIN diagrams d ON d.id = v.diagram_id
+             WHERE v.diagram_id = ? AND v.last_seen_at >= ? AND v.user_id != ?
+               AND (
+                 v.user_id = d.owner_id
+                 OR EXISTS (
+                   SELECT 1 FROM diagram_shares
+                   WHERE diagram_id = v.diagram_id AND user_id = v.user_id AND permission = 'edit'
+                 )
+                 OR EXISTS (
+                   SELECT 1 FROM project_shares
+                   WHERE project_id = d.project_id AND user_id = v.user_id AND permission = 'edit'
+                 )
+               )
+             LIMIT 1"
+        );
+        $stmt->execute([$diagramId, $cutoff, $excludeUserId]);
+        return $stmt->fetch() !== false;
+    }
+
+    /**
+     * Hint for the agent after a write: is a human waiting for the turn? If so
+     * the agent should finish up and call release_edit so they get it promptly
+     * instead of waiting out the hold's lease. Excludes the agent's own user id.
+     */
+    private function turnHint(int $diagramId, int $userId): array
+    {
+        $waiting = false;
+        foreach (EditRequest::pendingOn($diagramId) as $r) {
+            if ((int) ($r['requester_id'] ?? 0) !== $userId) {
+                $waiting = true;
+                break;
+            }
+        }
+        return ['human_waiting' => $waiting];
     }
 
     private function toolListDiagrams(array $user): array
@@ -571,9 +730,7 @@ TXT;
             throw new McpToolException("Not found or no edit permission: $slug");
         }
 
-        if (!Lock::tryClaimIfFree((int) $diagram['id'], (int) $user['id'])) {
-            throw new McpToolException('locked: another user is currently editing this diagram');
-        }
+        $this->acquireTurn($diagram, $user);
 
         // Carry the existing layout (positions/styles/palettes/grounding) over
         // — a source-only save must never wipe the user's arrangement — pruning
@@ -606,7 +763,7 @@ TXT;
             'revision_id' => (int) $rev['id'],
             'parent_id'   => $rev['parent_id'] !== null ? (int) $rev['parent_id'] : null,
             'updated_at'  => $fresh['updated_at'],
-        ]);
+        ] + $this->turnHint((int) $diagram['id'], (int) $user['id']));
     }
 
     private function toolCreateDiagram(array $args, array $user): array
@@ -660,6 +817,29 @@ TXT;
         return $this->structuredResult(['ok' => true, 'slug' => $diagram['slug']]);
     }
 
+    /**
+     * Yield the edit scepter the agent holds on a diagram — the "release" half
+     * of the turn-based protocol. Idempotent: a no-op (released=false) if the
+     * agent does not currently hold it. On release, promotes a waiting human (or
+     * clears the scepter) immediately rather than waiting for the lease to lapse.
+     */
+    private function toolReleaseEdit(array $args, array $user): array
+    {
+        $slug = $this->requireString($args, 'slug');
+        $diagram = Diagram::bySlug($slug);
+        if ($diagram === null || Diagram::isDeleted($diagram)) {
+            throw new McpToolException("Not found: $slug");
+        }
+        $released = Lock::releaseIfHeldByAgent((int) $diagram['id'], (int) $user['id']);
+        if ($released) {
+            Presence::ensureHolder((int) $diagram['id']);
+        }
+        return $this->structuredResult([
+            'slug'     => $diagram['slug'],
+            'released' => $released,
+        ]);
+    }
+
     private function toolGetLayout(array $args, array $user): array
     {
         $diagram = $this->loadAccessible($args, $user);
@@ -688,9 +868,7 @@ TXT;
             throw new McpToolException("Not found or no edit permission: $slug");
         }
 
-        if (!Lock::tryClaimIfFree((int) $diagram['id'], (int) $user['id'])) {
-            throw new McpToolException('locked: another user is currently editing this diagram');
-        }
+        $this->acquireTurn($diagram, $user);
 
         $layoutJson = $this->encodeLayout($args['layout']);
 
@@ -707,8 +885,9 @@ TXT;
             throw new McpToolException($q->getMessage());
         }
 
+        $base = $expected === 0 ? null : $expected;
         try {
-            Revision::updateCurrent((int) $diagram['id'], $expected, null, $layoutJson);
+            Revision::updateCurrent((int) $diagram['id'], $base, null, $layoutJson);
         } catch (RevisionConflict $c) {
             throw new McpToolException("conflict: current is now based on revision {$c->currentRevisionId}, expected $expected");
         }
@@ -718,7 +897,7 @@ TXT;
             'slug'        => $fresh['slug'],
             'revision_id' => $expected,
             'updated_at'  => $fresh['updated_at'],
-        ]);
+        ] + $this->turnHint((int) $diagram['id'], (int) $user['id']));
     }
 
     // ── Grounding gate: prepare_save / commit_save / set_grounding ──────────
@@ -833,9 +1012,7 @@ TXT;
         $layout['grounding'] = $merged === [] ? new \stdClass() : $merged;
         $layoutJson = $this->encodeLayout($layout);
 
-        if (!Lock::tryClaimIfFree((int) $diagram['id'], (int) $user['id'])) {
-            throw new McpToolException('locked: another user is currently editing this diagram');
-        }
+        $this->acquireTurn($diagram, $user);
         try {
             $owner = User::byId((int) $diagram['owner_id']) ?? $user;
             $payloadBytes = strlen($source) + strlen($layoutJson ?? '');
@@ -862,7 +1039,7 @@ TXT;
             'parent_id'   => $rev['parent_id'] !== null ? (int) $rev['parent_id'] : null,
             'grounded'    => count($grounding),
             'updated_at'  => $fresh['updated_at'],
-        ]);
+        ] + $this->turnHint((int) $diagram['id'], (int) $user['id']));
     }
 
     /**
@@ -897,9 +1074,7 @@ TXT;
         $layout['grounding'] = $merged === [] ? new \stdClass() : $merged;
         $layoutJson = $this->encodeLayout($layout);
 
-        if (!Lock::tryClaimIfFree((int) $diagram['id'], (int) $user['id'])) {
-            throw new McpToolException('locked: another user is currently editing this diagram');
-        }
+        $this->acquireTurn($diagram, $user);
         try {
             $owner    = User::byId((int) $diagram['owner_id']) ?? $user;
             $oldBytes = strlen((string) $current['source']) + strlen((string) ($current['layout'] ?? ''));
@@ -921,7 +1096,7 @@ TXT;
             'revision_id' => $base,
             'grounded'    => count($grounding),
             'updated_at'  => $fresh['updated_at'],
-        ]);
+        ] + $this->turnHint((int) $diagram['id'], (int) $user['id']));
     }
 
     /**
@@ -993,9 +1168,7 @@ TXT;
         $layout['grounding'] = $merged === [] ? new \stdClass() : $merged;
         $layoutJson = $this->encodeLayout($layout);
 
-        if (!Lock::tryClaimIfFree((int) $diagram['id'], (int) $user['id'])) {
-            throw new McpToolException('locked: another user is currently editing this diagram');
-        }
+        $this->acquireTurn($diagram, $user);
         try {
             $owner = User::byId((int) $diagram['owner_id']) ?? $user;
             $payloadBytes = strlen($newSource) + strlen($layoutJson ?? '');
@@ -1021,7 +1194,7 @@ TXT;
             'note_removed'          => $encoded === '',
             'grounding_invalidated' => $invalidated,
             'updated_at'            => $fresh['updated_at'],
-        ]);
+        ] + $this->turnHint((int) $diagram['id'], (int) $user['id']));
     }
 
     // ── Grounding helpers ───────────────────────────────────────────────────
@@ -1089,6 +1262,16 @@ RE;
         foreach ($lines as $i => $line) {
             if (preg_match($nodeDeclRe, $line, $m)) return ['idx' => (int) $i, 'indent' => $m[1]];
             if (preg_match($sgHeaderRe, $line, $m)) return ['idx' => (int) $i, 'indent' => $m[1]];
+        }
+        // Fallback: id declared only inline on an edge line (e.g. `A[Start] --> B[End]`).
+        // Return the first edge line where the id appears as a whole token.
+        $edgeRe  = '~(?:-->|---|-.->|==>)~';
+        $tokenRe = '~\b' . $idEsc . '\b~';
+        foreach ($lines as $i => $line) {
+            if (preg_match($edgeRe, $line) && preg_match($tokenRe, $line)) {
+                preg_match('~^(\s*)~', $line, $m);
+                return ['idx' => (int) $i, 'indent' => $m[1]];
+            }
         }
         return null;
     }

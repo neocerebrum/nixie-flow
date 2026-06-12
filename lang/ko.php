@@ -524,6 +524,7 @@ return [
     'js.editor.lock.other_tab'          => '다른 탭에서 열려 있습니다. 여기를 클릭하여 이 탭에서 편집하세요.',
     'js.editor.lock.other_tab_btn'      => '여기서 편집',
     'js.editor.lock.other_user'         => '편집 중: %s — 읽기 전용.',
+    'js.editor.lock.agent_editing'      => '«%s»（AI）가 편집 중입니다 — 읽기 전용.',
     'js.editor.lock.requesting'         => '요청 전송됨, 대기 중… (10분 비활성 시 자동 이전)',
     'js.editor.lock.request_cancel'     => '요청 취소',
     'js.editor.lock.request_btn'        => '편집 권한 요청',

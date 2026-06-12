@@ -524,6 +524,7 @@ return [
     'js.editor.lock.other_tab'          => 'In einem anderen Ihrer Tabs geöffnet. Klicken Sie hier, um in diesem Tab zu bearbeiten.',
     'js.editor.lock.other_tab_btn'      => 'Hier bearbeiten',
     'js.editor.lock.other_user'         => 'Wird bearbeitet von: %s — nur Lesen.',
+    'js.editor.lock.agent_editing'      => '«%s» (KI) bearbeitet gerade — nur Lesen.',
     'js.editor.lock.requesting'         => 'Anfrage gesendet, bitte warten… (wird nach 10 Min. Inaktivität automatisch übertragen)',
     'js.editor.lock.request_cancel'     => 'Anfrage abbrechen',
     'js.editor.lock.request_btn'        => 'Zepter anfordern',

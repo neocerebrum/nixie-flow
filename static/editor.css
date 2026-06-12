@@ -810,6 +810,7 @@ footer { display: none; }
 }
 .lock-banner.lock-mine    { background: #1c2a36; color: #a3be8c; border-bottom-color: #3a4551; }
 .lock-banner.lock-other   { background: #3b2a2a; color: #ebcb8b; border-bottom-color: #5e3a3a; }
+.lock-banner.lock-agent   { background: #1a2f3a; color: #88c0d0; border-bottom-color: #2e4f60; }
 .lock-banner.lock-free    { background: #1c242e; color: #8fbcbb; }
 .lock-banner.lock-readonly{ background: #2a2630; color: #b48ead; }
 .lock-banner #lockActions { display: flex; gap: 6px; margin-left: auto; }

@@ -30,6 +30,12 @@ final class Presence
     public const IDLE_TIMEOUT_SECONDS = 600; // 10 min — after this the holder can be evicted by a pending request
     private const TAB_ID_MAX          = 64;
 
+    // Agent (MCP) scepter holds are presence-less: there is no viewer row and
+    // no heartbeat, so the hold is governed by a time lease on edit_lock_at,
+    // which the agent re-stamps on every write (see Lock::tryClaimAgent).
+    public const AGENT_HOLD_TTL_SECONDS     = 120; // hard cap: an agent hold older than this is dead and reclaimable by anyone
+    public const AGENT_ACTIVE_WINDOW_SECONDS = 20;  // within this since the last agent write, the hold is "actively editing" and protected even from a waiting human
+
     /**
      * Upsert presence for the user. If `claim_active` is true (or no active
      * tab is recorded), set this tab as active. After upsert, ensure a holder
@@ -225,7 +231,10 @@ final class Presence
         }
 
         try {
-            $stmt = $pdo->prepare('SELECT id, owner_id, edit_lock_user FROM diagrams WHERE id = ?' . $forUpdate);
+            $stmt = $pdo->prepare(
+                'SELECT id, owner_id, edit_lock_user, edit_lock_at, edit_lock_agent_label
+                 FROM diagrams WHERE id = ?' . $forUpdate
+            );
             $stmt->execute([$diagramId]);
             $diagram = $stmt->fetch(PDO::FETCH_ASSOC);
             if ($diagram === false) {
@@ -244,41 +253,68 @@ final class Presence
 
             $currentHolder = $diagram['edit_lock_user'] !== null
                 ? (int) $diagram['edit_lock_user'] : null;
+            $agentLabel = $diagram['edit_lock_agent_label'] ?? null;
             $holderPresent = $currentHolder !== null && isset($writers[$currentHolder]);
 
-            // Idle eviction: if the holder is present but has been inactive
-            // beyond IDLE_TIMEOUT and another *present* writer has a pending
-            // request, treat the holder as ineligible so pickHolderInTxn can
-            // promote the requester. The presence guard matters because
-            // pickHolderInTxn skips non-present requesters and would then fall
-            // back to owner/oldest-joined — which could re-elect the idle
-            // holder, defeating the eviction.
-            $evictIdle = false;
-            if ($holderPresent && self::holderIsIdle($writers[$currentHolder])) {
-                foreach ($writers as $uid => $_) {
-                    if ($uid === $currentHolder) continue;
-                    $stmt = $pdo->prepare(
-                        "SELECT 1 FROM edit_requests
-                         WHERE diagram_id = ? AND requester_id = ? AND status = 'pending'
-                         LIMIT 1"
-                    );
-                    $stmt->execute([$diagramId, $uid]);
-                    if ($stmt->fetchColumn() !== false) {
-                        $evictIdle = true;
-                        break;
+            // The lease branch applies only to a *pure* agent hold: agent-labelled
+            // AND the holder is not also live-present in the editor. When the same
+            // user is both the token owner and editing in the browser, they have a
+            // viewer row, so we fall through to the human branch and they are
+            // protected by presence as usual (the stale agent label is ignored).
+            if ($currentHolder !== null && $agentLabel !== null && !$holderPresent) {
+                // ── Agent hold: presence-less, governed by a time lease on
+                // edit_lock_at (re-stamped on each agent write). Keep it while
+                // the lease is alive AND either the agent wrote very recently
+                // (actively editing — protected even from a waiting human) or no
+                // present human is waiting. Otherwise fall through to promote a
+                // human; the promotion UPDATE below clears the agent label. The
+                // agent has no viewer row, so it is never itself auto-promoted.
+                $age = self::ageSeconds($diagram['edit_lock_at'] ?? null);
+                $dead = $age === null || $age >= self::AGENT_HOLD_TTL_SECONDS;
+                $activelyEditing = $age !== null && $age < self::AGENT_ACTIVE_WINDOW_SECONDS;
+                $humanWaiting = self::hasPendingFromPresentWriter($pdo, $diagramId, $writers);
+                if (!$dead && ($activelyEditing || !$humanWaiting)) {
+                    $pdo->commit();
+                    return;
+                }
+            } else {
+                // ── Human hold: presence-driven. ──
+                // Idle eviction: if the holder is present but has been inactive
+                // beyond IDLE_TIMEOUT and another *present* writer has a pending
+                // request, treat the holder as ineligible so pickHolderInTxn can
+                // promote the requester. The presence guard matters because
+                // pickHolderInTxn skips non-present requesters and would then fall
+                // back to owner/oldest-joined — which could re-elect the idle
+                // holder, defeating the eviction.
+                $evictIdle = false;
+                if ($holderPresent && self::holderIsIdle($writers[$currentHolder])) {
+                    foreach ($writers as $uid => $_) {
+                        if ($uid === $currentHolder) continue;
+                        $stmt = $pdo->prepare(
+                            "SELECT 1 FROM edit_requests
+                             WHERE diagram_id = ? AND requester_id = ? AND status = 'pending'
+                             LIMIT 1"
+                        );
+                        $stmt->execute([$diagramId, $uid]);
+                        if ($stmt->fetchColumn() !== false) {
+                            $evictIdle = true;
+                            break;
+                        }
                     }
                 }
-            }
 
-            if ($holderPresent && !$evictIdle) {
-                $pdo->commit();
-                return;
+                if ($holderPresent && !$evictIdle) {
+                    $pdo->commit();
+                    return;
+                }
             }
 
             $newHolder = self::pickHolderInTxn($pdo, $diagramId, (int) $diagram['owner_id'], $writers);
 
+            // Always clear the agent label here: ensureHolder only ever assigns a
+            // human (from viewer rows) or null — never an agent.
             $stmt = $pdo->prepare(
-                'UPDATE diagrams SET edit_lock_user = ?, edit_lock_at = ' .
+                'UPDATE diagrams SET edit_lock_user = ?, edit_lock_agent_label = NULL, edit_lock_at = ' .
                 ($newHolder === null ? 'NULL' : 'CURRENT_TIMESTAMP') .
                 ' WHERE id = ?'
             );
@@ -374,6 +410,41 @@ final class Presence
         $epoch = strtotime((string) $ts . ' UTC');
         if ($epoch === false) return false;
         return (time() - $epoch) >= self::IDLE_TIMEOUT_SECONDS;
+    }
+
+    /**
+     * Seconds since a stored UTC timestamp, or null if unparseable/missing.
+     * (DB timestamps are written under a UTC session — see holderIsIdle.)
+     */
+    private static function ageSeconds(?string $ts): ?int
+    {
+        if ($ts === null || $ts === '') return null;
+        $epoch = strtotime((string) $ts . ' UTC');
+        if ($epoch === false) return null;
+        return time() - $epoch;
+    }
+
+    /**
+     * True if some present, edit-eligible writer has a pending edit_request —
+     * i.e. a human is waiting for the scepter. Used to decide when an agent
+     * hold should yield.
+     *
+     * @param array<int, array<string,mixed>> $writers
+     */
+    private static function hasPendingFromPresentWriter(PDO $pdo, int $diagramId, array $writers): bool
+    {
+        if ($writers === []) return false;
+        $stmt = $pdo->prepare(
+            "SELECT requester_id FROM edit_requests
+             WHERE diagram_id = ? AND status = 'pending'"
+        );
+        $stmt->execute([$diagramId]);
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            if (isset($writers[(int) $row['requester_id']])) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

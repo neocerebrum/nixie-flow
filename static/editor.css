@@ -214,6 +214,7 @@ body.eyedropper-active #diagram * { cursor: crosshair !important; }
 #editorHost .cm-atom { color: #b48ead; }
 #editorHost .cm-number { color: #ebcb8b; }
 #editorHost .cm-comment { color: #6f7a88; font-style: italic; }
+#editorHost .cm-node-highlight { background: rgba(136, 192, 208, 0.18); border-radius: 2px; }
 
 #resizer, #resizerRight {
     width: 4px; background: #151b23; cursor: col-resize;

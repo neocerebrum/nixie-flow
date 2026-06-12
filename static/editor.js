@@ -495,6 +495,7 @@
   let textareaRenderTimer = null;
   let sourceCM = null;
   let suppressChange = false;
+  let _sourceHighlightMark = null;
   const HISTORY_CAP = 80;
   let history = [];
   let historyPtr = -1;
@@ -5035,6 +5036,50 @@
     }
     return null;
   }
+
+  let _sourceHighlightTarget = null;
+
+  function findEdgeDeclLine(lines, src, tgt, ordinal) {
+    const sEsc = regexEscape(src), tEsc = regexEscape(tgt);
+    const edgeRe = new RegExp(`\\b${sEsc}\\b\\s*${EDGE_CONN}\\s*\\b${tEsc}\\b`);
+    let matched = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const stripped = stripEdgeLabels(lines[i])
+        .replace(/\[[^\]\n]*\]/g, " ")
+        .replace(/\([^)\n]*\)/g, " ")
+        .replace(/\{[^}\n]*\}/g, " ");
+      if (!edgeRe.test(stripped)) continue;
+      if (matched !== ordinal) { matched++; continue; }
+      return i;
+    }
+    return -1;
+  }
+
+  function highlightSourceLine(target) {
+    if (target === _sourceHighlightTarget) return;
+    _sourceHighlightTarget = target;
+    if (_sourceHighlightMark) { _sourceHighlightMark.clear(); _sourceHighlightMark = null; }
+    if (!sourceCM || !target) return;
+    const lines = currentSource.split("\n");
+    let idx = -1;
+    if (target.includes("|")) {
+      const p = target.split("|");
+      idx = findEdgeDeclLine(lines, p[0], p[1], parseInt(p[2], 10));
+    } else {
+      const result = findDeclLine(lines, target);
+      if (result) idx = result.idx;
+    }
+    if (idx < 0) return;
+    _sourceHighlightMark = sourceCM.markText(
+      { line: idx, ch: 0 },
+      { line: idx, ch: lines[idx].length },
+      { className: "cm-node-highlight" }
+    );
+    if (document.activeElement !== sourceCM.getInputField()) {
+      sourceCM.scrollIntoView({ line: idx, ch: 0 }, 60);
+    }
+  }
+
   let _notesAutosaveTimer = null;
   let _notesCurrentId = null;     // id of the element currently bound to the panel
   let _notesCurrentKind = null;   // 'node' | 'subgraph'
@@ -5187,6 +5232,11 @@
     if (_notesCurrentId && !sameBinding) {
       flushPendingNoteEdit();
     }
+    let highlightTarget = id;
+    if (!highlightTarget && selectedEdgeKeys.size === 1 && selectedNodeIds.size === 0 && selectedClusterIds.size === 0) {
+      highlightTarget = [...selectedEdgeKeys][0];
+    }
+    highlightSourceLine(highlightTarget);
     _notesCurrentId = id;
     _notesCurrentKind = kind;
 

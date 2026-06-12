@@ -1024,6 +1024,40 @@ body.readonly #palette {
     stroke-width: 2.5px !important;
     opacity: 1 !important;
 }
+#diagram.flow-active g.node:not(.flow-node-member) {
+    opacity: 0.2 !important;
+}
+#diagram.flow-active g.node.flow-node-member > rect:first-of-type,
+#diagram.flow-active g.node.flow-node-member > polygon:first-of-type,
+#diagram.flow-active g.node.flow-node-member > path:first-of-type,
+#diagram.flow-active g.node.flow-node-member > circle:first-of-type,
+#diagram.flow-active g.node.flow-node-member > ellipse:first-of-type {
+    stroke: #bf616a !important;
+    stroke-dasharray: none !important;
+}
+#diagram.flow-active g.node.flow-node-active > rect:first-of-type,
+#diagram.flow-active g.node.flow-node-active > polygon:first-of-type,
+#diagram.flow-active g.node.flow-node-active > path:first-of-type,
+#diagram.flow-active g.node.flow-node-active > circle:first-of-type,
+#diagram.flow-active g.node.flow-node-active > ellipse:first-of-type {
+    fill: #eceff4 !important;
+    stroke: #eceff4 !important;
+    stroke-dasharray: none !important;
+    filter: url(#aq-sel-outline);
+}
+#diagram.flow-active g.cluster.flow-cluster-member > rect:first-of-type,
+#diagram.flow-active g.cluster.flow-cluster-member > polygon:first-of-type,
+#diagram.flow-active g.cluster.flow-cluster-member > path:first-of-type {
+    stroke: #bf616a !important;
+    stroke-dasharray: none !important;
+}
+#diagram.flow-active g.cluster.flow-cluster-active > rect:first-of-type,
+#diagram.flow-active g.cluster.flow-cluster-active > polygon:first-of-type,
+#diagram.flow-active g.cluster.flow-cluster-active > path:first-of-type {
+    stroke: #eceff4 !important;
+    stroke-width: 2px !important;
+    stroke-dasharray: none !important;
+}
 /* Flow torch ring: white moving highlight */
 #diagram path.flow-edge-ring {
     fill: none !important;

@@ -10011,6 +10011,7 @@
 
   function _drawFlowRing(edge) {
     if (!edge || !edge.path || !edge.path.parentNode) return;
+    if (edge.path.style.display === "none") return; // inside collapsed capsule
     const clone = edge.path.cloneNode(false);
     clone.removeAttribute("style");
     clone.removeAttribute("marker-end");
@@ -10024,15 +10025,51 @@
 
   function _applyFlowMemberClasses(flowEdgeKeys) {
     const flowSet = new Set(flowEdgeKeys);
+    const nodeSet = new Set();
+    for (const key of flowEdgeKeys) {
+      const p = key.split("|"); nodeSet.add(p[0]); nodeSet.add(p[1]);
+    }
     for (const e of edges) {
       e.path.classList.toggle("flow-member", flowSet.has(edgeKey(e)));
+    }
+    for (const id of Object.keys(nodeMap)) {
+      nodeMap[id].g.classList.toggle("flow-node-member", nodeSet.has(id));
+    }
+    for (const cid of Object.keys(clusterMap)) {
+      const hasMember = [...nodeSet].some(nid => clusterMap[cid].members.has(nid));
+      clusterMap[cid].g.classList.toggle("flow-cluster-member", hasMember);
     }
     diagramEl.classList.add("flow-active");
   }
 
   function _removeFlowClasses() {
     for (const e of edges) e.path.classList.remove("flow-member");
+    for (const id of Object.keys(nodeMap)) {
+      nodeMap[id].g.classList.remove("flow-node-member", "flow-node-active");
+    }
+    for (const cid of Object.keys(clusterMap)) {
+      clusterMap[cid].g.classList.remove("flow-cluster-member", "flow-cluster-active");
+    }
     diagramEl.classList.remove("flow-active");
+  }
+
+  function _clearFlowActive() {
+    _clearFlowRings();
+    for (const id of Object.keys(nodeMap)) nodeMap[id].g.classList.remove("flow-node-active");
+    for (const cid of Object.keys(clusterMap)) clusterMap[cid].g.classList.remove("flow-cluster-active");
+  }
+
+  function _buildFlowSteps(flow) {
+    const steps = [];
+    let prevTarget = null;
+    for (const key of flow.edges) {
+      const p = key.split("|"); const src = p[0], tgt = p[1];
+      if (src !== prevTarget) steps.push({type: "node", id: src});
+      steps.push({type: "edge", key});
+      steps.push({type: "node", id: tgt});
+      prevTarget = tgt;
+    }
+    return steps;
   }
 
   // Re-apply after renderDiagram wipes the SVG (called from renderDiagram hook).
@@ -10045,7 +10082,7 @@
   function resetFlowPlayState() {
     if (_flowPlayTimer) { clearTimeout(_flowPlayTimer); _flowPlayTimer = null; }
     _flowPlayId = null; _flowPlayIdx = 0;
-    _clearFlowRings();
+    _clearFlowActive();
     _removeFlowClasses();
     _editingFlowId = null; _addingFlow = false;
   }
@@ -10053,7 +10090,7 @@
   function stopFlow() {
     if (_flowPlayTimer) { clearTimeout(_flowPlayTimer); _flowPlayTimer = null; }
     _flowPlayId = null; _flowPlayIdx = 0;
-    _clearFlowRings();
+    _clearFlowActive();
     _removeFlowClasses();
     renderFlowsPanel();
   }
@@ -10066,16 +10103,31 @@
     _flowPlayId = id; _flowPlayIdx = 0;
     _applyFlowMemberClasses(flow.edges);
     renderFlowsPanel();
+    const steps = _buildFlowSteps(flow);
 
     const step = () => {
-      _clearFlowRings();
-      if (_flowPlayIdx < flow.edges.length) {
-        const e = findEdgeByKey(flow.edges[_flowPlayIdx]);
-        if (e) _drawFlowRing(e);
-        _flowPlayIdx++;
-        _flowPlayTimer = setTimeout(step, 500);
+      _clearFlowActive();
+      if (_flowPlayIdx < steps.length) {
+        const s = steps[_flowPlayIdx++];
+        if (s.type === "edge") {
+          const e = findEdgeByKey(s.key);
+          if (e) _drawFlowRing(e);
+          const ep = s.key.split("|");
+          for (const cid of Object.keys(clusterMap)) {
+            const m = clusterMap[cid].members;
+            if (m.has(ep[0]) || m.has(ep[1])) clusterMap[cid].g.classList.add("flow-cluster-active");
+          }
+          _flowPlayTimer = setTimeout(step, 500);
+        } else {
+          const n = nodeMap[s.id];
+          if (n) n.g.classList.add("flow-node-active");
+          for (const cid of Object.keys(clusterMap)) {
+            if (clusterMap[cid].members.has(s.id)) clusterMap[cid].g.classList.add("flow-cluster-active");
+          }
+          _flowPlayTimer = setTimeout(step, 500);
+        }
       } else {
-        // End of cycle — pause 1 s with no torch, then restart
+        // End of cycle — pause 1 s, then restart
         _flowPlayIdx = 0;
         _flowPlayTimer = setTimeout(step, 1000);
       }
@@ -10118,7 +10170,7 @@
   }
 
   function deleteFlow(id) {
-    if (_flowPlayId === id) { if (_flowPlayTimer) { clearTimeout(_flowPlayTimer); _flowPlayTimer = null; } _flowPlayId = null; _clearFlowRings(); _removeFlowClasses(); }
+    if (_flowPlayId === id) { if (_flowPlayTimer) { clearTimeout(_flowPlayTimer); _flowPlayTimer = null; } _flowPlayId = null; _clearFlowActive(); _removeFlowClasses(); }
     if (_editingFlowId === id) _editingFlowId = null;
     flows = flows.filter(f => f.id !== id);
     markDirtyLayout();

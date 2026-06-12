@@ -93,17 +93,28 @@
     <aside id="notesPanel">
         <div class="panel-header">
             <button id="toggleNotesPanelBtn" title="<?= __('editor.collapse') ?>">»</button>
-            <span class="panel-title"><?= __('editor.notes') ?></span>
             <span id="notesTargetLabel" class="notes-target"></span>
         </div>
-        <div id="notesBody">
-            <div id="notesEmpty" class="notes-empty">
-                <?= __('editor.notes_empty') ?>
-            </div>
-            <div id="notesGrounding" class="notes-grounding hidden"></div>
+        <div class="rp-tabs">
+            <button class="rp-tab active" data-tab="note"><?= __('editor.tab.note') ?></button>
+            <button class="rp-tab" data-tab="grounding"><?= __('editor.tab.grounding') ?></button>
+            <button class="rp-tab" data-tab="flows"><?= __('editor.tab.flows') ?></button>
+        </div>
+        <div id="notesBody" class="rp-pane">
+            <div id="notesEmpty" class="notes-empty"><?= __('editor.notes_empty') ?></div>
             <textarea id="notesTextarea" class="hidden"
                       spellcheck="false"
                       placeholder="<?= __('editor.notes_placeholder') ?>"></textarea>
+        </div>
+        <div id="groundingPane" class="rp-pane hidden">
+            <div id="notesGrounding" class="notes-grounding hidden"></div>
+            <div id="groundingEmpty" class="notes-empty"><?= __('editor.grounding_empty') ?></div>
+        </div>
+        <div id="flussiPane" class="rp-pane hidden">
+            <div id="flowList" class="flow-list"></div>
+            <div class="flow-add-bar">
+                <button id="flowAddBtn" class="flow-add-btn" disabled></button>
+            </div>
         </div>
     </aside>
 </div>

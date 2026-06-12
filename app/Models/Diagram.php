@@ -186,7 +186,11 @@ final class Diagram
     public static function listForProject(int $projectId): array
     {
         $stmt = db()->prepare(
-            'SELECT * FROM diagrams WHERE project_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC'
+            'SELECT d.*,
+                    (SELECT COUNT(*) FROM diagram_shares ds WHERE ds.diagram_id = d.id) AS share_count
+             FROM diagrams d
+             WHERE d.project_id = ? AND d.deleted_at IS NULL
+             ORDER BY d.updated_at DESC'
         );
         $stmt->execute([$projectId]);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -199,9 +203,11 @@ final class Diagram
     public static function listUnfiledForUser(int $userId): array
     {
         $stmt = db()->prepare(
-            'SELECT * FROM diagrams
-             WHERE owner_id = ? AND project_id IS NULL AND deleted_at IS NULL
-             ORDER BY updated_at DESC'
+            'SELECT d.*,
+                    (SELECT COUNT(*) FROM diagram_shares ds WHERE ds.diagram_id = d.id) AS share_count
+             FROM diagrams d
+             WHERE d.owner_id = ? AND d.project_id IS NULL AND d.deleted_at IS NULL
+             ORDER BY d.updated_at DESC'
         );
         $stmt->execute([$userId]);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);

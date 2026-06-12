@@ -535,11 +535,13 @@
       try {
         const { status, json } = await api("GET", "/api/projects");
         if (status === 200 && Array.isArray(json)) {
+          const lastProject = localStorage.getItem("aquata_last_move_project") || "";
           for (const p of json) {
             const opt = document.createElement("option");
             opt.value = p.slug;
             opt.textContent = p.title || p.slug;
             if (projectSlug && p.slug === projectSlug) opt.selected = true;
+            else if (!projectSlug && p.slug === lastProject) opt.selected = true;
             moveSelect.appendChild(opt);
           }
         }
@@ -555,7 +557,10 @@
         const { status, json } = await api("POST",
           `/api/diagrams/${encodeURIComponent(moveSlug)}/move`,
           { project: target || null });
-        if (status === 200) { location.reload(); }
+        if (status === 200) {
+          localStorage.setItem("aquata_last_move_project", target || "");
+          location.reload();
+        }
         else { moveError.textContent = (json && json.error) || `HTTP ${status}`; }
       } catch (e) { moveError.textContent = e.message || String(e); }
     };

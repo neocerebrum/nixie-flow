@@ -70,6 +70,7 @@ return [
     'dashboard.empty'           => 'まだダイアグラムがありません。最初のダイアグラムを作成しましょう。',
     'dashboard.updated'         => '更新日 %s',
     'dashboard.share'           => '共有',
+    'dashboard.is_shared'       => '他のユーザーと共有',
     'dashboard.rename'          => '名前を変更',
     'dashboard.delete'          => '削除',
     'dashboard.shared_with_me'  => '共有されたダイアグラム',
@@ -176,6 +177,11 @@ return [
     'editor.modal.subgraph.frame_locked'      => '位置をロック',
     'editor.modal.subgraph.frame_locked_hint' => '（枠は固定されますが、内部のノードやサブグラフは編集できます。枠の上をドラッグすると内容を範囲選択できます）',
     'editor.notes'              => 'メモ',
+    'editor.tab.note' => 'ノート',
+    'editor.tab.grounding' => '検証',
+    'editor.tab.flows' => 'フロー',
+    'editor.grounding_empty' => 'ノードまたはサブグラフを選択して検証情報を表示します。',
+    'editor.flows_empty' => 'フローはまだありません。',
     'editor.notes_empty'        => 'ノードまたはサブグラフを選択してメモを編集してください。',
     'editor.notes_placeholder'  => '選択した要素のメモをここに記入してください。ソースに %% コメントとして保存されます（Claudeからも参照可能）。',
     'editor.modal.new_node.title'       => '新しいノード',
@@ -575,6 +581,17 @@ return [
     'js.editor.select_1_source'         => 'まず1つのノードまたは1つのサブグラフを始点として選択してください',
     'js.editor.select_1_or_more'        => 'まず1つ以上のノードまたは1つのサブグラフを選択してください',
 
+    // flows (flussi) panel
+    'js.editor.flows.add' => 'フローを追加',
+    'js.editor.flows.play' => '再生',
+    'js.editor.flows.stop' => '停止',
+    'js.editor.flows.edit' => 'フローを編集',
+    'js.editor.flows.save' => '保存',
+    'js.editor.flows.cancel' => 'キャンセル',
+    'js.editor.flows.delete' => 'フローを削除',
+    'js.editor.flows.empty' => 'フローはまだありません。',
+    'js.editor.flows.name_hint' => 'フロー名…',
+    'js.editor.flows.unnamed' => '名前のないフロー',
     // footer
     'footer.source'                     => 'ソースコード',
 ];

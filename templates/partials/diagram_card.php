@@ -12,7 +12,12 @@ $cardReadonly = !empty($readonly);
     <a class="diagram-card-link" href="/editor/<?= e($d['slug']) ?>">
         <h3><?= e($d['title'] ?: $d['slug']) ?></h3>
         <p class="diagram-slug"><code><?= e($d['slug']) ?></code></p>
-        <p class="diagram-meta"><?= __('dashboard.updated', e($d['updated_at'])) ?></p>
+        <p class="diagram-meta">
+            <?= __('dashboard.updated', e($d['updated_at'])) ?>
+            <?php if (!$cardReadonly && !empty($d['share_count']) && (int)$d['share_count'] > 0): ?>
+                <span class="card-share-dot" title="<?= __('dashboard.is_shared') ?>"><svg class="icon icon-sm"><use href="#icon-share"/></svg></span>
+            <?php endif; ?>
+        </p>
     </a>
     <div class="diagram-card-actions">
         <?php if (!$cardReadonly): ?>

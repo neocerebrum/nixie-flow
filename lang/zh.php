@@ -70,6 +70,7 @@ return [
     'dashboard.empty'           => '您还没有图表。创建第一个图表以开始使用。',
     'dashboard.updated'         => '更新于 %s',
     'dashboard.share'           => '共享',
+    'dashboard.is_shared'       => '已与他人共享',
     'dashboard.rename'          => '重命名',
     'dashboard.delete'          => '删除',
     'dashboard.shared_with_me'  => '与我共享',
@@ -176,6 +177,11 @@ return [
     'editor.modal.subgraph.frame_locked'      => '锁定位置',
     'editor.modal.subgraph.frame_locked_hint' => '（外框保持固定，但仍可编辑内部的节点和子图；在其上拖动可框选其内容）',
     'editor.notes'              => '备注',
+    'editor.tab.note' => '注释',
+    'editor.tab.grounding' => '验证',
+    'editor.tab.flows' => '流程',
+    'editor.grounding_empty' => '选择节点或子图以查看其验证信息。',
+    'editor.flows_empty' => '暂无流程。',
     'editor.notes_empty'        => '选择一个节点或子图以编辑其备注。',
     'editor.notes_placeholder'  => '在此处为选中的元素添加备注。备注将以 %% 注释的形式保存在源码中（Claude 也可见）。',
     'editor.modal.new_node.title'       => '新建节点',
@@ -575,6 +581,17 @@ return [
     'js.editor.select_1_source'         => '请先选择 1 个节点或 1 个子图作为源',
     'js.editor.select_1_or_more'        => '请先选择 1 个或多个节点，或 1 个子图',
 
+    // flows (flussi) panel
+    'js.editor.flows.add' => '添加流程',
+    'js.editor.flows.play' => '播放',
+    'js.editor.flows.stop' => '停止',
+    'js.editor.flows.edit' => '编辑流程',
+    'js.editor.flows.save' => '保存',
+    'js.editor.flows.cancel' => '取消',
+    'js.editor.flows.delete' => '删除流程',
+    'js.editor.flows.empty' => '暂无流程。',
+    'js.editor.flows.name_hint' => '流程名称…',
+    'js.editor.flows.unnamed' => '未命名流程',
     // footer
     'footer.source'                     => '源代码',
 ];

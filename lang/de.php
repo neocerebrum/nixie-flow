@@ -70,6 +70,7 @@ return [
     'dashboard.empty'           => 'Sie haben noch keine Diagramme. Erstellen Sie Ihr erstes, um loszulegen.',
     'dashboard.updated'         => 'Aktualisiert %s',
     'dashboard.share'           => 'Teilen',
+    'dashboard.is_shared'       => 'Mit anderen geteilt',
     'dashboard.rename'          => 'Umbenennen',
     'dashboard.delete'          => 'Löschen',
     'dashboard.shared_with_me'  => 'Mit mir geteilt',
@@ -176,6 +177,11 @@ return [
     'editor.modal.subgraph.frame_locked'      => 'Position sperren',
     'editor.modal.subgraph.frame_locked_hint' => ' (der Rahmen bleibt fixiert, aber die enthaltenen Knoten und Subgraphen bleiben bearbeitbar; darüber ziehen, um den Inhalt per Auswahlrahmen zu wählen)',
     'editor.notes'              => 'Notizen',
+    'editor.tab.note' => 'Notiz',
+    'editor.tab.grounding' => 'Grounding',
+    'editor.tab.flows' => 'Abläufe',
+    'editor.grounding_empty' => 'Wählen Sie einen Knoten oder Teilgraphen aus.',
+    'editor.flows_empty' => 'Noch keine Abläufe.',
     'editor.notes_empty'        => 'Wählen Sie einen Knoten oder Subgraph aus, um dessen Notizen zu bearbeiten.',
     'editor.notes_placeholder'  => 'Schreiben Sie hier Notizen zum ausgewählten Element. Sie werden in der Quelle als %%-Kommentare gespeichert (auch für Claude sichtbar).',
     'editor.modal.new_node.title'       => 'Neuer Knoten',
@@ -575,6 +581,17 @@ return [
     'js.editor.select_1_source'         => 'wählen Sie zuerst 1 Knoten oder 1 Subgraph als Quelle',
     'js.editor.select_1_or_more'        => 'wählen Sie zuerst 1+ Knoten oder 1 Subgraph',
 
+    // flows (flussi) panel
+    'js.editor.flows.add' => 'Ablauf hinzufügen',
+    'js.editor.flows.play' => 'Abspielen',
+    'js.editor.flows.stop' => 'Stoppen',
+    'js.editor.flows.edit' => 'Ablauf bearbeiten',
+    'js.editor.flows.save' => 'Speichern',
+    'js.editor.flows.cancel' => 'Abbrechen',
+    'js.editor.flows.delete' => 'Ablauf löschen',
+    'js.editor.flows.empty' => 'Keine Abläufe.',
+    'js.editor.flows.name_hint' => 'Name des Ablaufs…',
+    'js.editor.flows.unnamed' => 'Unbenannter Ablauf',
     // footer
     'footer.source'                     => 'Quellcode',
 ];

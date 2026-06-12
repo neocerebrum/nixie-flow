@@ -240,9 +240,9 @@ body.source-invalid #resizer { background: #bf616a; }
     flex-shrink: 0;
 }
 #notesPanel.collapsed { width: 18px; }
-#notesPanel.collapsed #notesBody,
-#notesPanel.collapsed #notesTargetLabel,
-#notesPanel.collapsed .panel-title { display: none; }
+#notesPanel.collapsed .rp-tabs,
+#notesPanel.collapsed .rp-pane,
+#notesPanel.collapsed #notesTargetLabel { display: none; }
 #notesPanel.collapsed .panel-header { padding: 8px 0; }
 #notesPanel.collapsed #toggleNotesPanelBtn { margin: 0 auto; }
 #notesPanel #toggleNotesPanelBtn {
@@ -251,7 +251,6 @@ body.source-invalid #resizer { background: #bf616a; }
     order: -1;
 }
 #notesPanel #toggleNotesPanelBtn:hover { color: #eceff4; }
-#notesPanel .panel-title { color: #88c0d0; font-weight: 600; }
 .notes-target {
     flex: 1; font-size: 11px; font-family: monospace;
     color: #8fbcbb;
@@ -260,7 +259,22 @@ body.source-invalid #resizer { background: #bf616a; }
 .notes-target .notes-target-id { color: #ebcb8b; }
 .notes-target .notes-target-sep { color: #6f7a88; margin: 0 4px; }
 .notes-target .notes-target-caption { color: #d8dee9; }
-#notesBody {
+/* Right-panel tab bar */
+.rp-tabs {
+    display: flex; border-bottom: 1px solid #2a3441;
+    flex-shrink: 0;
+}
+.rp-tab {
+    flex: 1; padding: 7px 4px;
+    background: none; border: none; border-bottom: 2px solid transparent;
+    color: #6f7a88; font-size: 11px; font-family: inherit;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    cursor: pointer; transition: color 0.12s, border-color 0.12s;
+}
+.rp-tab:hover { color: #d8dee9; }
+.rp-tab.active { color: #88c0d0; border-bottom-color: #88c0d0; }
+/* Right-panel panes */
+.rp-pane {
     flex: 1; display: flex; flex-direction: column;
     min-height: 0; overflow: hidden;
 }
@@ -953,3 +967,69 @@ body.readonly #palette {
 .notes-grounding ul.ng-ev li { margin: 3px 0; word-break: break-word; }
 .notes-grounding ul.ng-ev code { color: #ebcb8b; font-size: 11px; }
 .notes-grounding .ng-q { color: #97a0ad; }
+
+/* ── Flows (flussi) panel ─────────────────────────────────────────────────── */
+.flow-list {
+    flex: 1; overflow-y: auto; min-height: 0;
+}
+.flow-item {
+    display: flex; align-items: center; gap: 6px;
+    padding: 7px 12px; border-bottom: 1px solid #1c2530;
+    font-size: 12px;
+}
+.flow-item.flow-playing .flow-name { color: #d08770; }
+.flow-item.flow-editing { background: rgba(94,129,172,0.08); }
+.flow-name {
+    flex: 1; color: #d8dee9;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.flow-actions { display: flex; gap: 2px; flex-shrink: 0; }
+.flow-btn {
+    background: none; border: 1px solid transparent;
+    color: #6f7a88; cursor: pointer; padding: 3px 5px;
+    border-radius: 3px; font-size: 11px; font-family: inherit;
+    display: inline-flex; align-items: center;
+    transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+.flow-btn:hover { background: #1c2530; color: #d8dee9; border-color: #3a4551; }
+.flow-btn.flow-play.active { color: #d08770; }
+.flow-btn.flow-save  { color: #a3be8c; }
+.flow-btn.flow-delete:hover { color: #bf616a; border-color: rgba(191,97,106,0.4); }
+.flow-name-input {
+    flex: 1; background: #0b0f14; color: #d8dee9;
+    border: 1px solid #5e81ac; border-radius: 3px;
+    padding: 3px 6px; font-size: 12px; font-family: inherit;
+    outline: none;
+}
+.flow-add-bar {
+    padding: 8px 12px; border-top: 1px solid #2a3441; flex-shrink: 0;
+}
+.flow-add-btn {
+    width: 100%; padding: 5px 8px;
+    background: none; border: 1px solid #3a4551;
+    color: #6f7a88; border-radius: 3px; cursor: pointer;
+    font-size: 12px; font-family: inherit;
+    transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+.flow-add-btn:not(:disabled):hover { background: #1c2530; color: #88c0d0; border-color: #88c0d0; }
+.flow-add-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Flow playback: dim non-members, highlight members in red, torch in white */
+#diagram.flow-active path.flowchart-link:not(.flow-member) {
+    stroke: #1c2530 !important;
+    opacity: 0.35 !important;
+}
+#diagram.flow-active path.flowchart-link.flow-member {
+    stroke: #bf616a !important;
+    stroke-width: 2.5px !important;
+    opacity: 1 !important;
+}
+/* Flow torch ring: white moving highlight */
+#diagram path.flow-edge-ring {
+    fill: none !important;
+    stroke: #eceff4 !important;
+    stroke-width: 5px !important;
+    stroke-linecap: round;
+    opacity: 0.95;
+    pointer-events: none;
+}

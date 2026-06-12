@@ -70,6 +70,7 @@ return [
     'dashboard.empty'           => '아직 다이어그램이 없습니다. 첫 번째 다이어그램을 만들어 시작하세요.',
     'dashboard.updated'         => '%s에 수정됨',
     'dashboard.share'           => '공유',
+    'dashboard.is_shared'       => '다른 사람과 공유',
     'dashboard.rename'          => '이름 변경',
     'dashboard.delete'          => '삭제',
     'dashboard.shared_with_me'  => '나와 공유된 항목',
@@ -176,6 +177,11 @@ return [
     'editor.modal.subgraph.frame_locked'      => '위치 잠금',
     'editor.modal.subgraph.frame_locked_hint' => ' (테두리는 고정되지만 내부의 노드와 서브그래프는 편집할 수 있음; 위를 드래그하면 내용을 마키 선택)',
     'editor.notes'              => '메모',
+    'editor.tab.note' => '노트',
+    'editor.tab.grounding' => '검증',
+    'editor.tab.flows' => '흐름',
+    'editor.grounding_empty' => '노드 또는 서브그래프를 선택하여 검증 정보를 확인하세요.',
+    'editor.flows_empty' => '흐름이 없습니다.',
     'editor.notes_empty'        => '메모를 편집하려면 노드 또는 서브그래프를 선택하세요.',
     'editor.notes_placeholder'  => '선택된 요소에 대한 메모를 여기에 작성하세요. 소스에 %% 주석으로 저장됩니다 (Claude에서도 볼 수 있습니다).',
     'editor.modal.new_node.title'       => '새 노드',
@@ -575,6 +581,17 @@ return [
     'js.editor.select_1_source'         => '먼저 1개 노드 또는 1개 서브그래프를 출발로 선택하세요',
     'js.editor.select_1_or_more'        => '먼저 1개 이상의 노드 또는 1개 서브그래프를 선택하세요',
 
+    // flows (flussi) panel
+    'js.editor.flows.add' => '흐름 추가',
+    'js.editor.flows.play' => '재생',
+    'js.editor.flows.stop' => '정지',
+    'js.editor.flows.edit' => '흐름 편집',
+    'js.editor.flows.save' => '저장',
+    'js.editor.flows.cancel' => '취소',
+    'js.editor.flows.delete' => '흐름 삭제',
+    'js.editor.flows.empty' => '흐름이 없습니다.',
+    'js.editor.flows.name_hint' => '흐름 이름…',
+    'js.editor.flows.unnamed' => '이름 없는 흐름',
     // footer
     'footer.source'                     => '소스 코드',
 ];

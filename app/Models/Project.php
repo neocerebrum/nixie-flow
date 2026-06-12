@@ -45,7 +45,9 @@ final class Project
         $stmt = db()->prepare(
             "SELECT p.*,
                     (SELECT COUNT(*) FROM diagrams d
-                     WHERE d.project_id = p.id AND d.deleted_at IS NULL) AS diagram_count
+                     WHERE d.project_id = p.id AND d.deleted_at IS NULL) AS diagram_count,
+                    (SELECT COUNT(*) FROM project_shares ps
+                     WHERE ps.project_id = p.id) AS share_count
              FROM projects p
              WHERE p.owner_id = ? AND p.deleted_at IS NULL
              ORDER BY p.updated_at DESC"

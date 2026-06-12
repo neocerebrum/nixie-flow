@@ -70,6 +70,7 @@ return [
     'dashboard.empty'           => 'Vous n\'avez pas encore de diagrammes. Créez le premier pour commencer.',
     'dashboard.updated'         => 'Modifié %s',
     'dashboard.share'           => 'Partager',
+    'dashboard.is_shared'       => 'Partagé avec d'autres',
     'dashboard.rename'          => 'Renommer',
     'dashboard.delete'          => 'Supprimer',
     'dashboard.shared_with_me'  => 'Partagés avec moi',
@@ -176,6 +177,11 @@ return [
     'editor.modal.subgraph.frame_locked'      => 'Verrouiller la position',
     'editor.modal.subgraph.frame_locked_hint' => ' (le cadre reste fixe, mais vous pouvez modifier les nœuds et sous-graphes internes ; glissez dessus pour sélectionner son contenu au lasso)',
     'editor.notes'              => 'Notes',
+    'editor.tab.note' => 'Note',
+    'editor.tab.grounding' => 'Grounding',
+    'editor.tab.flows' => 'Flux',
+    'editor.grounding_empty' => 'Sélectionnez un nœud ou sous-graphe pour voir le grounding.',
+    'editor.flows_empty' => 'Aucun flux pour l\'instant.',
     'editor.notes_empty'        => 'Sélectionnez un node ou un subgraph pour modifier ses notes.',
     'editor.notes_placeholder'  => 'Écrivez les notes pour l\'élément sélectionné ici. Elles sont enregistrées dans la source sous forme de commentaires %% (visibles aussi par Claude).',
     'editor.modal.new_node.title'       => 'Nouveau node',
@@ -575,6 +581,17 @@ return [
     'js.editor.select_1_source'         => 'sélectionnez d\'abord 1 node ou 1 subgraph comme source',
     'js.editor.select_1_or_more'        => 'sélectionnez d\'abord 1+ nodes ou 1 subgraph',
 
+    // flows (flussi) panel
+    'js.editor.flows.add' => 'Ajouter un flux',
+    'js.editor.flows.play' => 'Lire',
+    'js.editor.flows.stop' => 'Arrêter',
+    'js.editor.flows.edit' => 'Modifier le flux',
+    'js.editor.flows.save' => 'Enregistrer',
+    'js.editor.flows.cancel' => 'Annuler',
+    'js.editor.flows.delete' => 'Supprimer le flux',
+    'js.editor.flows.empty' => 'Aucun flux.',
+    'js.editor.flows.name_hint' => 'Nom du flux…',
+    'js.editor.flows.unnamed' => 'Flux sans nom',
     // footer
     'footer.source'                     => 'Code source',
 ];

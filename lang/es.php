@@ -70,6 +70,7 @@ return [
     'dashboard.empty'           => 'Aun no tienes diagramas. Crea el primero para empezar.',
     'dashboard.updated'         => 'Actualizado %s',
     'dashboard.share'           => 'Compartir',
+    'dashboard.is_shared'       => 'Compartido con otros',
     'dashboard.rename'          => 'Renombrar',
     'dashboard.delete'          => 'Eliminar',
     'dashboard.shared_with_me'  => 'Compartidos conmigo',
@@ -176,6 +177,11 @@ return [
     'editor.modal.subgraph.frame_locked'      => 'Bloquear posición',
     'editor.modal.subgraph.frame_locked_hint' => ' (el marco queda fijo, pero puedes editar los nodos y subgrafos internos; arrastra sobre él para seleccionar su contenido con el marco de selección)',
     'editor.notes'              => 'Notas',
+    'editor.tab.note' => 'Nota',
+    'editor.tab.grounding' => 'Grounding',
+    'editor.tab.flows' => 'Flujos',
+    'editor.grounding_empty' => 'Seleccione un nodo o subgrafo para ver su grounding.',
+    'editor.flows_empty' => 'Sin flujos aún.',
     'editor.notes_empty'        => 'Selecciona un nodo o un subgraph para editar sus notas.',
     'editor.notes_placeholder'  => 'Escribe aqui las notas del elemento seleccionado. Se guardan en el fuente como comentarios %% (visibles tambien para Claude).',
     'editor.modal.new_node.title'       => 'Nuevo nodo',
@@ -575,6 +581,17 @@ return [
     'js.editor.select_1_source'         => 'selecciona primero 1 nodo o 1 subgraph como origen',
     'js.editor.select_1_or_more'        => 'selecciona primero 1+ nodos o 1 subgraph',
 
+    // flows (flussi) panel
+    'js.editor.flows.add' => 'Añadir flujo',
+    'js.editor.flows.play' => 'Reproducir',
+    'js.editor.flows.stop' => 'Detener',
+    'js.editor.flows.edit' => 'Editar flujo',
+    'js.editor.flows.save' => 'Guardar',
+    'js.editor.flows.cancel' => 'Cancelar',
+    'js.editor.flows.delete' => 'Eliminar flujo',
+    'js.editor.flows.empty' => 'Sin flujos aún.',
+    'js.editor.flows.name_hint' => 'Nombre del flujo…',
+    'js.editor.flows.unnamed' => 'Flujo sin nombre',
     // footer
     'footer.source'                     => 'Código fuente',
 ];

@@ -70,6 +70,7 @@ return [
     'dashboard.empty'           => 'Non hai ancora diagrammi. Crea il primo per iniziare.',
     'dashboard.updated'         => 'Aggiornato %s',
     'dashboard.share'           => 'Condividi',
+    'dashboard.is_shared'       => 'Condiviso con altri',
     'dashboard.share_project'   => 'Condividi progetto',
     'dashboard.rename'          => 'Rinomina',
     'dashboard.delete'          => 'Elimina',
@@ -178,6 +179,11 @@ return [
     'editor.modal.subgraph.frame_locked'      => 'Blocca posizione',
     'editor.modal.subgraph.frame_locked_hint' => ' (il box resta fermo, ma puoi comunque modificare i nodi e i subgraph interni; trascina sopra di esso per selezionarne il contenuto col marquee)',
     'editor.notes'              => 'Note',
+    'editor.tab.note' => 'Nota',
+    'editor.tab.grounding' => 'Grounding',
+    'editor.tab.flows' => 'Flussi',
+    'editor.grounding_empty' => 'Seleziona un nodo o sottografo per vedere il grounding.',
+    'editor.flows_empty' => 'Nessun flusso.',
     'editor.notes_empty'        => 'Seleziona un nodo o un subgraph per modificarne le note.',
     'editor.notes_placeholder'  => 'Scrivi qui le note per l\'elemento selezionato. Sono salvate nel sorgente come commenti %% (visibili anche da Claude).',
     'editor.modal.new_node.title'       => 'Nuovo nodo',
@@ -577,6 +583,17 @@ return [
     'js.editor.select_1_source'         => 'seleziona prima 1 nodo o 1 subgraph come sorgente',
     'js.editor.select_1_or_more'        => 'seleziona prima 1+ nodi o 1 subgraph',
 
+    // flows (flussi) panel
+    'js.editor.flows.add' => 'Aggiungi flusso',
+    'js.editor.flows.play' => 'Riproduci',
+    'js.editor.flows.stop' => 'Ferma',
+    'js.editor.flows.edit' => 'Modifica flusso',
+    'js.editor.flows.save' => 'Salva',
+    'js.editor.flows.cancel' => 'Annulla',
+    'js.editor.flows.delete' => 'Elimina flusso',
+    'js.editor.flows.empty' => 'Nessun flusso.',
+    'js.editor.flows.name_hint' => 'Nome del flusso…',
+    'js.editor.flows.unnamed' => 'Flusso senza nome',
     // footer
     'footer.source'                     => 'Codice sorgente',
 ];

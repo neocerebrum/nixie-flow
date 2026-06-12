@@ -70,6 +70,7 @@ return [
     'dashboard.empty'           => 'Você ainda não tem diagramas. Crie o primeiro para começar.',
     'dashboard.updated'         => 'Atualizado %s',
     'dashboard.share'           => 'Compartilhar',
+    'dashboard.is_shared'       => 'Compartilhado com outros',
     'dashboard.rename'          => 'Renomear',
     'dashboard.delete'          => 'Excluir',
     'dashboard.shared_with_me'  => 'Compartilhados comigo',
@@ -176,6 +177,11 @@ return [
     'editor.modal.subgraph.frame_locked'      => 'Bloquear posição',
     'editor.modal.subgraph.frame_locked_hint' => ' (a moldura fica fixa, mas você pode editar os nós e subgrafos internos; arraste sobre ela para selecionar o conteúdo com o marquee)',
     'editor.notes'              => 'Notas',
+    'editor.tab.note' => 'Nota',
+    'editor.tab.grounding' => 'Grounding',
+    'editor.tab.flows' => 'Fluxos',
+    'editor.grounding_empty' => 'Selecione um nó ou subgrafo para ver seu grounding.',
+    'editor.flows_empty' => 'Nenhum fluxo ainda.',
     'editor.notes_empty'        => 'Selecione um nó ou subgraph para editar suas notas.',
     'editor.notes_placeholder'  => 'Escreva aqui as notas para o elemento selecionado. Elas são salvas no fonte como comentários %% (também visíveis para o Claude).',
     'editor.modal.new_node.title'       => 'Novo nó',
@@ -575,6 +581,17 @@ return [
     'js.editor.select_1_source'         => 'selecione primeiro 1 nó ou 1 subgraph como origem',
     'js.editor.select_1_or_more'        => 'selecione primeiro 1+ nós ou 1 subgraph',
 
+    // flows (flussi) panel
+    'js.editor.flows.add' => 'Adicionar fluxo',
+    'js.editor.flows.play' => 'Reproduzir',
+    'js.editor.flows.stop' => 'Parar',
+    'js.editor.flows.edit' => 'Editar fluxo',
+    'js.editor.flows.save' => 'Salvar',
+    'js.editor.flows.cancel' => 'Cancelar',
+    'js.editor.flows.delete' => 'Excluir fluxo',
+    'js.editor.flows.empty' => 'Nenhum fluxo ainda.',
+    'js.editor.flows.name_hint' => 'Nome do fluxo…',
+    'js.editor.flows.unnamed' => 'Fluxo sem nome',
     // footer
     'footer.source'                     => 'Código-fonte',
 ];

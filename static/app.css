@@ -413,6 +413,10 @@ table.data th.actions { text-align: right; }
 .btn-icon:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .btn-icon.danger:hover { color: var(--warn); border-color: rgba(249, 117, 131, 0.4); background: rgba(249, 117, 131, 0.10); }
 .diagram-card-shared { border-style: dashed; }
+.card-share-dot {
+    display: inline-flex; align-items: center; vertical-align: middle;
+    color: var(--accent); opacity: 0.7; margin-left: 4px;
+}
 .share-perm-badge {
     background: var(--bg-elev, #1c242e);
     color: var(--accent, #88c0d0);
@@ -540,13 +544,15 @@ table.data th.actions { text-align: right; }
 }
 .modal-box .field-check input { width: auto; margin: 0; }
 .modal-box .field-check small { color: var(--muted); font-weight: normal; }
-.modal-box input[type=text] {
+.modal-box input[type=text],
+.modal-box select {
     width: 100%; padding: 6px 8px;
     background: var(--bg); color: var(--fg);
     border: 1px solid var(--border); border-radius: 3px; font-size: 0.9rem;
-    font-family: inherit;
+    font-family: inherit; appearance: none;
 }
-.modal-box input[type=text]:focus { outline: none; border-color: var(--accent); }
+.modal-box input[type=text]:focus,
+.modal-box select:focus { outline: none; border-color: var(--accent); }
 
 /* Node-link picker (add/edit-node modal): pick a sibling diagram to link to. */
 .node-link-control { position: relative; display: flex; gap: 6px; align-items: stretch; }

@@ -27,7 +27,12 @@
                         <span class="project-folder"><svg class="icon icon-lg"><use href="#icon-folder"/></svg></span>
                         <span class="project-body">
                             <span class="project-name"><?= e($p['title'] ?: $p['slug']) ?></span>
-                            <span class="project-count"><?= __('dashboard.project_count', (int) $p['diagram_count']) ?></span>
+                            <span class="project-count">
+                                <?= __('dashboard.project_count', (int) $p['diagram_count']) ?>
+                                <?php if (!empty($p['share_count']) && (int)$p['share_count'] > 0): ?>
+                                    <span class="card-share-dot" title="<?= __('dashboard.is_shared') ?>"><svg class="icon icon-sm"><use href="#icon-share"/></svg></span>
+                                <?php endif; ?>
+                            </span>
                         </span>
                     </a>
                     <div class="diagram-card-actions">

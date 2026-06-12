@@ -316,6 +316,7 @@
   const notesTextarea = document.getElementById("notesTextarea");
   const notesEmpty = document.getElementById("notesEmpty");
   const notesGrounding = document.getElementById("notesGrounding");
+  const groundingEmpty = document.getElementById("groundingEmpty");
   const notesTargetLabel = document.getElementById("notesTargetLabel");
   const toggleNotesPanelBtn = document.getElementById("toggleNotesPanelBtn");
 
@@ -447,6 +448,7 @@
   // (buildLayoutPayload / history snapshot / loadFromDto), per the collab-sync invariant.
   let grounding = (bootstrap.layout && bootstrap.layout.grounding) || {};
   if (Array.isArray(grounding)) grounding = {};
+  let flows = (bootstrap.layout && Array.isArray(bootstrap.layout.flows)) ? bootstrap.layout.flows : [];
   // Promote legacy quadratic bends to cubic on initial load (idempotent).
   // `migrateAllBends` is a function declaration so it's hoisted within this IIFE.
   migrateAllBends();
@@ -468,6 +470,7 @@
       lockedIds: [...lockedIds],
       frameLockedIds: [...frameLockedIds],
       grounding,
+      flows,
     };
   }
   let currentRevisionId = bootstrap.revision_id;
@@ -484,7 +487,8 @@
   let connectSource = null;
   let selectedNodeIds = new Set(); // multi-select via Shift/Ctrl/Cmd+click
   let selectedClusterIds = new Set(); // multi-select via Shift/Ctrl/Cmd+click; can coexist with selectedNodeIds (mixed selection)
-  let selectedEdgeKeys = new Set(); // multi-select via Shift/Ctrl/Cmd+click; entries: "<src>|<tgt>|<ordinal>"
+  let selectedEdgeKeys  = new Set(); // multi-select via Shift/Ctrl/Cmd+click; entries: "<src>|<tgt>|<ordinal>"
+  let selectedEdgeOrder = [];        // same keys as selectedEdgeKeys, in insertion order (for flows)
   let initialViewBox = null;
   let viewState = null;
   let skipSourceSync = false;
@@ -1054,7 +1058,7 @@
     for (const key of [...selectedEdgeKeys]) {
       const e = findEdgeByKey(key);
       if (e) e.path.classList.add("selected");
-      else selectedEdgeKeys.delete(key);
+      else { selectedEdgeKeys.delete(key); selectedEdgeOrder = selectedEdgeOrder.filter(k => k !== key); }
     }
     updateToolbarState();
     applyNoteTooltips();
@@ -1063,6 +1067,7 @@
     // SVG was rebuilt — repaint peer-selection overlay so external selections
     // stay visible across remote-poll reloads.
     if (typeof renderPeerSelections === "function") renderPeerSelections();
+    if (typeof reapplyFlowPlayStyles === "function") reapplyFlowPlayStyles();
     if (!skipSourceSync) setSourceValue(currentSource);
     setSourceValidity(true);
   }
@@ -3623,8 +3628,8 @@
     markDirtyLayout();
     deselectNode();
     deselectCluster();
-    selectedEdgeKeys.clear();
-    selectedEdgeKeys.add(newKey);
+    selectedEdgeKeys.clear(); selectedEdgeOrder = [];
+    selectedEdgeKeys.add(newKey); selectedEdgeOrder = [newKey];
     await renderDiagram();
     pushHistory();
     setStatus(__("editor.op.reconnected"));
@@ -4769,8 +4774,8 @@
     currentSource = result.source;
     markDirtySource();
     markDirtyLayout();
-    selectedEdgeKeys.clear();
-    selectedEdgeKeys.add(`${t}|${s}|${oNew}`);
+    selectedEdgeKeys.clear(); selectedEdgeOrder = [];
+    selectedEdgeKeys.add(`${t}|${s}|${oNew}`); selectedEdgeOrder = [`${t}|${s}|${oNew}`];
     await renderDiagram();
     pushHistory();
     setStatus(__("editor.op.edge_inverted", s, t));
@@ -5124,7 +5129,12 @@
   function renderNotesGrounding(id) {
     if (!notesGrounding) return;
     const rec = id ? (grounding && grounding[id]) : null;
-    if (!rec || !rec.status) { notesGrounding.classList.add("hidden"); notesGrounding.innerHTML = ""; return; }
+    if (!rec || !rec.status) {
+      notesGrounding.classList.add("hidden"); notesGrounding.innerHTML = "";
+      if (groundingEmpty) groundingEmpty.classList.remove("hidden");
+      return;
+    }
+    if (groundingEmpty) groundingEmpty.classList.add("hidden");
     const status = String(rec.status).toLowerCase();
     const cls = { verified: "ng-verified", contradicted: "ng-contradicted", unverified: "ng-unverified", "n/a": "ng-na" }[status] || "ng-unverified";
     const labelKey = status === "n/a" ? "na" : status;
@@ -6734,8 +6744,8 @@
     // is in the DOM.
     deselectNode();
     deselectCluster();
-    selectedEdgeKeys.clear();
-    selectedEdgeKeys.add(`${src}|${tgt}|${newOrdinal}`);
+    selectedEdgeKeys.clear(); selectedEdgeOrder = [];
+    selectedEdgeKeys.add(`${src}|${tgt}|${newOrdinal}`); selectedEdgeOrder = [`${src}|${tgt}|${newOrdinal}`];
     _skipNextDiagramClick = true;
     await renderDiagram();
     pushHistory();
@@ -7236,7 +7246,7 @@
           const prev = findEdgeByKey(k);
           if (prev) prev.path.classList.remove("selected");
         }
-        selectedEdgeKeys.clear();
+        selectedEdgeKeys.clear(); selectedEdgeOrder = [];
       }
       for (const id of pickedNodes) {
         if (!selectedNodeIds.has(id)) {
@@ -7580,6 +7590,7 @@
       }
     }
     updateNotesPanel();
+    updateFlowAddBtn();
   }
 
   function toggleClusterSelection(id, additive) {
@@ -7644,9 +7655,11 @@
       deselectCluster();
       if (selectedEdgeKeys.has(key)) {
         selectedEdgeKeys.delete(key);
+        selectedEdgeOrder = selectedEdgeOrder.filter(k => k !== key);
         edge.path.classList.remove("selected");
       } else {
         selectedEdgeKeys.add(key);
+        selectedEdgeOrder.push(key);
         edge.path.classList.add("selected");
       }
       updateToolbarState();
@@ -7669,8 +7682,8 @@
       const prev = findEdgeByKey(k);
       if (prev) prev.path.classList.remove("selected");
     }
-    selectedEdgeKeys.clear();
-    selectedEdgeKeys.add(key);
+    selectedEdgeKeys.clear(); selectedEdgeOrder = [];
+    selectedEdgeKeys.add(key); selectedEdgeOrder = [key];
     edge.path.classList.add("selected");
     const lbl = `${edge.source} → ${edge.target}` + (edge.ordinal > 0 ? ` (#${edge.ordinal + 1})` : "");
     setStatus(__("editor.status.selected_edge", lbl));
@@ -7683,7 +7696,7 @@
       const prev = findEdgeByKey(k);
       if (prev) prev.path.classList.remove("selected");
     }
-    selectedEdgeKeys.clear();
+    selectedEdgeKeys.clear(); selectedEdgeOrder = [];
     updateToolbarState();
     renderEdgeHotspots();
     broadcastSelection();
@@ -8696,6 +8709,7 @@
     subgraphStyles = Array.isArray(L.subgraphStyles) ? {} : (L.subgraphStyles || {});
     edgeStyles     = Array.isArray(L.edgeStyles)     ? {} : (L.edgeStyles     || {});
     grounding      = Array.isArray(L.grounding)      ? {} : (L.grounding      || {});
+    flows          = Array.isArray(L.flows)           ? L.flows : [];
     // Set-backed buckets: restore so subgraph collapse/lock/pin state from the
     // scepter holder propagates to spectators (these mirror buildLayoutPayload).
     collapsibleIds = new Set(Array.isArray(L.collapsibleIds) ? L.collapsibleIds : []);
@@ -8722,6 +8736,8 @@
     // across remote-update reloads (poll, checkout, reload). renderDiagram
     // recomputes initialViewBox from the new geometry but keeps viewState if set.
     history = []; historyPtr = -1;
+    resetFlowPlayState();
+    renderFlowsPanel();
     return renderDiagram().then(() => pushHistory());
   }
 
@@ -9962,6 +9978,255 @@
   toggleNotesPanelBtn.addEventListener("click", () => {
     togglePanelCollapse(notesPanel, toggleNotesPanelBtn, "«", "»");
   });
+
+  // ── Right-panel tab switching ────────────────────────────────────────────
+  const _rpPanes = {
+    note:      document.getElementById("notesBody"),
+    grounding: document.getElementById("groundingPane"),
+    flows:     document.getElementById("flussiPane"),
+  };
+  for (const tab of notesPanel.querySelectorAll(".rp-tab")) {
+    tab.addEventListener("click", () => {
+      for (const t of notesPanel.querySelectorAll(".rp-tab")) t.classList.toggle("active", t === tab);
+      for (const [key, pane] of Object.entries(_rpPanes)) pane.classList.toggle("hidden", key !== tab.dataset.tab);
+    });
+  }
+
+  // ── Flows (flussi) ────────────────────────────────────────────────────────
+
+  const flowListEl   = document.getElementById("flowList");
+  const flowAddBtnEl = document.getElementById("flowAddBtn");
+
+  let _flowPlayId    = null;  // id of currently playing flow, or null
+  let _flowPlayTimer = null;  // setTimeout handle
+  let _flowPlayIdx   = 0;
+  let _flowRingEls   = [];    // cloned path elements — cleaned up each tick
+  let _editingFlowId = null;  // id of flow being edited, or null
+  let _addingFlow    = false; // inline name-input row visible
+
+  function _clearFlowRings() {
+    for (const el of _flowRingEls) el.remove();
+    _flowRingEls = [];
+  }
+
+  function _drawFlowRing(edge) {
+    if (!edge || !edge.path || !edge.path.parentNode) return;
+    const clone = edge.path.cloneNode(false);
+    clone.removeAttribute("style");
+    clone.removeAttribute("marker-end");
+    clone.removeAttribute("marker-start");
+    clone.removeAttribute("stroke-dasharray");
+    clone.setAttribute("class", "flow-edge-ring");
+    clone.setAttribute("fill", "none");
+    edge.path.parentNode.insertBefore(clone, edge.path.nextSibling);
+    _flowRingEls.push(clone);
+  }
+
+  function _applyFlowMemberClasses(flowEdgeKeys) {
+    const flowSet = new Set(flowEdgeKeys);
+    for (const e of edges) {
+      e.path.classList.toggle("flow-member", flowSet.has(edgeKey(e)));
+    }
+    diagramEl.classList.add("flow-active");
+  }
+
+  function _removeFlowClasses() {
+    for (const e of edges) e.path.classList.remove("flow-member");
+    diagramEl.classList.remove("flow-active");
+  }
+
+  // Re-apply after renderDiagram wipes the SVG (called from renderDiagram hook).
+  function reapplyFlowPlayStyles() {
+    if (!_flowPlayId) return;
+    const flow = flows.find(f => f.id === _flowPlayId);
+    if (flow) _applyFlowMemberClasses(flow.edges);
+  }
+
+  function resetFlowPlayState() {
+    if (_flowPlayTimer) { clearTimeout(_flowPlayTimer); _flowPlayTimer = null; }
+    _flowPlayId = null; _flowPlayIdx = 0;
+    _clearFlowRings();
+    _removeFlowClasses();
+    _editingFlowId = null; _addingFlow = false;
+  }
+
+  function stopFlow() {
+    if (_flowPlayTimer) { clearTimeout(_flowPlayTimer); _flowPlayTimer = null; }
+    _flowPlayId = null; _flowPlayIdx = 0;
+    _clearFlowRings();
+    _removeFlowClasses();
+    renderFlowsPanel();
+  }
+
+  function playFlow(id) {
+    if (_flowPlayId === id) { stopFlow(); return; }
+    stopFlow();
+    const flow = flows.find(f => f.id === id);
+    if (!flow || !flow.edges.length) return;
+    _flowPlayId = id; _flowPlayIdx = 0;
+    _applyFlowMemberClasses(flow.edges);
+    renderFlowsPanel();
+
+    const step = () => {
+      _clearFlowRings();
+      if (_flowPlayIdx < flow.edges.length) {
+        const e = findEdgeByKey(flow.edges[_flowPlayIdx]);
+        if (e) _drawFlowRing(e);
+        _flowPlayIdx++;
+        _flowPlayTimer = setTimeout(step, 500);
+      } else {
+        // End of cycle — pause 1 s with no torch, then restart
+        _flowPlayIdx = 0;
+        _flowPlayTimer = setTimeout(step, 1000);
+      }
+    };
+    step();
+  }
+
+  function startEditFlow(id) {
+    if (_editingFlowId === id) return;
+    stopFlow();
+    _editingFlowId = id;
+    const flow = flows.find(f => f.id === id);
+    if (flow) {
+      deselectNode();
+      deselectCluster();
+      for (const k of selectedEdgeKeys) { const p = findEdgeByKey(k); if (p) p.path.classList.remove("selected"); }
+      selectedEdgeKeys.clear(); selectedEdgeOrder = [];
+      for (const key of flow.edges) {
+        const e = findEdgeByKey(key);
+        if (e) { selectedEdgeKeys.add(key); selectedEdgeOrder.push(key); e.path.classList.add("selected"); }
+      }
+      updateToolbarState();
+      renderEdgeHotspots();
+      broadcastSelection();
+    }
+    renderFlowsPanel();
+  }
+
+  function saveEditFlow() {
+    const id = _editingFlowId;
+    _editingFlowId = null;
+    const idx = flows.findIndex(f => f.id === id);
+    if (idx !== -1) { flows[idx] = { ...flows[idx], edges: [...selectedEdgeOrder] }; markDirtyLayout(); }
+    renderFlowsPanel();
+  }
+
+  function cancelEditFlow() {
+    _editingFlowId = null;
+    renderFlowsPanel();
+  }
+
+  function deleteFlow(id) {
+    if (_flowPlayId === id) { if (_flowPlayTimer) { clearTimeout(_flowPlayTimer); _flowPlayTimer = null; } _flowPlayId = null; _clearFlowRings(); _removeFlowClasses(); }
+    if (_editingFlowId === id) _editingFlowId = null;
+    flows = flows.filter(f => f.id !== id);
+    markDirtyLayout();
+    renderFlowsPanel();
+  }
+
+  function addFlowFromSelection(name) {
+    if (!selectedEdgeOrder.length) return;
+    const id = "f" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    flows.push({ id, name: (name || "").trim() || __("editor.flows.unnamed"), edges: [...selectedEdgeOrder] });
+    markDirtyLayout();
+    _addingFlow = false;
+    renderFlowsPanel();
+  }
+
+  function updateFlowAddBtn() {
+    if (!flowAddBtnEl) return;
+    const can = selectedEdgeOrder.length > 0 && !_addingFlow && _editingFlowId === null;
+    flowAddBtnEl.disabled = !can;
+  }
+
+  function renderFlowsPanel() {
+    if (!flowListEl) return;
+    updateFlowAddBtn();
+    flowListEl.innerHTML = "";
+    if (flows.length === 0 && !_addingFlow) {
+      const empty = document.createElement("div");
+      empty.className = "notes-empty";
+      empty.textContent = __("editor.flows.empty");
+      flowListEl.appendChild(empty);
+    }
+    for (const flow of flows) {
+      const isPlaying = _flowPlayId === flow.id;
+      const isEditing = _editingFlowId === flow.id;
+      const item = document.createElement("div");
+      item.className = "flow-item" + (isPlaying ? " flow-playing" : "") + (isEditing ? " flow-editing" : "");
+      const nameEl = document.createElement("span");
+      nameEl.className = "flow-name"; nameEl.textContent = flow.name; nameEl.title = flow.name;
+      item.appendChild(nameEl);
+      const acts = document.createElement("div");
+      acts.className = "flow-actions";
+      if (isEditing) {
+        const saveBtn = document.createElement("button");
+        saveBtn.className = "flow-btn flow-save"; saveBtn.textContent = __("editor.flows.save");
+        saveBtn.addEventListener("click", () => saveEditFlow());
+        const cancelBtn = document.createElement("button");
+        cancelBtn.className = "flow-btn flow-cancel"; cancelBtn.textContent = __("editor.flows.cancel");
+        cancelBtn.addEventListener("click", () => cancelEditFlow());
+        acts.appendChild(saveBtn); acts.appendChild(cancelBtn);
+      } else {
+        const playBtn = document.createElement("button");
+        playBtn.className = "flow-btn flow-play" + (isPlaying ? " active" : "");
+        playBtn.title = isPlaying ? __("editor.flows.stop") : __("editor.flows.play");
+        playBtn.innerHTML = isPlaying
+          ? `<svg class="icon icon-sm"><use href="#icon-stop"/></svg>`
+          : `<svg class="icon icon-sm"><use href="#icon-play"/></svg>`;
+        playBtn.addEventListener("click", () => playFlow(flow.id));
+        const editBtn = document.createElement("button");
+        editBtn.className = "flow-btn flow-edit"; editBtn.title = __("editor.flows.edit");
+        editBtn.innerHTML = `<svg class="icon icon-sm"><use href="#icon-rename"/></svg>`;
+        editBtn.addEventListener("click", () => startEditFlow(flow.id));
+        const delBtn = document.createElement("button");
+        delBtn.className = "flow-btn flow-delete"; delBtn.title = __("editor.flows.delete");
+        delBtn.innerHTML = `<svg class="icon icon-sm"><use href="#icon-trash"/></svg>`;
+        delBtn.addEventListener("click", () => deleteFlow(flow.id));
+        acts.appendChild(playBtn); acts.appendChild(editBtn); acts.appendChild(delBtn);
+      }
+      item.appendChild(acts);
+      flowListEl.appendChild(item);
+    }
+    if (_addingFlow) {
+      const item = document.createElement("div");
+      item.className = "flow-item flow-new";
+      const input = document.createElement("input");
+      input.type = "text"; input.className = "flow-name-input";
+      input.placeholder = __("editor.flows.name_hint");
+      const confirmBtn = document.createElement("button");
+      confirmBtn.className = "flow-btn flow-confirm"; confirmBtn.textContent = "✓";
+      const cancelBtn  = document.createElement("button");
+      cancelBtn.className = "flow-btn flow-cancel-new"; cancelBtn.textContent = "✕";
+      const doAdd = () => addFlowFromSelection(input.value);
+      confirmBtn.addEventListener("click", doAdd);
+      cancelBtn.addEventListener("click", () => { _addingFlow = false; renderFlowsPanel(); });
+      input.addEventListener("keydown", e => {
+        if (e.key === "Enter") { e.preventDefault(); doAdd(); }
+        if (e.key === "Escape") { _addingFlow = false; renderFlowsPanel(); }
+      });
+      const acts = document.createElement("div");
+      acts.className = "flow-actions";
+      acts.appendChild(confirmBtn); acts.appendChild(cancelBtn);
+      item.appendChild(input); item.appendChild(acts);
+      flowListEl.appendChild(item);
+      requestAnimationFrame(() => input.focus());
+    }
+  }
+
+  if (flowAddBtnEl) {
+    flowAddBtnEl.textContent = __("editor.flows.add");
+    flowAddBtnEl.addEventListener("click", () => {
+      if (selectedEdgeOrder.length === 0 || _addingFlow || _editingFlowId !== null) return;
+      _addingFlow = true;
+      // Switch to flows tab if needed
+      const flowTab = notesPanel.querySelector('.rp-tab[data-tab="flows"]');
+      if (flowTab && !flowTab.classList.contains("active")) flowTab.click();
+      else renderFlowsPanel();
+    });
+  }
+  renderFlowsPanel();
 
   notesTextarea.addEventListener("input", () => {
     if (_notesSuppressInput) return;

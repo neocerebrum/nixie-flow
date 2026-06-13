@@ -252,7 +252,7 @@ TXT;
     {
         if (($req['method'] ?? '') !== 'tools/call') return false;
         $name = $req['params']['name'] ?? '';
-        return in_array($name, ['save_diagram', 'create_diagram', 'delete_diagram', 'set_layout', 'prepare_save', 'commit_save', 'set_grounding', 'set_note'], true);
+        return in_array($name, ['save_diagram', 'create_diagram', 'delete_diagram', 'set_layout', 'prepare_save', 'commit_save', 'set_grounding', 'set_note', 'set_flows'], true);
     }
 
     /**
@@ -450,6 +450,37 @@ TXT;
                 ],
             ],
             [
+                'name' => 'get_flows',
+                'description' => 'Return all named flows defined on a diagram. A flow is an ordered sequence of edges shown to the user as a step-by-step animation. Each edge is represented as "SRC --> TGT" (or "SRC --> TGT (#N)" when N>1 parallel edges exist between the same pair, 1-based). Use this to read human-defined execution paths before generating or updating flows.',
+                'inputSchema' => [
+                    'type' => 'object',
+                    'properties' => ['slug' => ['type' => 'string']],
+                    'required' => ['slug'],
+                ],
+            ],
+            [
+                'name' => 'set_flows',
+                'description' => 'Create or update named flows on a diagram (upsert by name). A flow is an ordered sequence of edges that the editor animates step-by-step for the user. Each edge is "SRC --> TGT" (or "SRC --> TGT (#N)" for parallel edges, N 1-based). Flows not mentioned in the call are preserved. Pass null as the value to delete a named flow. expected_version is the snapshot id the working copy is currently based on (0 if never saved). Updates the layout in-place; no new snapshot is created.',
+                'inputSchema' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'slug'             => ['type' => 'string'],
+                        'flows'            => [
+                            'type'                 => 'object',
+                            'description'          => 'Map of flow name → ordered edge list (or null to delete). E.g. {"happy path": ["A --> B", "B --> C"], "old flow": null}',
+                            'additionalProperties' => [
+                                'oneOf' => [
+                                    ['type' => 'array', 'items' => ['type' => 'string']],
+                                    ['type' => 'null'],
+                                ],
+                            ],
+                        ],
+                        'expected_version' => ['type' => 'integer'],
+                    ],
+                    'required' => ['slug', 'flows', 'expected_version'],
+                ],
+            ],
+            [
                 'name' => 'release_edit',
                 'description' => 'Yield the edit turn (scepter) on a diagram once you are done changing it — the courteous "release" half of the co-editing protocol. The write tools (save_diagram, commit_save, set_note, set_layout, set_grounding) auto-acquire the turn for you and hold it on a short lease; call release_edit when your batch of edits is finished so a human collaborator waiting in the editor gets control immediately instead of waiting for the lease to lapse. Especially do this when a write result reports "human_waiting": true. Idempotent and safe to call even if you do not hold the turn (returns released=false). You do NOT need this for one-off edits on a diagram nobody else is viewing — the lease cleans up on its own — but it is good hygiene whenever you may be co-editing with a person.',
                 'inputSchema' => [
@@ -510,6 +541,8 @@ TXT;
             case 'commit_save':    return $this->toolCommitSave($args, $user);
             case 'set_grounding':  return $this->toolSetGrounding($args, $user);
             case 'set_note':       return $this->toolSetNote($args, $user);
+            case 'get_flows':      return $this->toolGetFlows($args, $user);
+            case 'set_flows':      return $this->toolSetFlows($args, $user);
             case 'release_edit':   return $this->toolReleaseEdit($args, $user);
             default:
                 throw new McpToolException("Unknown tool: $name");
@@ -1195,6 +1228,137 @@ TXT;
             'grounding_invalidated' => $invalidated,
             'updated_at'            => $fresh['updated_at'],
         ] + $this->turnHint((int) $diagram['id'], (int) $user['id']));
+    }
+
+    // ── Flows ───────────────────────────────────────────────────────────────
+
+    private function toolGetFlows(array $args, array $user): array
+    {
+        $diagram = $this->loadAccessible($args, $user);
+        $current = Revision::current((int) $diagram['id']);
+        $layout  = $current && $current['layout'] !== null
+            ? json_decode($current['layout'], true) : [];
+        $raw = (is_array($layout) && isset($layout['flows']) && is_array($layout['flows']))
+            ? $layout['flows'] : [];
+
+        $out = [];
+        foreach ($raw as $flow) {
+            if (!isset($flow['name']) || !isset($flow['edges']) || !is_array($flow['edges'])) continue;
+            $out[$flow['name']] = array_map([$this, 'edgeKeyToString'], $flow['edges']);
+        }
+
+        return $this->structuredResult(['slug' => $diagram['slug'], 'flows' => $out]);
+    }
+
+    private function toolSetFlows(array $args, array $user): array
+    {
+        $slug     = $this->requireString($args, 'slug');
+        $expected = $this->requireInt($args, 'expected_version');
+        if (!array_key_exists('flows', $args) || !is_array($args['flows'])) {
+            throw new McpToolException('missing or invalid arg: flows (must be an object)');
+        }
+        $incoming = $args['flows']; // name → edge-string-list | null
+
+        $diagram = Diagram::bySlug($slug);
+        if ($diagram === null || !Diagram::canWrite($diagram, $user) || Diagram::isDeleted($diagram)) {
+            throw new McpToolException("Not found or no edit permission: $slug");
+        }
+
+        $this->acquireTurn($diagram, $user);
+
+        $current = Revision::current((int) $diagram['id']);
+        $layout  = $current && $current['layout'] !== null
+            ? json_decode($current['layout'], true) : [];
+        if (!is_array($layout)) $layout = [];
+
+        $existing = (isset($layout['flows']) && is_array($layout['flows'])) ? $layout['flows'] : [];
+
+        // Build index by name for easy lookup
+        $byName = [];
+        foreach ($existing as $f) {
+            if (isset($f['name'])) $byName[$f['name']] = $f;
+        }
+
+        foreach ($incoming as $name => $edges) {
+            if ($edges === null) {
+                // Delete
+                unset($byName[$name]);
+            } else {
+                if (!is_array($edges)) {
+                    throw new McpToolException("Flow \"$name\": edges must be an array or null");
+                }
+                $parsed = [];
+                foreach ($edges as $i => $str) {
+                    if (!is_string($str)) {
+                        throw new McpToolException("Flow \"$name\" edge [$i]: must be a string");
+                    }
+                    $parsed[] = $this->edgeStringToKey($str, $name, $i);
+                }
+                if (isset($byName[$name])) {
+                    $byName[$name]['edges'] = $parsed;
+                } else {
+                    $id = 'f' . base_convert((string) (time() * 1000 + array_search($name, array_keys($incoming))), 10, 36)
+                            . substr(md5($name), 0, 5);
+                    $byName[$name] = ['id' => $id, 'name' => $name, 'edges' => $parsed];
+                }
+            }
+        }
+
+        $layout['flows'] = array_values($byName);
+        $layoutJson = json_encode($layout, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        $oldBytes = $current
+            ? strlen((string) $current['source']) + strlen((string) ($current['layout'] ?? ''))
+            : 0;
+        $newBytes = ($current ? strlen((string) $current['source']) : 0) + strlen($layoutJson);
+
+        try {
+            $owner = User::byId((int) $diagram['owner_id']) ?? $user;
+            Quota::checkCanReplaceDraft($owner, $user, $oldBytes, $newBytes);
+        } catch (QuotaExceeded $q) {
+            throw new McpToolException($q->getMessage());
+        }
+
+        $base = $expected === 0 ? null : $expected;
+        try {
+            Revision::updateCurrent((int) $diagram['id'], $base, null, $layoutJson);
+        } catch (RevisionConflict $c) {
+            throw new McpToolException("conflict: current is now based on revision {$c->currentRevisionId}, expected $expected");
+        }
+
+        $fresh = Diagram::byId((int) $diagram['id']);
+        return $this->structuredResult([
+            'slug'        => $fresh['slug'],
+            'revision_id' => $expected,
+            'updated_at'  => $fresh['updated_at'],
+            'flows_count' => count($layout['flows']),
+        ] + $this->turnHint((int) $diagram['id'], (int) $user['id']));
+    }
+
+    /** Convert internal edge key "SRC|TGT|ORD" to human string "SRC --> TGT" or "SRC --> TGT (#N)". */
+    private function edgeKeyToString(string $key): string
+    {
+        $parts = explode('|', $key, 3);
+        if (count($parts) !== 3) return $key;
+        [$src, $tgt, $ord] = $parts;
+        $ordinal = (int) $ord;
+        return $ordinal === 0
+            ? "$src --> $tgt"
+            : "$src --> $tgt (#" . ($ordinal + 1) . ")";
+    }
+
+    /** Parse "SRC --> TGT" or "SRC --> TGT (#N)" back to internal key "SRC|TGT|ORD". */
+    private function edgeStringToKey(string $str, string $flowName, int $idx): string
+    {
+        // "A --> B (#3)" or "A --> B"
+        if (!preg_match('/^(.+?)\s+-->\s+(.+?)(?:\s+\(#(\d+)\))?$/', trim($str), $m)) {
+            throw new McpToolException("Flow \"$flowName\" edge [$idx]: cannot parse \"$str\" — expected \"SRC --> TGT\" or \"SRC --> TGT (#N)\"");
+        }
+        $src = trim($m[1]);
+        $tgt = trim($m[2]);
+        $ordinal = isset($m[3]) ? (int) $m[3] - 1 : 0;
+        if ($ordinal < 0) $ordinal = 0;
+        return "$src|$tgt|$ordinal";
     }
 
     // ── Grounding helpers ───────────────────────────────────────────────────

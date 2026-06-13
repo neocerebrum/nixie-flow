@@ -30,7 +30,7 @@ Ordered checklist for taking Aquata public. Living document — check items off 
 - [x] Decide initial version, add `CHANGELOG.md`, tag the release — chose `0.7.0` (mature
       beta; 1.0 reserved until the roadmap + experiments settle). `CHANGELOG.md` added,
       MCP `SERVER_VERSION` aligned to 0.7.0, tagged `v0.7.0`.
-- [ ] GitHub repo "About" (doable now, while private — the **About** box on the repo home,
+- [x] GitHub repo "About" (doable now, while private — the **About** box on the repo home,
       gear icon — NOT Settings). Ready-to-paste:
       - **Description:** `Mermaid diagrams as a shared language between humans and AI coding agents — a self-hostable editor + MCP server with code-grounded, verifiable notes.`
       - **Website:** `https://aquata.neocerebrum.work`

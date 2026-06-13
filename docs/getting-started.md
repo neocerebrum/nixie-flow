@@ -28,7 +28,7 @@ claude mcp add --transport http aquata https://your-host/mcp \
   --header "Authorization: Bearer aqt_your_token_here"
 ```
 
-The token-creation page also shows a ready-to-paste config snippet for clients that take JSON. Verify the connection — the agent should now list Aquata's tools (`list_diagrams`, `get_diagram`, `create_diagram`, `prepare_save`, `commit_save`, `set_grounding`, `set_note`, …) and the `ground` prompt.
+The token-creation page also shows a ready-to-paste config snippet for clients that take JSON. Verify the connection — the agent should now list Aquata's tools (`list_diagrams`, `get_diagram`, `create_diagram`, `prepare_save`, `commit_save`, `set_grounding`, `set_note`, `get_flows`, `set_flows`, …) and the `ground` prompt.
 
 ## 4. Have the agent draw a diagram
 
@@ -50,6 +50,7 @@ Open the diagram in the browser. This is *your* side of the bridge:
 - **Colour** nodes/subgraphs/edges from the contextual palette (double-click a swatch to edit presets, or use the eyedropper).
 - **Collapse** a subgraph into a compact capsule to tame a busy area.
 - Edit notes in the **notes panel** when you want to refine intent yourself.
+- **Define flows** in the **Flows** tab — select a series of edges in order, name the flow, and play it back as a step-by-step animation that lights up each edge in sequence.
 
 None of this touches the Mermaid source the agent sees. Positions, colours and capsule state are stored in the layout sidecar — when the agent re-saves the source, your arrangement is preserved automatically.
 
@@ -75,6 +76,22 @@ From here it's a cycle:
 4. Re-grounding flags any note the code has drifted away from.
 
 The diagram stays readable for you and clean for the agent, and grounding keeps it honest about the code. That's the whole point of Aquata.
+
+## Flows: tracing execution paths
+
+A **flow** is an ordered sequence of edges that plays back as an animation in the editor — each edge lights up in turn, letting you follow a data or control path through the diagram.
+
+You can define flows yourself in the **Flows** tab (select edges in order, click **Add flow**, name it). But you can also ask the agent to generate them from code analysis — this is where flows become genuinely useful as a bridge between the agent's understanding and what you see in the editor.
+
+For example:
+
+> Read the `my-service` diagram and create a flow called "happy path" that traces the sequence of edges a typical request follows, in order.
+
+The agent calls `get_diagram` to read the structure, reasons over the code, then calls `set_flows` to write the flow. When you open the **Flows** tab and press play, you see the path it identified, animated edge by edge.
+
+You can have multiple flows on the same diagram — "happy path", "error path", "auth bypass", "cache hit" — each highlighting a different subset of edges. Flows defined by you are preserved when the agent writes new ones (upsert by name); pass `null` for a name to delete it.
+
+The agent can also read flows you've already defined (`get_flows`), so it can build on your intent when you say things like "check that this flow is still valid after the refactor" or "add the retry edges to the error path flow".
 
 ## Design-first: agreeing on the structure before writing code
 

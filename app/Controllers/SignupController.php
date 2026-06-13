@@ -21,7 +21,7 @@ final class SignupController
 
     public function showForm(array $args): never
     {
-        if (!Config::bool('SIGNUP_ENABLED', true)) {
+        if (!Config::bool('SIGNUP_ENABLED', false)) {
             Response::notFound('Signup is disabled');
         }
         if (Auth::isLoggedIn()) {
@@ -38,7 +38,7 @@ final class SignupController
 
     public function submit(array $args): never
     {
-        if (!Config::bool('SIGNUP_ENABLED', true)) {
+        if (!Config::bool('SIGNUP_ENABLED', false)) {
             Response::notFound('Signup is disabled');
         }
         Csrf::requireValid();
@@ -115,9 +115,19 @@ final class SignupController
         ], ['title' => __('signup.check_email.title')]);
     }
 
-    public function verify(array $args): never
+    public function showVerify(array $args): never
     {
         $token = (string) ($_GET['token'] ?? '');
+        View::render('auth/verify_confirm', [
+            'token'     => $token,
+            'csrfToken' => Csrf::token(),
+        ], ['title' => __('verify.confirm.title')]);
+    }
+
+    public function doVerify(array $args): never
+    {
+        Csrf::requireValid();
+        $token = (string) ($_POST['token'] ?? '');
         $row = EmailToken::consume($token, EmailToken::KIND_VERIFY);
         if ($row === null) {
             View::render('auth/verify_failed', [
@@ -141,6 +151,10 @@ final class SignupController
         }
         $email = strtolower(trim((string) ($_POST['email'] ?? '')));
         $user = User::byEmail($email);
+        if ($user !== null && User::isEmailVerified($user) && !User::isDisabled($user)) {
+            $this->flash('info', __('error.already_verified'));
+            Response::redirect('/login');
+        }
         if ($user !== null && !User::isEmailVerified($user) && !User::isDisabled($user)) {
             $this->sendVerificationEmail((int) $user['id'], $user['email'], (string) $user['display_name']);
         }

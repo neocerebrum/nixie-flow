@@ -41,12 +41,17 @@ return [
     'verify.done.heading'       => 'E-Mail bestätigt',
     'verify.done.body'          => 'Ihr Konto ist jetzt aktiv.',
     'verify.done.login'         => 'Anmelden',
+    'verify.confirm.title'      => 'Konto bestätigen — Aquata',
+    'verify.confirm.heading'    => 'Konto bestätigen',
+    'verify.confirm.body'       => 'Klicke auf den Button, um dein Konto zu aktivieren.',
+    'verify.confirm.submit'     => 'Konto aktivieren',
     'verify.failed.title'       => 'Bestätigung fehlgeschlagen — Aquata',
     'verify.failed.heading'     => 'Bestätigung fehlgeschlagen',
     'verify.failed.body'        => 'Der Link ist ungültig oder abgelaufen.',
     'verify.failed.hint'        => 'Sie können auf der Registrierungsseite einen neuen Link anfordern.',
     'verify.failed.resend'      => 'Link erneut senden',
-    'verify.failed.login'       => 'Anmelden',
+    'verify.failed.login'          => 'Anmelden',
+    'verify.failed.already_active' => 'Wenn du dich bereits anmelden kannst, ist dein Konto schon aktiv.',
 
     // ── password reset ──
     'pwreset.request.title'     => 'Passwort wiederherstellen — Aquata',
@@ -285,6 +290,12 @@ return [
     'admin.users.restore'       => 'Reaktivieren',
     'admin.users.disable'       => 'Deaktivieren',
     'admin.users.disable_confirm' => '%s deaktivieren?',
+    'admin.users.delete_user'     => 'Dauerhaft löschen',
+    'admin.users.delete_confirm'  => '%s dauerhaft löschen? Alle Diagramme und Projekte werden gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.',
+    'admin.users.deleted'         => 'Benutzer %s dauerhaft gelöscht.',
+    'error.cannot_delete_self'         => 'Du kannst dein eigenes Konto nicht löschen.',
+    'error.must_disable_before_delete' => 'Deaktiviere den Benutzer, bevor du ihn löschst.',
+    'error.cannot_delete_admin'        => 'Entziehe dem Benutzer die Admin-Rolle, bevor du ihn löschst.',
     'admin.user.new_title'      => 'Neuer Benutzer — Aquata',
     'admin.user.edit_title'     => 'Benutzer bearbeiten — Aquata',
     'admin.user.new_heading'    => 'Neuer Benutzer',
@@ -319,6 +330,7 @@ return [
     'error.password_min'        => 'Das Passwort muss mindestens %d Zeichen haben.',
     'error.tos_required'        => 'Sie müssen die Nutzungsbedingungen akzeptieren.',
     'error.resend_confirm'      => 'Falls die E-Mail gültig und nicht bestätigt ist, haben wir den Link erneut gesendet.',
+    'error.already_verified'    => 'Dein Konto ist bereits aktiv. Du kannst dich jetzt anmelden.',
     'error.pwreset_sent'        => 'Falls die E-Mail registriert ist, erhalten Sie einen Link zum Zurücksetzen des Passworts.',
     'error.passwords_mismatch'  => 'Die Passwörter stimmen nicht überein.',
     'error.link_invalid'        => 'Ungültiger oder abgelaufener Link. Fordern Sie einen neuen an.',
@@ -592,6 +604,21 @@ return [
     'js.editor.flows.empty' => 'Keine Abläufe.',
     'js.editor.flows.name_hint' => 'Name des Ablaufs…',
     'js.editor.flows.unnamed' => 'Unbenannter Ablauf',
+
+
     // footer
     'footer.source'                     => 'Quellcode',
+
+    // demo tier
+    'demo.banner'                       => 'Demo-Konto — Diagramme verfallen 24 Stunden nach der Erstellung.',
+    'demo.diagram_expires'              => 'Verfällt %s',
+    'demo.expires_in_hm'                => 'läuft in %dh %dm ab',
+    'demo.expires_in_m'                 => 'läuft in %dm ab',
+    'demo.diagram_expired'              => 'Dieses Diagramm ist abgelaufen. Bitte kontaktiere einen Administrator.',
+    'admin.users.tier'                  => 'Stufe',
+    'admin.users.tier_demo'             => 'demo',
+    'admin.users.tier_full'             => 'voll',
+    'admin.users.promote'               => 'Auf voll hochstufen',
+    'admin.users.promote_confirm'       => '%s auf volle Stufe hochstufen? Die Diagramme laufen dann nicht mehr ab.',
+    'admin.users.promoted'              => 'Benutzer auf volle Stufe hochgestuft.',
 ];

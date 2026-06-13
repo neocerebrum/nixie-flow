@@ -41,12 +41,17 @@ return [
     'verify.done.heading'       => 'メール認証完了',
     'verify.done.body'          => 'アカウントが有効になりました。',
     'verify.done.login'         => 'サインイン',
+    'verify.confirm.title'      => 'アカウントを確認 — Aquata',
+    'verify.confirm.heading'    => 'アカウントを確認',
+    'verify.confirm.body'       => '下のボタンをクリックしてアカウントを有効化してください。',
+    'verify.confirm.submit'     => 'アカウントを有効化',
     'verify.failed.title'       => '認証に失敗しました — Aquata',
     'verify.failed.heading'     => '認証に失敗しました',
     'verify.failed.body'        => 'リンクが無効か、有効期限が切れています。',
     'verify.failed.hint'        => 'サインアップページから新しいリンクをリクエストできます。',
     'verify.failed.resend'      => 'リンクを再送信',
-    'verify.failed.login'       => 'ログイン',
+    'verify.failed.login'          => 'ログイン',
+    'verify.failed.already_active' => 'すでにログインできる場合、アカウントはすでに有効です。',
 
     // ── password reset ──
     'pwreset.request.title'     => 'パスワード再設定 — Aquata',
@@ -285,6 +290,12 @@ return [
     'admin.users.restore'       => '再有効化',
     'admin.users.disable'       => '無効化',
     'admin.users.disable_confirm' => '%sを無効化しますか？',
+    'admin.users.delete_user'     => '完全に削除',
+    'admin.users.delete_confirm'  => '%sを完全に削除しますか？すべての図表とプロジェクトが削除されます。この操作は元に戻せません。',
+    'admin.users.deleted'         => 'ユーザー %s を完全に削除しました。',
+    'error.cannot_delete_self'         => '自分のアカウントは削除できません。',
+    'error.must_disable_before_delete' => '削除する前にユーザーを無効化してください。',
+    'error.cannot_delete_admin'        => '削除する前に管理者権限を剥奪してください。',
     'admin.user.new_title'      => '新しいユーザー — Aquata',
     'admin.user.edit_title'     => 'ユーザーを編集 — Aquata',
     'admin.user.new_heading'    => '新しいユーザー',
@@ -319,6 +330,7 @@ return [
     'error.password_min'        => 'パスワードは%d文字以上にしてください。',
     'error.tos_required'        => '利用規約に同意する必要があります。',
     'error.resend_confirm'      => 'メールアドレスが有効で未認証の場合、リンクを再送信しました。',
+    'error.already_verified'    => 'アカウントはすでに有効です。ログインできます。',
     'error.pwreset_sent'        => 'メールアドレスが登録されている場合、パスワード再設定リンクをお送りします。',
     'error.passwords_mismatch'  => 'パスワードが一致しません。',
     'error.link_invalid'        => 'リンクが無効か、有効期限が切れています。新しいリンクをリクエストしてください。',
@@ -592,6 +604,21 @@ return [
     'js.editor.flows.empty' => 'フローはまだありません。',
     'js.editor.flows.name_hint' => 'フロー名…',
     'js.editor.flows.unnamed' => '名前のないフロー',
+
+
     // footer
     'footer.source'                     => 'ソースコード',
+
+    // demo tier
+    'demo.banner'                       => 'デモアカウント — 図表は作成後24時間で期限切れになります。',
+    'demo.diagram_expires'              => '%s に期限切れ',
+    'demo.expires_in_hm'                => '%d時間%d分後に期限切れ',
+    'demo.expires_in_m'                 => '%d分後に期限切れ',
+    'demo.diagram_expired'              => 'この図表は期限切れです。アカウントのアップグレードについて管理者にお問い合わせください。',
+    'admin.users.tier'                  => 'ティア',
+    'admin.users.tier_demo'             => 'デモ',
+    'admin.users.tier_full'             => 'フル',
+    'admin.users.promote'               => 'フルに昇格',
+    'admin.users.promote_confirm'       => '%s をフルティアに昇格しますか？図表は期限切れにならなくなります。',
+    'admin.users.promoted'              => 'ユーザーをフルティアに昇格しました。',
 ];

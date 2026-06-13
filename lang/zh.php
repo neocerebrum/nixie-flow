@@ -41,12 +41,17 @@ return [
     'verify.done.heading'       => '邮箱已验证',
     'verify.done.body'          => '您的账户现已激活。',
     'verify.done.login'         => '登录',
+    'verify.confirm.title'      => '确认您的账号 — Aquata',
+    'verify.confirm.heading'    => '确认您的账号',
+    'verify.confirm.body'       => '点击下方按钮以激活您的账号。',
+    'verify.confirm.submit'     => '激活账号',
     'verify.failed.title'       => '验证失败 — Aquata',
     'verify.failed.heading'     => '验证失败',
     'verify.failed.body'        => '链接无效或已过期。',
     'verify.failed.hint'        => '您可以在注册页面重新请求一个链接。',
     'verify.failed.resend'      => '重新发送链接',
-    'verify.failed.login'       => '登录',
+    'verify.failed.login'          => '登录',
+    'verify.failed.already_active' => '如果您已能登录，则您的账号已激活。',
 
     // ── password reset ──
     'pwreset.request.title'     => '密码找回 — Aquata',
@@ -285,6 +290,12 @@ return [
     'admin.users.restore'       => '重新启用',
     'admin.users.disable'       => '禁用',
     'admin.users.disable_confirm' => '禁用 %s？',
+    'admin.users.delete_user'     => '永久删除',
+    'admin.users.delete_confirm'  => '永久删除 %s？其所有图表和项目将被删除，此操作不可撤销。',
+    'admin.users.deleted'         => '用户 %s 已永久删除。',
+    'error.cannot_delete_self'         => '您不能删除自己的账号。',
+    'error.must_disable_before_delete' => '请先禁用用户再删除。',
+    'error.cannot_delete_admin'        => '请先撤销管理员角色再删除用户。',
     'admin.user.new_title'      => '新建用户 — Aquata',
     'admin.user.edit_title'     => '编辑用户 — Aquata',
     'admin.user.new_heading'    => '新建用户',
@@ -319,6 +330,7 @@ return [
     'error.password_min'        => '密码至少需要 %d 个字符。',
     'error.tos_required'        => '您必须接受服务条款。',
     'error.resend_confirm'      => '如果邮箱有效且未验证，我们已重新发送链接。',
+    'error.already_verified'    => '您的账号已激活，现在可以登录。',
     'error.pwreset_sent'        => '如果该邮箱已注册，您将收到一封密码重置链接。',
     'error.passwords_mismatch'  => '两次输入的密码不一致。',
     'error.link_invalid'        => '链接无效或已过期。请重新请求一个。',
@@ -592,6 +604,21 @@ return [
     'js.editor.flows.empty' => '暂无流程。',
     'js.editor.flows.name_hint' => '流程名称…',
     'js.editor.flows.unnamed' => '未命名流程',
+
+
     // footer
     'footer.source'                     => '源代码',
+
+    // demo tier
+    'demo.banner'                       => '演示账号 — 图表将在创建后24小时到期。',
+    'demo.diagram_expires'              => '到期时间：%s',
+    'demo.expires_in_hm'                => '%d小时%d分钟后到期',
+    'demo.expires_in_m'                 => '%d分钟后到期',
+    'demo.diagram_expired'              => '此图表已过期。请联系管理员升级您的账号。',
+    'admin.users.tier'                  => '级别',
+    'admin.users.tier_demo'             => '演示',
+    'admin.users.tier_full'             => '完整',
+    'admin.users.promote'               => '升级为完整',
+    'admin.users.promote_confirm'       => '将 %s 升级为完整级别？其图表将不再过期。',
+    'admin.users.promoted'              => '用户已升级为完整级别。',
 ];

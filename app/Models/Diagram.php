@@ -90,20 +90,29 @@ final class Diagram
      * `head_revision_id` on the diagram is the stable id of the #current row.
      * @return array{0: array<string,mixed>, 1: array<string,mixed>}
      */
+    public static function isExpired(array $diagram): bool
+    {
+        if (empty($diagram['expires_at'])) {
+            return false;
+        }
+        return strtotime($diagram['expires_at'] . ' UTC') < time();
+    }
+
     public static function createWithFirstRevision(
         string $slug,
         string $title,
         int $ownerId,
         string $source,
-        ?string $layoutJson
+        ?string $layoutJson,
+        ?string $expiresAt = null
     ): array {
         $pdo = db();
         $pdo->beginTransaction();
         try {
             $stmt = $pdo->prepare(
-                'INSERT INTO diagrams (slug, title, owner_id) VALUES (?, ?, ?)'
+                'INSERT INTO diagrams (slug, title, owner_id, expires_at) VALUES (?, ?, ?, ?)'
             );
-            $stmt->execute([$slug, $title, $ownerId]);
+            $stmt->execute([$slug, $title, $ownerId, $expiresAt]);
             $diagramId = (int) $pdo->lastInsertId();
 
             $stmt = $pdo->prepare(

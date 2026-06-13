@@ -41,12 +41,17 @@ return [
     'verify.done.heading'       => 'Email verificata',
     'verify.done.body'          => 'Il tuo account è ora attivo.',
     'verify.done.login'         => 'Accedi',
+    'verify.confirm.title'      => 'Conferma il tuo account — Aquata',
+    'verify.confirm.heading'    => 'Conferma il tuo account',
+    'verify.confirm.body'       => 'Clicca il pulsante per attivare il tuo account.',
+    'verify.confirm.submit'     => 'Attiva account',
     'verify.failed.title'       => 'Verifica fallita — Aquata',
     'verify.failed.heading'     => 'Verifica fallita',
     'verify.failed.body'        => 'Il link non è valido oppure è scaduto.',
     'verify.failed.hint'        => 'Puoi richiedere un nuovo link dalla pagina di registrazione.',
     'verify.failed.resend'      => 'Reinvia link',
-    'verify.failed.login'       => 'Login',
+    'verify.failed.login'          => 'Login',
+    'verify.failed.already_active' => 'Se riesci già ad accedere, il tuo account è già attivo.',
 
     // ── password reset ──
     'pwreset.request.title'     => 'Recupero password — Aquata',
@@ -287,6 +292,12 @@ return [
     'admin.users.restore'       => 'Riattiva',
     'admin.users.disable'       => 'Disabilita',
     'admin.users.disable_confirm' => 'Disabilitare %s?',
+    'admin.users.delete_user'     => 'Elimina definitivamente',
+    'admin.users.delete_confirm'  => "Eliminare %s definitivamente? Verranno eliminati tutti i suoi diagrammi e progetti. Operazione irreversibile.",
+    'admin.users.deleted'         => 'Utente %s eliminato definitivamente.',
+    'error.cannot_delete_self'         => 'Non puoi eliminare il tuo account.',
+    'error.must_disable_before_delete' => 'Disabilita l\'utente prima di eliminarlo.',
+    'error.cannot_delete_admin'        => 'Revoca il ruolo admin prima di eliminare l\'utente.',
     'admin.user.new_title'      => 'Nuovo utente — Aquata',
     'admin.user.edit_title'     => 'Modifica utente — Aquata',
     'admin.user.new_heading'    => 'Nuovo utente',
@@ -321,6 +332,7 @@ return [
     'error.password_min'        => 'La password deve avere almeno %d caratteri.',
     'error.tos_required'        => 'Devi accettare i termini di servizio.',
     'error.resend_confirm'      => "Se l'email è valida e non verificata, ti abbiamo rispedito il link.",
+    'error.already_verified'    => 'Il tuo account è già attivo. Puoi effettuare il login.',
     'error.pwreset_sent'        => "Se l'email è registrata, riceverai un link per reimpostare la password.",
     'error.passwords_mismatch'  => 'Le password non coincidono.',
     'error.link_invalid'        => 'Link non valido o scaduto. Richiedi un nuovo link.',
@@ -596,4 +608,18 @@ return [
     'js.editor.flows.unnamed' => 'Flusso senza nome',
     // footer
     'footer.source'                     => 'Codice sorgente',
+
+    // demo tier
+    'demo.banner'                       => 'Account demo — i diagrammi scadono 24 ore dopo la creazione.',
+    'demo.expires_in_hm'                => 'scade in %dh %dm',
+    'demo.expires_in_m'                 => 'scade in %dm',
+    'demo.diagram_expired'              => 'Questo diagramma è scaduto. Contatta un admin per aggiornare il tuo account.',
+
+    // admin users — tier
+    'admin.users.tier'                  => 'Livello',
+    'admin.users.tier_demo'             => 'demo',
+    'admin.users.tier_full'             => 'full',
+    'admin.users.promote'               => 'Promuovi a full',
+    'admin.users.promote_confirm'       => 'Promuovere %s al livello full? I suoi diagrammi non scadranno più.',
+    'admin.users.promoted'              => 'Utente promosso al livello full.',
 ];

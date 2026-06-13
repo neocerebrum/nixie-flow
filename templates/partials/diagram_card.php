@@ -17,6 +17,19 @@ $cardReadonly = !empty($readonly);
             <?php if (!$cardReadonly && !empty($d['share_count']) && (int)$d['share_count'] > 0): ?>
                 <span class="card-share-dot" title="<?= __('dashboard.is_shared') ?>"><svg class="icon icon-sm"><use href="#icon-share"/></svg></span>
             <?php endif; ?>
+            <?php
+            if (!empty($d['expires_at'])) {
+                $expSec = strtotime($d['expires_at'] . ' UTC') - time();
+                if ($expSec > 0) {
+                    $expH = (int)($expSec / 3600);
+                    $expM = (int)(($expSec % 3600) / 60);
+                    $expLabel = $expH > 0
+                        ? __('demo.expires_in_hm', $expH, $expM)
+                        : __('demo.expires_in_m', max(1, $expM));
+                    echo '<span class="badge badge-warn" style="margin-left:4px" title="' . e($d['expires_at']) . '">' . $expLabel . '</span>';
+                }
+            }
+            ?>
         </p>
     </a>
     <div class="diagram-card-actions">

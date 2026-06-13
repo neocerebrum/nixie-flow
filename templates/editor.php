@@ -39,6 +39,21 @@
     <span id="status"></span>
 </header>
 
+<!-- Demo expiry notice (shown only when < 2 h remain) -->
+<?php
+$_expSec = !empty($bootstrap['expires_at']) ? (strtotime($bootstrap['expires_at'] . ' UTC') - time()) : null;
+if ($_expSec !== null && $_expSec > 0 && $_expSec < 7200):
+    $_expH = (int)($_expSec / 3600);
+    $_expM = (int)(($_expSec % 3600) / 60);
+    $_expLabel = $_expH > 0
+        ? __('demo.expires_in_hm', $_expH, $_expM)
+        : __('demo.expires_in_m', max(1, $_expM));
+?>
+<div class="lock-banner" style="background:var(--color-warn,#f59e0b22);border-bottom:1px solid var(--color-warn,#f59e0b);">
+    <span><?= $_expLabel ?></span>
+</div>
+<?php endif; ?>
+
 <!-- Lock state banner (view-only / lock free / lock mine / lock other) -->
 <div id="lockBanner" class="lock-banner">
     <span id="dirtyBadge" class="ed-badge hidden"><?= __('editor.modified') ?></span>

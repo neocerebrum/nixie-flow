@@ -8,7 +8,7 @@ use RuntimeException;
 
 final class Schema
 {
-    private const BASELINE_VERSION = 21;
+    private const BASELINE_VERSION = 22;
 
     private const BASELINE_SQL = <<<'SQL'
 CREATE TABLE users (
@@ -17,6 +17,7 @@ CREATE TABLE users (
   password_hash     TEXT NOT NULL,
   display_name      TEXT,
   role              TEXT NOT NULL DEFAULT 'user',
+  tier              TEXT NOT NULL DEFAULT 'full',
   created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   disabled_at       TIMESTAMP NULL,
@@ -36,6 +37,7 @@ CREATE TABLE diagrams (
   created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   deleted_at        TIMESTAMP NULL,
+  expires_at        TIMESTAMP NULL,
   project_id        INTEGER,
   source_diagram_id INTEGER,
   FOREIGN KEY (owner_id) REFERENCES users(id)
@@ -222,12 +224,11 @@ SQL;
     // BRIDGE: one-shot upgrade from previous baseline to current. Set both
     // constants when a schema change ships, then delete after every running
     // instance is on BASELINE_VERSION.
-    private const BRIDGE_FROM = 20;
-    // v21: agent_label on edit_requests. When an agent files a turn request,
-    // its API-token label is stored here so the accept handler can re-stamp
-    // edit_lock_agent_label atomically on transfer, eliminating the banner flash.
+    private const BRIDGE_FROM = 21;
+    // v22: tier on users (demo/full), expires_at on diagrams (24h TTL for demo accounts).
     private const BRIDGE_SQL  = <<<'SQL'
-ALTER TABLE edit_requests ADD COLUMN agent_label TEXT;
+ALTER TABLE users ADD COLUMN tier TEXT NOT NULL DEFAULT 'full';
+ALTER TABLE diagrams ADD COLUMN expires_at TIMESTAMP NULL;
 SQL;
 
     private static bool $checked = false;

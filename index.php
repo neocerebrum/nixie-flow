@@ -15,7 +15,8 @@ $router->post('/logout',  [App\Controllers\AuthController::class,    'logout']);
 $router->get('/signup',                 [App\Controllers\SignupController::class, 'showForm']);
 $router->post('/signup',                [App\Controllers\SignupController::class, 'submit']);
 $router->get('/signup/check-email',     [App\Controllers\SignupController::class, 'checkEmail']);
-$router->get('/signup/verify',          [App\Controllers\SignupController::class, 'verify']);
+$router->get('/signup/verify',          [App\Controllers\SignupController::class, 'showVerify']);
+$router->post('/signup/verify',         [App\Controllers\SignupController::class, 'doVerify']);
 $router->post('/signup/resend',         [App\Controllers\SignupController::class, 'resend']);
 
 // Password reset (web)
@@ -42,6 +43,8 @@ $router->get('/admin/users/{id}',      [App\Controllers\Admin\UserController::cl
 $router->post('/admin/users/{id}',     [App\Controllers\Admin\UserController::class, 'update']);
 $router->post('/admin/users/{id}/disable', [App\Controllers\Admin\UserController::class, 'disable']);
 $router->post('/admin/users/{id}/restore', [App\Controllers\Admin\UserController::class, 'restore']);
+$router->post('/admin/users/{id}/promote', [App\Controllers\Admin\UserController::class, 'promote']);
+$router->post('/admin/users/{id}/delete',  [App\Controllers\Admin\UserController::class, 'deleteUser']);
 
 // API
 $router->get('/api/csrf',                       [App\Controllers\Api\CsrfController::class,    'token']);

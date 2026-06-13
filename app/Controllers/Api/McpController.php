@@ -762,6 +762,10 @@ TXT;
         if ($diagram === null || !Diagram::canWrite($diagram, $user) || Diagram::isDeleted($diagram)) {
             throw new McpToolException("Not found or no edit permission: $slug");
         }
+        $isAdmin = ($user['role'] ?? '') === 'admin';
+        if (Diagram::isExpired($diagram) && !$isAdmin) {
+            throw new McpToolException("diagram_expired: $slug");
+        }
 
         $this->acquireTurn($diagram, $user);
 
@@ -827,8 +831,12 @@ TXT;
             $slug = Slug::ensureUnique($base, [Diagram::class, 'slugExists']);
         }
 
+        $expiresAt = User::isDemo($user)
+            ? gmdate('Y-m-d H:i:s', time() + 86400)
+            : null;
+
         [$diagram, $rev] = Diagram::createWithFirstRevision(
-            $slug, $title, (int) $user['id'], $source, $layoutJson
+            $slug, $title, (int) $user['id'], $source, $layoutJson, $expiresAt
         );
 
         return $this->structuredResult([
@@ -1641,6 +1649,9 @@ RE;
         $isAdmin = ($user['role'] ?? '') === 'admin';
         if (Diagram::isDeleted($diagram) && !$isAdmin) {
             throw new McpToolException("Not found: $slug");
+        }
+        if (Diagram::isExpired($diagram) && !$isAdmin) {
+            throw new McpToolException("diagram_expired: $slug");
         }
         return $diagram;
     }

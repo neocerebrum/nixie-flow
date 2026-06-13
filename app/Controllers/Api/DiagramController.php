@@ -151,12 +151,17 @@ final class DiagramController
             ? $this->resolveTargetProject($body['project'], $user)
             : null;
 
+        $expiresAt = User::isDemo($user)
+            ? gmdate('Y-m-d H:i:s', time() + 86400)
+            : null;
+
         [$diagram, $current] = Diagram::createWithFirstRevision(
             $slug,
             $title,
             (int) $user['id'],
             $source,
-            $layout
+            $layout,
+            $expiresAt
         );
         if ($projectId !== null) {
             Diagram::setProject((int) $diagram['id'], $projectId);
@@ -521,6 +526,9 @@ final class DiagramController
         if (Diagram::isDeleted($diagram) && !$isAdmin) {
             Response::error('Not found', 404);
         }
+        if (Diagram::isExpired($diagram) && !$isAdmin) {
+            Response::error('diagram_expired', 410);
+        }
         return $diagram;
     }
 
@@ -533,6 +541,9 @@ final class DiagramController
         $isAdmin = ($user['role'] ?? '') === 'admin';
         if (Diagram::isDeleted($diagram) && !$isAdmin) {
             Response::error('Not found', 404);
+        }
+        if (Diagram::isExpired($diagram) && !$isAdmin) {
+            Response::error('diagram_expired', 410);
         }
         if (!Diagram::canWrite($diagram, $user)) {
             Response::error('You do not have edit permission on this diagram', 403);

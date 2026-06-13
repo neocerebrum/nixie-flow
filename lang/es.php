@@ -41,12 +41,17 @@ return [
     'verify.done.heading'       => 'Email verificado',
     'verify.done.body'          => 'Tu cuenta ya esta activa.',
     'verify.done.login'         => 'Iniciar sesion',
+    'verify.confirm.title'      => 'Confirma tu cuenta — Aquata',
+    'verify.confirm.heading'    => 'Confirma tu cuenta',
+    'verify.confirm.body'       => 'Haz clic en el botón para activar tu cuenta.',
+    'verify.confirm.submit'     => 'Activar cuenta',
     'verify.failed.title'       => 'Verificacion fallida — Aquata',
     'verify.failed.heading'     => 'Verificacion fallida',
     'verify.failed.body'        => 'El enlace no es valido o ha expirado.',
     'verify.failed.hint'        => 'Puedes solicitar un nuevo enlace desde la pagina de registro.',
     'verify.failed.resend'      => 'Reenviar enlace',
-    'verify.failed.login'       => 'Login',
+    'verify.failed.login'          => 'Login',
+    'verify.failed.already_active' => 'Si ya puedes iniciar sesión, tu cuenta ya está activa.',
 
     // ── password reset ──
     'pwreset.request.title'     => 'Recuperar contrasena — Aquata',
@@ -285,6 +290,12 @@ return [
     'admin.users.restore'       => 'Reactivar',
     'admin.users.disable'       => 'Deshabilitar',
     'admin.users.disable_confirm' => 'Deshabilitar a %s?',
+    'admin.users.delete_user'     => 'Eliminar permanentemente',
+    'admin.users.delete_confirm'  => '¿Eliminar a %s permanentemente? Se eliminarán todos sus diagramas y proyectos. Esta acción no se puede deshacer.',
+    'admin.users.deleted'         => 'Usuario %s eliminado permanentemente.',
+    'error.cannot_delete_self'         => 'No puedes eliminar tu propia cuenta.',
+    'error.must_disable_before_delete' => 'Deshabilita al usuario antes de eliminarlo.',
+    'error.cannot_delete_admin'        => 'Revoca el rol de admin antes de eliminar al usuario.',
     'admin.user.new_title'      => 'Nuevo usuario — Aquata',
     'admin.user.edit_title'     => 'Editar usuario — Aquata',
     'admin.user.new_heading'    => 'Nuevo usuario',
@@ -319,6 +330,7 @@ return [
     'error.password_min'        => 'La contrasena debe tener al menos %d caracteres.',
     'error.tos_required'        => 'Debes aceptar los terminos de servicio.',
     'error.resend_confirm'      => 'Si el email es valido y no esta verificado, te hemos reenviado el enlace.',
+    'error.already_verified'    => 'Tu cuenta ya está activa. Puedes iniciar sesión.',
     'error.pwreset_sent'        => 'Si el email esta registrado, recibiras un enlace para restablecer tu contrasena.',
     'error.passwords_mismatch'  => 'Las contrasenas no coinciden.',
     'error.link_invalid'        => 'Enlace no valido o expirado. Solicita uno nuevo.',
@@ -592,6 +604,21 @@ return [
     'js.editor.flows.empty' => 'Sin flujos aún.',
     'js.editor.flows.name_hint' => 'Nombre del flujo…',
     'js.editor.flows.unnamed' => 'Flujo sin nombre',
+
+
     // footer
     'footer.source'                     => 'Código fuente',
+
+    // demo tier
+    'demo.banner'                       => 'Cuenta demo — los diagramas expiran 24 horas después de su creación.',
+    'demo.diagram_expires'              => 'Caduca %s',
+    'demo.expires_in_hm'                => 'caduca en %dh %dm',
+    'demo.expires_in_m'                 => 'caduca en %dm',
+    'demo.diagram_expired'              => 'Este diagrama ha expirado. Contacta a un administrador para actualizar tu cuenta.',
+    'admin.users.tier'                  => 'Nivel',
+    'admin.users.tier_demo'             => 'demo',
+    'admin.users.tier_full'             => 'completo',
+    'admin.users.promote'               => 'Promover a completo',
+    'admin.users.promote_confirm'       => '¿Promover a %s al nivel completo? Sus diagramas ya no expirarán.',
+    'admin.users.promoted'              => 'Usuario promovido al nivel completo.',
 ];

@@ -3,6 +3,7 @@
 /** @var array $diagrams */       // unfiled diagrams owned by the user
 /** @var array $sharedProjects */
 /** @var array $sharedDiagrams */
+/** @var bool $isDemo */
 /** @var string $csrfToken */
 ?>
 <section class="page page-dashboard">
@@ -13,6 +14,10 @@
             <button id="newDiagramBtn" class="btn btn-primary"><svg class="icon icon-sm"><use href="#icon-plus"/></svg> <?= __('dashboard.new_diagram') ?></button>
         </div>
     </header>
+
+    <?php if ($isDemo): ?>
+    <div class="notice notice-warn"><?= __('demo.banner') ?></div>
+    <?php endif; ?>
 
     <p class="muted"><?= __('dashboard.welcome', e($user['display_name'] ?? $user['email'])) ?></p>
 

@@ -23,7 +23,7 @@
     </form>
     <p class="muted" style="margin-top:1rem">
         <a href="/password-reset"><?= __('login.forgot_password') ?></a>
-        <?php if (\App\Config::bool('SIGNUP_ENABLED', true)): ?>
+        <?php if (\App\Config::bool('SIGNUP_ENABLED', false)): ?>
             &nbsp;·&nbsp; <a href="/signup"><?= __('login.create_account') ?></a>
         <?php endif; ?>
     </p>

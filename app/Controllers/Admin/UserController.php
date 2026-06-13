@@ -184,6 +184,50 @@ final class UserController
         Response::redirect('/admin/users');
     }
 
+    public function deleteUser(array $args): never
+    {
+        $current = Auth::requireAdmin();
+        Csrf::requireValid();
+
+        $id = (int) $args['id'];
+        $user = User::byId($id);
+        if ($user === null) {
+            Response::notFound('User not found');
+        }
+        if ((int) $current['id'] === $id) {
+            $this->flash('error', __('error.cannot_delete_self'));
+            Response::redirect('/admin/users');
+        }
+        if (empty($user['disabled_at'])) {
+            $this->flash('error', __('error.must_disable_before_delete'));
+            Response::redirect('/admin/users');
+        }
+        if ($user['role'] === 'admin') {
+            $this->flash('error', __('error.cannot_delete_admin'));
+            Response::redirect('/admin/users');
+        }
+
+        User::purge($id);
+        $this->flash('success', __('admin.users.deleted', e($user['email'])));
+        Response::redirect('/admin/users');
+    }
+
+    public function promote(array $args): never
+    {
+        Auth::requireAdmin();
+        Csrf::requireValid();
+
+        $id = (int) $args['id'];
+        $user = User::byId($id);
+        if ($user === null) {
+            Response::notFound('User not found');
+        }
+
+        User::promoteToFull($id);
+        $this->flash('success', __('admin.users.promoted'));
+        Response::redirect('/admin/users');
+    }
+
     private function flash(string $type, string $msg): void
     {
         $_SESSION['flash'] = ['type' => $type, 'msg' => $msg];

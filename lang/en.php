@@ -41,12 +41,17 @@ return [
     'verify.done.heading'       => 'Email verified',
     'verify.done.body'          => 'Your account is now active.',
     'verify.done.login'         => 'Sign in',
+    'verify.confirm.title'      => 'Confirm your account — Aquata',
+    'verify.confirm.heading'    => 'Confirm your account',
+    'verify.confirm.body'       => 'Click the button below to activate your account.',
+    'verify.confirm.submit'     => 'Activate account',
     'verify.failed.title'       => 'Verification failed — Aquata',
     'verify.failed.heading'     => 'Verification failed',
     'verify.failed.body'        => 'The link is invalid or has expired.',
     'verify.failed.hint'        => 'You can request a new link from the signup page.',
     'verify.failed.resend'      => 'Resend link',
-    'verify.failed.login'       => 'Login',
+    'verify.failed.login'          => 'Login',
+    'verify.failed.already_active' => 'If you can already log in, your account is already active.',
 
     // ── password reset ──
     'pwreset.request.title'     => 'Password recovery — Aquata',
@@ -287,6 +292,12 @@ return [
     'admin.users.restore'       => 'Re-enable',
     'admin.users.disable'       => 'Disable',
     'admin.users.disable_confirm' => 'Disable %s?',
+    'admin.users.delete_user'     => 'Delete permanently',
+    'admin.users.delete_confirm'  => "Delete %s permanently? This will delete all their diagrams and projects. This cannot be undone.",
+    'admin.users.deleted'         => 'User %s deleted permanently.',
+    'error.cannot_delete_self'        => 'You cannot delete your own account.',
+    'error.must_disable_before_delete' => 'Disable the user before deleting.',
+    'error.cannot_delete_admin'       => 'Demote the user from admin before deleting.',
     'admin.user.new_title'      => 'New user — Aquata',
     'admin.user.edit_title'     => 'Edit user — Aquata',
     'admin.user.new_heading'    => 'New user',
@@ -321,6 +332,7 @@ return [
     'error.password_min'        => 'Password must be at least %d characters.',
     'error.tos_required'        => 'You must accept the terms of service.',
     'error.resend_confirm'      => "If the email is valid and not verified, we've resent the link.",
+    'error.already_verified'    => 'Your account is already active. You can log in now.',
     'error.pwreset_sent'        => "If the email is registered, you'll receive a link to reset your password.",
     'error.passwords_mismatch'  => 'Passwords do not match.',
     'error.link_invalid'        => 'Invalid or expired link. Request a new one.',
@@ -597,4 +609,18 @@ return [
 
     // footer
     'footer.source'                     => 'Source code',
+
+    // demo tier
+    'demo.banner'                       => 'Demo account — diagrams expire 24 hours after creation.',
+    'demo.expires_in_hm'                => 'expires in %dh %dm',
+    'demo.expires_in_m'                 => 'expires in %dm',
+    'demo.diagram_expired'              => 'This diagram has expired. Contact an admin to upgrade your account.',
+
+    // admin users — tier
+    'admin.users.tier'                  => 'Tier',
+    'admin.users.tier_demo'             => 'demo',
+    'admin.users.tier_full'             => 'full',
+    'admin.users.promote'               => 'Promote to full',
+    'admin.users.promote_confirm'       => 'Promote %s to full tier? Their diagrams will no longer expire.',
+    'admin.users.promoted'              => 'User promoted to full tier.',
 ];

@@ -28,6 +28,10 @@ final class EditorController
         if (Diagram::isDeleted($diagram) && !$isAdmin) {
             $this->render404();
         }
+        if (Diagram::isExpired($diagram) && !$isAdmin) {
+            $_SESSION['_flash'] = ['type' => 'warn', 'msg' => __('demo.diagram_expired')];
+            Response::redirect('/dashboard');
+        }
 
         $current = Revision::current((int) $diagram['id']);
         $sourceRevId = $current !== null && $current['source_revision_id'] !== null
@@ -45,6 +49,7 @@ final class EditorController
             'created_at'  => $diagram['created_at'],
             'updated_at'  => $diagram['updated_at'],
             'deleted_at'  => $diagram['deleted_at'] ?? null,
+            'expires_at'  => $diagram['expires_at'] ?? null,
             'can_undo'    => false,
             'can_redo'    => false,
             'permission'  => Diagram::permissionFor($diagram, $user),

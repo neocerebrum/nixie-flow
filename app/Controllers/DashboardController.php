@@ -39,6 +39,7 @@ final class DashboardController
             'sharedProjects' => $sharedProjects,
             'sharedDiagrams' => $shared,
             'csrfToken'      => Csrf::token(),
+            'isDemo'         => \App\Models\User::isDemo($user),
         ], ['title' => __('dashboard.title'), 'active' => 'dashboard']);
     }
 }

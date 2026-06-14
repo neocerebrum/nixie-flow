@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="static/aquata_logo.svg" alt="Nixie Flow" width="200">
+  <img src="static/nixieflow_logo.svg" alt="Nixie Flow" width="200">
 </p>
 
 <p align="center">
@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <a href="https://aquata.neocerebrum.ai">Try the live demo →</a>
+  <a href="https://nixie.neocerebrum.ai">Try the live demo →</a>
 </p>
 
 Nixie Flow is a self-hostable web app that stores [Mermaid](https://mermaid.js.org/) diagrams and exposes them to AI agents over [MCP](https://modelcontextprotocol.io/) (Model Context Protocol). Humans edit diagrams in a rich visual editor; agents read and write the same diagrams through a clean semantic interface. Neither side has to put up with the other's format.
@@ -48,8 +48,8 @@ On top sits the **grounding protocol**: per-element notes are not mere descripti
 ## Quick start
 
 ```bash
-git clone https://github.com/neocerebrum/Nixie Flow.git
-cd Nixie Flow
+git clone https://github.com/neocerebrum/nixie-flow.git
+cd nixie-flow
 cp .env.example .env        # defaults are fine for a local try
 php scripts/seed_admin.php  # create the first admin user (interactive; or use setup.php if no CLI)
 php -S localhost:8080 scripts/dev_router.php
@@ -84,7 +84,7 @@ If you lose all admin access, `scripts/reset_password.php <email>` is the CLI es
 2. Register the server with your agent — e.g. for Claude Code:
 
 ```bash
-claude mcp add --transport http aquata https://your-host/mcp \
+claude mcp add --transport http nixieflow https://your-host/mcp \
   --header "Authorization: Bearer <your-token>"
 ```
 
@@ -100,7 +100,7 @@ See [`docs/grounding.md`](docs/grounding.md) for the full protocol: the receipt 
 
 ## i18n
 
-Translations live in `lang/{en,it,fr,de,es,pt,zh,ja,ko}.php` as flat arrays with dot-notation keys. To add a language, create `lang/xx.php` with all keys and add `'xx'` to `I18n::SUPPORTED` (`app/I18n.php`). Language detection: `aquata_lang` cookie → `Accept-Language` header → English fallback.
+Translations live in `lang/{en,it,fr,de,es,pt,zh,ja,ko}.php` as flat arrays with dot-notation keys. To add a language, create `lang/xx.php` with all keys and add `'xx'` to `I18n::SUPPORTED` (`app/I18n.php`). Language detection: `nixieflow_lang` cookie → `Accept-Language` header → English fallback.
 
 ## Architecture notes
 

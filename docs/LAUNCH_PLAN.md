@@ -33,7 +33,7 @@ Ordered checklist for taking Nixie Flow public. Living document — check items 
 - [x] GitHub repo "About" (doable now, while private — the **About** box on the repo home,
       gear icon — NOT Settings). Ready-to-paste:
       - **Description:** `Mermaid diagrams as a shared language between humans and AI coding agents — a self-hostable editor + MCP server with code-grounded, verifiable notes.`
-      - **Website:** `https://aquata.neocerebrum.work`
+      - **Website:** `https://nixie.neocerebrum.work`
       - **Topics:** `mermaid mcp model-context-protocol ai-agents claude claude-code llm diagrams diagram-editor living-documentation documentation-as-code architecture-diagrams self-hosted php sqlite agpl`
       - (Social preview image moved to Phase 2 — GitHub hides that section on private repos.)
 

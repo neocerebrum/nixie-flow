@@ -24,7 +24,7 @@ The agent authenticates to Nixie Flow with a bearer token, separate from your br
 Point your agent at the Nixie Flow MCP endpoint (`/mcp`), passing the token as a bearer header. For Claude Code:
 
 ```bash
-claude mcp add --transport http aquata https://your-host/mcp \
+claude mcp add --transport http nixieflow https://your-host/mcp \
   --header "Authorization: Bearer aqt_your_token_here"
 ```
 

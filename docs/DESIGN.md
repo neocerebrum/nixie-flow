@@ -64,13 +64,13 @@ Rationale: covers 95% of real workflows (sequential collaboration). Implementabl
   - `get_layout`, `set_layout` — sidecar JSON for node positions
 - **Per-user token UI**: in the webapp, each user can manage tokens (create with label, revoke). On creation, the page shows the plaintext once plus a ready-to-paste Claude config snippet:
   ```json
-  { "mcpServers": { "aquata": { "url": "https://example.com/mcp",
+  { "mcpServers": { "nixieflow": { "url": "https://example.com/mcp",
     "headers": { "Authorization": "Bearer aqt_..." } } } }
   ```
 
 ## Authentication
 
-- **Sessions** (PHP native, cookie `aquata_sid`) for browser users.
+- **Sessions** (PHP native, cookie `nixieflow_sid`) for browser users.
 - **Bearer tokens** (`api_tokens` table) for MCP and API integrations.
 - **Registration is closed**: only admins create users (admin CRUD UI in Phase 1).
 - Passwords stored as `password_hash(PASSWORD_BCRYPT)`. Verification via `password_verify`.

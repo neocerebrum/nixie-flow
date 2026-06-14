@@ -58,7 +58,7 @@ if [[ $# -eq 0 ]]; then
 fi
 
 # Protected files: never uploaded (contain credentials or local data)
-PROTECTED_FILES=(".env" ".env.example" ".deploy-config" ".deploy-config.example" "deploy.sh" "lint.sh" "test_api.sh" "dev_router.php" "aquata.sqlite" "debug.log" ".gitignore")
+PROTECTED_FILES=(".env" ".deploy-config" "deploy.sh" "lint.sh" "test_api.sh" "dev_router.php" "aquata.sqlite" "debug.log" ".gitignore")
 
 # Build file list
 FILES=()
@@ -72,9 +72,8 @@ if [[ "$1" == "--all" ]]; then
         ! -path '*/data/*' \
         ! -path '*/docs/*' \
         ! -name '.env' \
-        ! -name '.env.example' \
         ! -name '.deploy-config' \
-        ! -name '.deploy-config.example' \
+        ! -name '.deploy-config.*' \
         ! -name '.gitignore' \
         ! -name 'deploy.sh' \
         ! -name 'lint.sh' \
@@ -91,6 +90,11 @@ else
     for f in "$@"; do
         basename=$(basename "$f")
         skip=false
+        # Block .env and all .deploy-config* variants
+        if [[ "$basename" == ".env" || "$basename" == .deploy-config* ]]; then
+            echo "BLOCKED: '$f' is a protected file, skipping."
+            continue
+        fi
         for p in "${PROTECTED_FILES[@]}"; do
             if [[ "$basename" == "$p" ]]; then
                 echo "BLOCKED: '$f' is a protected file, skipping."

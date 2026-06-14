@@ -1,4 +1,4 @@
-/* Aquata editor — ported from the original prototype with adaptations.
+/* Nixie Flow editor — ported from the original prototype with adaptations.
  *
  * Differences from the prototype:
  *  - No filesystem paths: a single diagram identified by `state.slug`
@@ -370,7 +370,7 @@
   // to track which of the user's tabs is currently the "active" one — only
   // that tab is allowed to issue writes.
   const TAB_ID = (() => {
-    const KEY = "aquata_tab_id";
+    const KEY = "nixieflow_tab_id";
     let v = null;
     try { v = sessionStorage.getItem(KEY); } catch (_) {}
     if (!v) {
@@ -8776,7 +8776,7 @@
     if (dto.title && dto.title !== currentTitle) {
       currentTitle = dto.title;
       titleEl.textContent = currentTitle;
-      document.title = currentTitle + " — Aquata";
+      document.title = currentTitle + " — Nixie Flow";
     }
     clearDirty();
     // Keep selection across remote reloads: renderDiagram's restore-selection
@@ -8962,7 +8962,7 @@
       }
       currentTitle = json.title;
       titleEl.textContent = currentTitle;
-      document.title = currentTitle + " — Aquata";
+      document.title = currentTitle + " — Nixie Flow";
       closeRenameModal();
       setStatus(__("editor.status.renamed"));
     } catch (e) {
@@ -9928,7 +9928,7 @@
   // Persist source/notes panel width + collapsed state across reloads. Single
   // global key (not per-diagram): the user's preferred workspace layout is the
   // same regardless of which diagram is open.
-  const PANEL_PREFS_KEY = "aquata.editor.panels";
+  const PANEL_PREFS_KEY = "nixieflow.editor.panels";
   function loadPanelPrefs() {
     try {
       const raw = localStorage.getItem(PANEL_PREFS_KEY);

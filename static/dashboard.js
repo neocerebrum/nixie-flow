@@ -1,4 +1,4 @@
-/* Aquata dashboard interactions: new diagram modal + delete confirmation. */
+/* Nixie Flow dashboard interactions: new diagram modal + delete confirmation. */
 (function () {
   "use strict";
 
@@ -535,7 +535,7 @@
       try {
         const { status, json } = await api("GET", "/api/projects");
         if (status === 200 && Array.isArray(json)) {
-          const lastProject = localStorage.getItem("aquata_last_move_project") || "";
+          const lastProject = localStorage.getItem("nixieflow_last_move_project") || "";
           for (const p of json) {
             const opt = document.createElement("option");
             opt.value = p.slug;
@@ -558,7 +558,7 @@
           `/api/diagrams/${encodeURIComponent(moveSlug)}/move`,
           { project: target || null });
         if (status === 200) {
-          localStorage.setItem("aquata_last_move_project", target || "");
+          localStorage.setItem("nixieflow_last_move_project", target || "");
           location.reload();
         }
         else { moveError.textContent = (json && json.error) || `HTTP ${status}`; }

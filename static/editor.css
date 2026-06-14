@@ -1,4 +1,4 @@
-/* Aquata editor — ported from Ariel mermaid_editor with adaptations.
+/* Nixie Flow editor — ported from Ariel mermaid_editor with adaptations.
  * Body fills viewport; header + palette + main flex column; canvas takes the rest. */
 
 html, body { height: 100vh; }

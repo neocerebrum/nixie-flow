@@ -1,4 +1,10 @@
-FTP_HOST=ftp.tuoserver.com                                                                        
-FTP_USER=utente                                              
-FTP_PASS=password                                                                                 
-FTP_REMOTE_DIR=/percorso/remoto/del/bot
+FTP_HOST=ftp.example.com
+FTP_USER=username
+FTP_PASS=password
+FTP_REMOTE_DIR=/public_html/aquata
+
+# For multiple deploy targets, create additional config files:
+#   .deploy-config        → default target (./deploy.sh file.php)
+#   .deploy-config.ai     → named target   (./deploy.sh --target ai file.php)
+#   .deploy-config.work   → named target   (./deploy.sh --target work file.php)
+# Each file uses the same FTP_* variables above.

@@ -14,7 +14,19 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CONFIG_FILE="$SCRIPT_DIR/.deploy-config"
+
+# Parse --target <name> before any other argument
+TARGET=""
+if [[ "${1:-}" == "--target" ]]; then
+    TARGET="$2"
+    shift 2
+fi
+
+if [[ -n "$TARGET" ]]; then
+    CONFIG_FILE="$SCRIPT_DIR/.deploy-config.$TARGET"
+else
+    CONFIG_FILE="$SCRIPT_DIR/.deploy-config"
+fi
 
 if [[ ! -f "$CONFIG_FILE" ]]; then
     echo "Error: file $CONFIG_FILE not found."
@@ -22,7 +34,7 @@ if [[ ! -f "$CONFIG_FILE" ]]; then
     echo "  FTP_HOST=ftp.example.com"
     echo "  FTP_USER=username"
     echo "  FTP_PASS=password"
-    echo "  FTP_REMOTE_DIR=/public_html/bot"
+    echo "  FTP_REMOTE_DIR=/public_html/aquata"
     exit 1
 fi
 
@@ -39,8 +51,9 @@ for var in FTP_HOST FTP_USER FTP_PASS; do
 done
 
 if [[ $# -eq 0 ]]; then
-    echo "Usage: $0 file1 [file2 ...]"
-    echo "      $0 --all"
+    echo "Usage: $0 [--target <name>] file1 [file2 ...]"
+    echo "       $0 [--target <name>] --all"
+    echo "  --target <name>  use .deploy-config.<name> instead of .deploy-config"
     exit 1
 fi
 

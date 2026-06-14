@@ -47,7 +47,7 @@ On top sits the **grounding protocol**: per-element notes are not mere descripti
 git clone https://github.com/neocerebrum/Aquata.git
 cd Aquata
 cp .env.example .env        # defaults are fine for a local try
-php scripts/seed_admin.php  # create the first admin user (interactive)
+php scripts/seed_admin.php  # create the first admin user (interactive; or use setup.php if no CLI)
 php -S localhost:8080 scripts/dev_router.php
 ```
 
@@ -69,6 +69,8 @@ cp .deploy-config.example .deploy-config   # then edit: FTP_HOST, FTP_USER, FTP_
 ```
 
 It uploads only application files, automatically excluding local-only ones (`.env*`, `data/`, `docs/`, the deploy tooling itself).
+
+If you don't have SSH access, open `https://your-host/setup.php` in a browser instead — it presents a form to create the first admin user and refuses to run if one already exists. **Delete `setup.php` from the server after use.**
 
 If you lose all admin access, `scripts/reset_password.php <email>` is the CLI escape hatch.
 

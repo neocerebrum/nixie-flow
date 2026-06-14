@@ -2,6 +2,7 @@
 !/data/.gitkeep
 .env
 .deploy-config
+.deploy-config.*
 /vendor/
 *.log
 .DS_Store

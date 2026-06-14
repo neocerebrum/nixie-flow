@@ -30,7 +30,7 @@ final class ProjectController
             'permission' => Project::permissionFor($project, $user),
             'csrfToken'  => Csrf::token(),
         ], [
-            'title'  => ($project['title'] ?: $project['slug']) . ' — Aquata',
+            'title'  => ($project['title'] ?: $project['slug']) . ' — Nixie Flow',
             'active' => 'dashboard',
         ]);
     }

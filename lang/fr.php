@@ -7,9 +7,9 @@ return [
     'nav.logout'                => 'Déconnexion',
 
     // ── login ──
-    'login.title'               => 'Connexion — Aquata',
-    'login.heading'             => 'Aquata',
-    'login.subtitle'            => 'Connectez-vous pour gérer vos diagrammes.',
+    'login.title'               => 'Connexion — Nixie Flow',
+    'login.heading'             => 'Nixie Flow',
+    'login.subtitle'            => 'Quand les mots ne suffisent pas.',
     'login.email'               => 'Email',
     'login.password'            => 'Mot de passe',
     'login.submit'              => 'Se connecter',
@@ -17,9 +17,9 @@ return [
     'login.create_account'      => 'Créer un compte',
 
     // ── signup ──
-    'signup.title'              => 'Créer un compte — Aquata',
+    'signup.title'              => 'Créer un compte — Nixie Flow',
     'signup.heading'            => 'Créez votre compte',
-    'signup.subtitle'           => 'Inscrivez-vous pour utiliser l\'éditeur Aquata.',
+    'signup.subtitle'           => 'Inscrivez-vous pour utiliser l\'éditeur Nixie Flow.',
     'signup.email'              => 'Email',
     'signup.display_name'       => 'Nom affiché',
     'signup.password'           => 'Mot de passe',
@@ -28,7 +28,7 @@ return [
     'signup.submit'             => 'S\'inscrire',
     'signup.has_account'        => 'Vous avez déjà un compte ?',
     'signup.login_link'         => 'Se connecter',
-    'signup.check_email.title'  => 'Vérifiez votre email — Aquata',
+    'signup.check_email.title'  => 'Vérifiez votre email — Nixie Flow',
     'signup.check_email.heading'=> 'Vérifiez votre email',
     'signup.check_email.body'   => 'Nous vous avons envoyé un lien de confirmation. Cliquez dessus pour activer votre compte.',
     'signup.check_email.spam'   => "Vous n'avez pas reçu l'email ? Vérifiez votre dossier spam.",
@@ -37,15 +37,15 @@ return [
     'signup.check_email.back'   => 'Retour à la connexion',
 
     // ── verify ──
-    'verify.done.title'         => 'Email vérifié — Aquata',
+    'verify.done.title'         => 'Email vérifié — Nixie Flow',
     'verify.done.heading'       => 'Email vérifié',
     'verify.done.body'          => 'Votre compte est maintenant actif.',
     'verify.done.login'         => 'Se connecter',
-    'verify.confirm.title'      => 'Confirmez votre compte — Aquata',
+    'verify.confirm.title'      => 'Confirmez votre compte — Nixie Flow',
     'verify.confirm.heading'    => 'Confirmez votre compte',
     'verify.confirm.body'       => 'Cliquez sur le bouton ci-dessous pour activer votre compte.',
     'verify.confirm.submit'     => 'Activer le compte',
-    'verify.failed.title'       => 'Vérification échouée — Aquata',
+    'verify.failed.title'       => 'Vérification échouée — Nixie Flow',
     'verify.failed.heading'     => 'Vérification échouée',
     'verify.failed.body'        => 'Le lien est invalide ou a expiré.',
     'verify.failed.hint'        => 'Vous pouvez demander un nouveau lien depuis la page d\'inscription.',
@@ -54,20 +54,20 @@ return [
     'verify.failed.already_active' => 'Si vous pouvez déjà vous connecter, votre compte est déjà actif.',
 
     // ── password reset ──
-    'pwreset.request.title'     => 'Récupération du mot de passe — Aquata',
+    'pwreset.request.title'     => 'Récupération du mot de passe — Nixie Flow',
     'pwreset.request.heading'   => 'Récupération du mot de passe',
     'pwreset.request.subtitle'  => 'Entrez votre email pour recevoir un lien de réinitialisation.',
     'pwreset.request.email'     => 'Email',
     'pwreset.request.submit'    => 'Envoyer le lien',
     'pwreset.request.back'      => 'Retour à la connexion',
-    'pwreset.confirm.title'     => 'Nouveau mot de passe — Aquata',
+    'pwreset.confirm.title'     => 'Nouveau mot de passe — Nixie Flow',
     'pwreset.confirm.heading'   => 'Définir un nouveau mot de passe',
     'pwreset.confirm.password'  => 'Nouveau mot de passe',
     'pwreset.confirm.confirm'   => 'Confirmer le mot de passe',
     'pwreset.confirm.submit'    => 'Mettre à jour',
 
     // ── dashboard ──
-    'dashboard.title'           => 'Dashboard — Aquata',
+    'dashboard.title'           => 'Dashboard — Nixie Flow',
     'dashboard.heading'         => 'Dashboard',
     'dashboard.new_diagram'     => 'Nouveau diagramme',
     'dashboard.welcome'         => 'Bienvenue, <strong>%s</strong>.',
@@ -89,7 +89,7 @@ return [
     'dashboard.move'            => 'Déplacer vers un projet',
     'dashboard.duplicate'       => 'Dupliquer',
     'dashboard.modal.share_project.title' => 'Partager le projet ',
-    'dashboard.modal.share_project.help'  => 'L\'utilisateur doit avoir un compte sur Aquata. L\'accès s\'étend à tous les diagrammes du projet. « view » = lecture seule, « edit » = peut modifier.',
+    'dashboard.modal.share_project.help'  => 'L\'utilisateur doit avoir un compte sur Nixie Flow. L\'accès s\'étend à tous les diagrammes du projet. « view » = lecture seule, « edit » = peut modifier.',
     'dashboard.modal.new_project.title'       => 'Nouveau projet',
     'dashboard.modal.new_project.field_title' => 'Titre',
     'dashboard.modal.new_project.placeholder' => 'p. ex. Système d\'authentification',
@@ -111,7 +111,7 @@ return [
     'dashboard.modal.rename.slug_warning' => 'Attention : changer le slug casse les liens existants (favoris, URL partagées, clients MCP) qui utilisent l\'actuel.',
     'dashboard.modal.rename.save'       => 'Enregistrer',
     'dashboard.modal.share.title'       => 'Partager ',
-    'dashboard.modal.share.help'        => 'L\'utilisateur doit avoir un compte sur Aquata. « view » = lecture seule, « edit » = peut modifier.',
+    'dashboard.modal.share.help'        => 'L\'utilisateur doit avoir un compte sur Nixie Flow. « view » = lecture seule, « edit » = peut modifier.',
     'dashboard.modal.share.placeholder' => 'email@example.com',
     'dashboard.modal.share.add'         => 'Ajouter',
     'dashboard.modal.share.close'       => 'Fermer',
@@ -224,7 +224,7 @@ return [
     'editor.modal.share.placeholder'    => 'email@example.com',
 
     // ── profile ──
-    'profile.title'             => 'Profil — Aquata',
+    'profile.title'             => 'Profil — Nixie Flow',
     'profile.heading'           => 'Profil',
     'profile.account'           => 'Détails du compte',
     'profile.email'             => 'Email',
@@ -237,14 +237,14 @@ return [
     'profile.confirm_password'  => 'Confirmer le nouveau mot de passe',
     'profile.save'              => 'Enregistrer',
     'profile.tokens.heading'    => 'Tokens API / MCP',
-    'profile.tokens.hint'       => 'Gérez les tokens Bearer pour accéder à Aquata depuis Claude (MCP) et d\'autres clients.',
+    'profile.tokens.hint'       => 'Gérez les tokens Bearer pour accéder à Nixie Flow depuis Claude (MCP) et d\'autres clients.',
     'profile.tokens.manage'     => 'Gérer les tokens →',
 
     // ── tokens ──
-    'tokens.title'              => 'Tokens API — Aquata',
+    'tokens.title'              => 'Tokens API — Nixie Flow',
     'tokens.heading'            => 'Tokens API',
     'tokens.back'               => '← Profil',
-    'tokens.help'               => 'Les tokens Bearer sont utilisés par Claude (via MCP) et d\'autres clients API pour agir en votre nom sur Aquata. Une fois créé, le token ne peut plus être récupéré — copiez-le immédiatement et stockez-le dans un gestionnaire de mots de passe.',
+    'tokens.help'               => 'Les tokens Bearer sont utilisés par Claude (via MCP) et d\'autres clients API pour agir en votre nom sur Nixie Flow. Une fois créé, le token ne peut plus être récupéré — copiez-le immédiatement et stockez-le dans un gestionnaire de mots de passe.',
     'tokens.new.heading'        => 'Token créé',
     'tokens.new.hint'           => 'Affiché une seule fois. Désormais, seul le hash sha256 est stocké en base.',
     'tokens.new.copy'           => 'Copier',
@@ -273,7 +273,7 @@ return [
     'tokens.endpoint.hint'      => 'Toutes les requêtes nécessitent l\'en-tête <code>Authorization: Bearer aqt_...</code>. Le transport est MCP Streamable HTTP (JSON-RPC 2.0).',
 
     // ── admin ──
-    'admin.users.title'         => 'Utilisateurs — Aquata',
+    'admin.users.title'         => 'Utilisateurs — Nixie Flow',
     'admin.users.heading'       => 'Utilisateurs',
     'admin.users.new'           => 'Nouvel utilisateur',
     'admin.users.email'         => 'Email',
@@ -296,8 +296,8 @@ return [
     'error.cannot_delete_self'         => 'Vous ne pouvez pas supprimer votre propre compte.',
     'error.must_disable_before_delete' => "Désactivez l'utilisateur avant de le supprimer.",
     'error.cannot_delete_admin'        => "Révoquez le rôle admin avant de supprimer l'utilisateur.",
-    'admin.user.new_title'      => 'Nouvel utilisateur — Aquata',
-    'admin.user.edit_title'     => 'Modifier l\'utilisateur — Aquata',
+    'admin.user.new_title'      => 'Nouvel utilisateur — Nixie Flow',
+    'admin.user.edit_title'     => 'Modifier l\'utilisateur — Nixie Flow',
     'admin.user.new_heading'    => 'Nouvel utilisateur',
     'admin.user.edit_heading'   => 'Modifier l\'utilisateur',
     'admin.user.back'           => '← Retour à la liste',
@@ -310,7 +310,7 @@ return [
     'admin.user.save'           => 'Enregistrer les modifications',
 
     // ── 404 ──
-    '404.title'                 => 'Page introuvable — Aquata',
+    '404.title'                 => 'Page introuvable — Nixie Flow',
     '404.heading'               => '404 — Page introuvable',
     '404.message'               => 'La ressource demandée n\'existe pas ou vous n\'avez pas la permission d\'y accéder.',
     '404.back'                  => '← Retour au dashboard',
@@ -356,10 +356,10 @@ return [
     'error.diagram_not_found'   => 'Diagramme introuvable ou vous n\'y avez pas accès.',
 
     // ── email ──
-    'email.verify.subject'      => 'Confirmez votre email — Aquata',
-    'email.verify.body'         => "Bonjour %s,\n\nBienvenue sur Aquata. Confirmez votre email en cliquant ci-dessous :\n\n%s\n\nLe lien est valable 24 heures.\n\nSi vous ne vous êtes pas inscrit, ignorez cet email.\n",
-    'email.reset.subject'       => 'Réinitialisez votre mot de passe — Aquata',
-    'email.reset.body'          => "Bonjour %s,\n\nNous avons reçu une demande de réinitialisation de mot de passe pour votre compte Aquata.\nDéfinissez un nouveau mot de passe en cliquant ci-dessous :\n\n%s\n\nLe lien est valable 1 heure.\n\nSi vous n'avez pas fait cette demande, ignorez cet email — votre mot de passe actuel reste valide.\n",
+    'email.verify.subject'      => 'Confirmez votre email — Nixie Flow',
+    'email.verify.body'         => "Bonjour %s,\n\nBienvenue sur Nixie Flow. Confirmez votre email en cliquant ci-dessous :\n\n%s\n\nLe lien est valable 24 heures.\n\nSi vous ne vous êtes pas inscrit, ignorez cet email.\n",
+    'email.reset.subject'       => 'Réinitialisez votre mot de passe — Nixie Flow',
+    'email.reset.body'          => "Bonjour %s,\n\nNous avons reçu une demande de réinitialisation de mot de passe pour votre compte Nixie Flow.\nDéfinissez un nouveau mot de passe en cliquant ci-dessous :\n\n%s\n\nLe lien est valable 1 heure.\n\nSi vous n'avez pas fait cette demande, ignorez cet email — votre mot de passe actuel reste valide.\n",
 
     // ── JS strings (prefixed js. — stripped for frontend) ──
 

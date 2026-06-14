@@ -10,7 +10,7 @@ $noNav = $noNav ?? false;
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><?= e($title) ?></title>
-    <link rel="icon" type="image/svg+xml" href="<?= e(asset('/static/aquata_favicon.svg')) ?>">
+    <link rel="icon" type="image/svg+xml" href="<?= e(asset('/static/nixieflow_favicon.svg')) ?>">
     <?php if ($currentUser !== null): ?>
         <meta name="csrf-token" content="<?= e(\App\Csrf::token()) ?>">
     <?php endif; ?>
@@ -31,13 +31,13 @@ $noNav = $noNav ?? false;
             <?php if (App\I18n::locale() === $loc): ?>
                 <strong><?= strtoupper($loc) ?></strong>
             <?php else: ?>
-                <a href="#" onclick="document.cookie='aquata_lang=<?= $loc ?>;path=/;max-age=31536000';location.reload();return false"><?= strtoupper($loc) ?></a>
+                <a href="#" onclick="document.cookie='nixieflow_lang=<?= $loc ?>;path=/;max-age=31536000';location.reload();return false"><?= strtoupper($loc) ?></a>
             <?php endif; ?>
         <?php endforeach; ?>
-        &middot; <a href="https://github.com/neocerebrum/Aquata" target="_blank" rel="noopener"><?= __('footer.source') ?></a> (AGPL-3.0)
+        &middot; <a href="https://github.com/neocerebrum/nixie-flow" target="_blank" rel="noopener"><?= __('footer.source') ?></a> (AGPL-3.0)
     </div>
 <?php else: ?>
-    <footer class="site-footer">&copy; <?= gmdate('Y') ?> Neocerebrum.ai &middot; <a href="https://github.com/neocerebrum/Aquata" target="_blank" rel="noopener"><?= __('footer.source') ?></a> (AGPL-3.0)</footer>
+    <footer class="site-footer">&copy; <?= gmdate('Y') ?> Neocerebrum.ai &middot; <a href="https://github.com/neocerebrum/nixie-flow" target="_blank" rel="noopener"><?= __('footer.source') ?></a> (AGPL-3.0)</footer>
 <?php endif; ?>
 </body>
 </html>

@@ -7,9 +7,9 @@ return [
     'nav.logout'                => 'Logout',
 
     // ── login ──
-    'login.title'               => 'Login — Aquata',
-    'login.heading'             => 'Aquata',
-    'login.subtitle'            => 'Sign in to manage your diagrams.',
+    'login.title'               => 'Login — Nixie Flow',
+    'login.heading'             => 'Nixie Flow',
+    'login.subtitle'            => 'When words are not enough.',
     'login.email'               => 'Email',
     'login.password'            => 'Password',
     'login.submit'              => 'Sign in',
@@ -17,9 +17,9 @@ return [
     'login.create_account'      => 'Create an account',
 
     // ── signup ──
-    'signup.title'              => 'Create account — Aquata',
+    'signup.title'              => 'Create account — Nixie Flow',
     'signup.heading'            => 'Create your account',
-    'signup.subtitle'           => 'Sign up to use the Aquata editor.',
+    'signup.subtitle'           => 'Sign up to use the Nixie Flow editor.',
     'signup.email'              => 'Email',
     'signup.display_name'       => 'Display name',
     'signup.password'           => 'Password',
@@ -28,7 +28,7 @@ return [
     'signup.submit'             => 'Sign up',
     'signup.has_account'        => 'Already have an account?',
     'signup.login_link'         => 'Sign in',
-    'signup.check_email.title'  => 'Check your email — Aquata',
+    'signup.check_email.title'  => 'Check your email — Nixie Flow',
     'signup.check_email.heading'=> 'Check your email',
     'signup.check_email.body'   => 'We sent you a confirmation link. Click it to activate your account.',
     'signup.check_email.spam'   => "Didn't receive the email? Check your spam folder.",
@@ -37,15 +37,15 @@ return [
     'signup.check_email.back'   => 'Back to login',
 
     // ── verify ──
-    'verify.done.title'         => 'Email verified — Aquata',
+    'verify.done.title'         => 'Email verified — Nixie Flow',
     'verify.done.heading'       => 'Email verified',
     'verify.done.body'          => 'Your account is now active.',
     'verify.done.login'         => 'Sign in',
-    'verify.confirm.title'      => 'Confirm your account — Aquata',
+    'verify.confirm.title'      => 'Confirm your account — Nixie Flow',
     'verify.confirm.heading'    => 'Confirm your account',
     'verify.confirm.body'       => 'Click the button below to activate your account.',
     'verify.confirm.submit'     => 'Activate account',
-    'verify.failed.title'       => 'Verification failed — Aquata',
+    'verify.failed.title'       => 'Verification failed — Nixie Flow',
     'verify.failed.heading'     => 'Verification failed',
     'verify.failed.body'        => 'The link is invalid or has expired.',
     'verify.failed.hint'        => 'You can request a new link from the signup page.',
@@ -54,20 +54,20 @@ return [
     'verify.failed.already_active' => 'If you can already log in, your account is already active.',
 
     // ── password reset ──
-    'pwreset.request.title'     => 'Password recovery — Aquata',
+    'pwreset.request.title'     => 'Password recovery — Nixie Flow',
     'pwreset.request.heading'   => 'Password recovery',
     'pwreset.request.subtitle'  => 'Enter your email to receive a reset link.',
     'pwreset.request.email'     => 'Email',
     'pwreset.request.submit'    => 'Send link',
     'pwreset.request.back'      => 'Back to login',
-    'pwreset.confirm.title'     => 'New password — Aquata',
+    'pwreset.confirm.title'     => 'New password — Nixie Flow',
     'pwreset.confirm.heading'   => 'Set new password',
     'pwreset.confirm.password'  => 'New password',
     'pwreset.confirm.confirm'   => 'Confirm password',
     'pwreset.confirm.submit'    => 'Update',
 
     // ── dashboard ──
-    'dashboard.title'           => 'Dashboard — Aquata',
+    'dashboard.title'           => 'Dashboard — Nixie Flow',
     'dashboard.heading'         => 'Dashboard',
     'dashboard.new_diagram'     => 'New diagram',
     'dashboard.welcome'         => 'Welcome back, <strong>%s</strong>.',
@@ -93,12 +93,12 @@ return [
     'dashboard.modal.rename.slug_warning' => 'Warning: changing the slug breaks any existing links (bookmarks, shared URLs, MCP clients) that use the current one.',
     'dashboard.modal.rename.save'       => 'Save',
     'dashboard.modal.share.title'       => 'Share ',
-    'dashboard.modal.share.help'        => 'The user must have an account on Aquata. "view" = read only, "edit" = can edit.',
+    'dashboard.modal.share.help'        => 'The user must have an account on Nixie Flow. "view" = read only, "edit" = can edit.',
     'dashboard.modal.share.placeholder' => 'email@example.com',
     'dashboard.modal.share.add'         => 'Add',
     'dashboard.modal.share.close'       => 'Close',
     'dashboard.modal.share_project.title' => 'Share project ',
-    'dashboard.modal.share_project.help'  => 'The user must have an account on Aquata. Access cascades to every diagram in this project. "view" = read only, "edit" = can edit.',
+    'dashboard.modal.share_project.help'  => 'The user must have an account on Nixie Flow. Access cascades to every diagram in this project. "view" = read only, "edit" = can edit.',
     'dashboard.new_project'     => 'New project',
     'dashboard.projects'        => 'Projects',
     'dashboard.projects_empty'  => 'No projects yet. Group related diagrams into a project.',
@@ -226,7 +226,7 @@ return [
     'editor.modal.share.placeholder'    => 'email@example.com',
 
     // ── profile ──
-    'profile.title'             => 'Profile — Aquata',
+    'profile.title'             => 'Profile — Nixie Flow',
     'profile.heading'           => 'Profile',
     'profile.account'           => 'Account details',
     'profile.email'             => 'Email',
@@ -239,14 +239,14 @@ return [
     'profile.confirm_password'  => 'Confirm new password',
     'profile.save'              => 'Save',
     'profile.tokens.heading'    => 'API / MCP Tokens',
-    'profile.tokens.hint'       => 'Manage Bearer tokens to access Aquata from Claude (MCP) and other clients.',
+    'profile.tokens.hint'       => 'Manage Bearer tokens to access Nixie Flow from Claude (MCP) and other clients.',
     'profile.tokens.manage'     => 'Manage tokens →',
 
     // ── tokens ──
-    'tokens.title'              => 'API Tokens — Aquata',
+    'tokens.title'              => 'API Tokens — Nixie Flow',
     'tokens.heading'            => 'API Tokens',
     'tokens.back'               => '← Profile',
-    'tokens.help'               => 'Bearer tokens are used by Claude (via MCP) and other API clients to act as you on Aquata. Once created, the token cannot be retrieved — copy it immediately and store it in a password manager.',
+    'tokens.help'               => 'Bearer tokens are used by Claude (via MCP) and other API clients to act as you on Nixie Flow. Once created, the token cannot be retrieved — copy it immediately and store it in a password manager.',
     'tokens.new.heading'        => 'Token just created',
     'tokens.new.hint'           => 'Shown only once. From now on, only the sha256 hash is stored in DB.',
     'tokens.new.copy'           => 'Copy',
@@ -275,7 +275,7 @@ return [
     'tokens.endpoint.hint'      => 'All requests require the header <code>Authorization: Bearer aqt_...</code>. The transport is MCP Streamable HTTP (JSON-RPC 2.0).',
 
     // ── admin ──
-    'admin.users.title'         => 'Users — Aquata',
+    'admin.users.title'         => 'Users — Nixie Flow',
     'admin.users.heading'       => 'Users',
     'admin.users.new'           => 'New user',
     'admin.users.email'         => 'Email',
@@ -298,8 +298,8 @@ return [
     'error.cannot_delete_self'        => 'You cannot delete your own account.',
     'error.must_disable_before_delete' => 'Disable the user before deleting.',
     'error.cannot_delete_admin'       => 'Demote the user from admin before deleting.',
-    'admin.user.new_title'      => 'New user — Aquata',
-    'admin.user.edit_title'     => 'Edit user — Aquata',
+    'admin.user.new_title'      => 'New user — Nixie Flow',
+    'admin.user.edit_title'     => 'Edit user — Nixie Flow',
     'admin.user.new_heading'    => 'New user',
     'admin.user.edit_heading'   => 'Edit user',
     'admin.user.back'           => '← Back to list',
@@ -312,7 +312,7 @@ return [
     'admin.user.save'           => 'Save changes',
 
     // ── 404 ──
-    '404.title'                 => 'Not found — Aquata',
+    '404.title'                 => 'Not found — Nixie Flow',
     '404.heading'               => '404 — Not found',
     '404.message'               => 'The requested resource does not exist or you do not have permission to access it.',
     '404.back'                  => '← Back to dashboard',
@@ -358,10 +358,10 @@ return [
     'error.diagram_not_found'   => 'Diagram not found or you do not have access.',
 
     // ── email ──
-    'email.verify.subject'      => 'Confirm your email — Aquata',
-    'email.verify.body'         => "Hi %s,\n\nWelcome to Aquata. Confirm your email by clicking below:\n\n%s\n\nThe link is valid for 24 hours.\n\nIf you didn't sign up, ignore this email.\n",
-    'email.reset.subject'       => 'Reset your password — Aquata',
-    'email.reset.body'          => "Hi %s,\n\nWe received a password reset request for your Aquata account.\nSet a new password by clicking below:\n\n%s\n\nThe link is valid for 1 hour.\n\nIf you didn't request this, ignore this email — your current password remains valid.\n",
+    'email.verify.subject'      => 'Confirm your email — Nixie Flow',
+    'email.verify.body'         => "Hi %s,\n\nWelcome to Nixie Flow. Confirm your email by clicking below:\n\n%s\n\nThe link is valid for 24 hours.\n\nIf you didn't sign up, ignore this email.\n",
+    'email.reset.subject'       => 'Reset your password — Nixie Flow',
+    'email.reset.body'          => "Hi %s,\n\nWe received a password reset request for your Nixie Flow account.\nSet a new password by clicking below:\n\n%s\n\nThe link is valid for 1 hour.\n\nIf you didn't request this, ignore this email — your current password remains valid.\n",
 
     // ── JS strings (prefixed js. — stripped for frontend) ──
 

@@ -49,7 +49,7 @@ use App\Slug;
 final class McpController
 {
     private const PROTOCOL_VERSION = '2024-11-05';
-    private const SERVER_NAME      = 'aquata';
+    private const SERVER_NAME      = 'nixieflow';
     private const SERVER_VERSION   = '0.7.0';
 
     /**
@@ -60,7 +60,7 @@ final class McpController
 
     /** Sent in the initialize response; primes the client on the grounding contract. */
     private const SERVER_INSTRUCTIONS =
-        "Aquata hosts Mermaid diagrams whose per-element notes (`%% [<id>] <text>`) are contracts about code. "
+        "Nixie Flow hosts Mermaid diagrams whose per-element notes (`%% [<id>] <text>`) are contracts about code. "
         . "When you change a diagram, preserve and update these notes — they carry authorial intent. "
         . "Before recording a note as 'verified' or 'contradicted', GROUND it against the code: read the code, "
         . "collect {ref, quote} evidence, and check the quote literally. The server never sees your code — it only "
@@ -76,9 +76,9 @@ final class McpController
 
     /** Body of the `ground` MCP prompt. {{SLUG}} is substituted in prompts/get. */
     private const GROUND_PROMPT = <<<'TXT'
-You are grounding the Aquata diagram "{{SLUG}}" against the local code in the CURRENT working directory (cwd = repo root). The diagram's notes (`%% [<id>] <text>`) are contracts about that code; check whether they still tell the truth and record verdicts the server can trust.
+You are grounding the Nixie Flow diagram "{{SLUG}}" against the local code in the CURRENT working directory (cwd = repo root). The diagram's notes (`%% [<id>] <text>`) are contracts about that code; check whether they still tell the truth and record verdicts the server can trust.
 
-Principle: Aquata never sees the code. The server only checks a receipt's FORM and binds it to the note by noteHash. You establish TRUTH here, by a mechanical quote check. A note is not true just because it reads well.
+Principle: Nixie Flow never sees the code. The server only checks a receipt's FORM and binds it to the note by noteHash. You establish TRUTH here, by a mechanical quote check. A note is not true just because it reads well.
 
 Procedure:
 1. Pin the commit: `git -C . rev-parse --short HEAD` → $COMMIT. Sanity-check that cwd is the repo this diagram describes; if it clearly is not, stop and ask the user.
@@ -209,7 +209,7 @@ TXT;
                 'isError' => true,
             ]);
         } catch (\Throwable $e) {
-            error_log('[Aquata MCP] ' . $e::class . ': ' . $e->getMessage()
+            error_log('[Nixie Flow MCP] ' . $e::class . ': ' . $e->getMessage()
                 . ' @ ' . $e->getFile() . ':' . $e->getLine());
             if ($isNotification) return null;
             return $this->err($id, -32603, 'Internal error');
@@ -301,7 +301,7 @@ TXT;
         "Per-element notes are stored as Mermaid comments using the convention `%% [<id>] <text>` (one line per node/subgraph id, placed right after the element's declaration). "
         . "The legacy bare form `%% <id> <text>` (no brackets) is still recognised for back-compat. "
         . "Multi-line notes are encoded inline: newline → `\\n` (literal backslash + n), backslash → `\\\\`. "
-        . "At most one such line per id; absence = no note. These comments are authored via the Aquata editor's notes panel and convey authorial intent — read them, and preserve/update them when rewriting the source (do not strip `%% [<id>] ...` lines unless you want to delete the corresponding note).";
+        . "At most one such line per id; absence = no note. These comments are authored via the Nixie Flow editor's notes panel and convey authorial intent — read them, and preserve/update them when rewriting the source (do not strip `%% [<id>] ...` lines unless you want to delete the corresponding note).";
 
     /** Shape + binding rules for grounding receipts (used by commit_save / set_grounding). */
     private const GROUNDING_DOC =
@@ -500,7 +500,7 @@ TXT;
         return [
             [
                 'name'        => 'ground',
-                'description' => "Verify an Aquata diagram's notes against the local code (run from inside the repo: cwd = repo root) and optionally record the verdicts via set_grounding or prepare_save → commit_save. Notes are contracts about the code; this checks whether they still tell the truth and flags drift, dead code, and missing nodes.",
+                'description' => "Verify an Nixie Flow diagram's notes against the local code (run from inside the repo: cwd = repo root) and optionally record the verdicts via set_grounding or prepare_save → commit_save. Notes are contracts about the code; this checks whether they still tell the truth and flags drift, dead code, and missing nodes.",
                 'arguments'   => [
                     ['name' => 'slug', 'description' => 'The diagram slug to ground (e.g. bibliomante).', 'required' => true],
                 ],
@@ -517,7 +517,7 @@ TXT;
             ? $arguments['slug'] : '<slug>';
         $text = str_replace('{{SLUG}}', $slug, self::GROUND_PROMPT);
         return [
-            'description' => 'Ground the notes of an Aquata diagram against the local code.',
+            'description' => 'Ground the notes of an Nixie Flow diagram against the local code.',
             'messages'    => [
                 ['role' => 'user', 'content' => ['type' => 'text', 'text' => $text]],
             ],

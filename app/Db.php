@@ -20,7 +20,7 @@ final class Db
 
         if ($driver === 'sqlite') {
             self::requirePdoDriver('sqlite', 'pdo_sqlite');
-            $path = Config::get('DB_SQLITE_PATH', 'data/aquata.sqlite');
+            $path = Config::get('DB_SQLITE_PATH', 'data/nixieflow.sqlite');
             if (!str_starts_with($path, '/')) {
                 $path = dirname(__DIR__) . '/' . $path;
             }

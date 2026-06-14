@@ -1,4 +1,4 @@
-# Aquata — Design Decisions
+# Nixie Flow — Design Decisions
 
 Historical snapshot of architectural decisions agreed before implementation. A few details were superseded during implementation (noted inline where relevant) — the code is the source of truth.
 
@@ -34,7 +34,7 @@ At most one editor at a time per diagram. Others poll and view live.
 - Viewer polls `GET /api/diagrams/{slug}` every 5s; the response carries `revision_id` and `lock` state, so a single fetch covers both content sync and lock awareness.
 - Viewer can request edit handover via `POST /api/diagrams/{slug}/edit-requests` (with optional note). Editor sees an incoming banner with Cedi/Rifiuta. On Cedi: lock releases, request marked `granted`; the requester has a 30s grant window to acquire (banner shows "Prendi il turno").
 - Save (`POST /api/diagrams/{slug}`) atomically tries to acquire the lock first; if held by another active user it returns 423 with the lock state. Same applies to undo/redo/checkout. Patch (rename) and delete don't need the lock.
-- No real-time collaborative editing (CRDT/OT). If users need that, Aquata is the wrong tool.
+- No real-time collaborative editing (CRDT/OT). If users need that, Nixie Flow is the wrong tool.
 
 Rationale: covers 95% of real workflows (sequential collaboration). Implementable in PHP + polling, no WebSockets needed.
 
@@ -142,4 +142,4 @@ Each phase ends with a runnable, testable system. No phase is partial.
 - **Phase 4** (done — done before Phase 3 by user request): full editor UI ported from the prototype, wired to Phase 2 endpoints. Single-user safe; multi-user has 5s polling + conflict modal but no real lock yet.
 - **Phase 3** (done): turn-based lock (90s TTL, 30s heartbeat) with acquire/heartbeat/release endpoints; edit-request handover with 30s grant window; per-diagram sharing (view/edit) with owner-managed CRUD; dashboard surfaces both owned and shared diagrams; editor shows lock banner with role-aware actions and incoming-request banner for the editor.
 - **Phase 5** (done): `POST /mcp` endpoint (JSON-RPC 2.0, Streamable HTTP transport) with `initialize`, `ping`, `tools/list`, `tools/call`. Bearer-token auth via `Authorization: Bearer aqt_...`; tokens managed under `/profile/tokens` (one-shot plaintext display + ready-to-paste Claude config snippet). Tools: `list_diagrams`, `get_diagram`, `save_diagram`, `create_diagram`, `delete_diagram`, `get_layout`, `set_layout`. All tools share the same ACL as the web (Diagram::canAccess/canWrite) and the same lock model (auto-acquire on save/set_layout, error if held by other user).
-- **Phase 6** (done): `scripts/import_mmd.php --source=<dir> --owner=<email>` reads `*.mmd` + `*.mmd.layout.json` and creates Aquata diagrams owned by the given user. Supports `--dry-run`, `--prefix=`, `--overwrite` (append a new revision instead of skipping).
+- **Phase 6** (done): `scripts/import_mmd.php --source=<dir> --owner=<email>` reads `*.mmd` + `*.mmd.layout.json` and creates Nixie Flow diagrams owned by the given user. Supports `--dry-run`, `--prefix=`, `--overwrite` (append a new revision instead of skipping).

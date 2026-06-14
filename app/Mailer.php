@@ -33,7 +33,7 @@ final class Mailer
         // validate emails (FILTER_VALIDATE_EMAIL) and subjects come from i18n,
         // but reject here too so the Mailer is safe regardless of the caller.
         if (preg_match('/[\r\n]/', $to) || preg_match('/[\r\n]/', $subject)) {
-            error_log('[Aquata Mailer] refused: CR/LF in recipient or subject');
+            error_log('[Nixie Flow Mailer] refused: CR/LF in recipient or subject');
             return false;
         }
 
@@ -45,8 +45,8 @@ final class Mailer
             'MIME-Version: 1.0',
             'Content-Type: text/plain; charset=utf-8',
             'Content-Transfer-Encoding: 8bit',
-            'X-Mailer: Aquata',
-            'X-Aquata-Origin: ' . $appUrl,
+            'X-Mailer: Nixie Flow',
+            'X-Nixieflow-Origin: ' . $appUrl,
         ];
 
         $transport = strtolower((string) Config::get('MAIL_TRANSPORT', 'mail'));
@@ -67,10 +67,10 @@ final class Mailer
     {
         $addr = Config::get('MAIL_FROM');
         if ($addr === null || $addr === '') {
-            $host = $_SERVER['HTTP_HOST'] ?? 'aquata.local';
+            $host = $_SERVER['HTTP_HOST'] ?? 'nixieflow.local';
             $addr = 'no-reply@' . preg_replace('/[^a-z0-9.\-]/i', '', $host);
         }
-        $name = Config::get('MAIL_FROM_NAME', 'Aquata');
+        $name = Config::get('MAIL_FROM_NAME', 'Nixie Flow');
         return $name !== null && $name !== '' ? "$name <$addr>" : $addr;
     }
 
@@ -91,7 +91,7 @@ final class Mailer
         $headerStr = implode("\r\n", $headers);
         $ok = @mail($to, $encodedSubject, $body, $headerStr);
         if (!$ok) {
-            error_log("[Aquata Mailer] mail() failed for $to / $subject");
+            error_log("[Nixie Flow Mailer] mail() failed for $to / $subject");
         }
         return $ok;
     }
@@ -100,7 +100,7 @@ final class Mailer
     {
         $host = (string) (Config::get('SMTP_HOST') ?? '');
         if ($host === '') {
-            error_log('[Aquata Mailer] SMTP_HOST not set');
+            error_log('[Nixie Flow Mailer] SMTP_HOST not set');
             return false;
         }
         $port      = Config::int('SMTP_PORT', 587);
@@ -119,7 +119,7 @@ final class Mailer
         $fromAddr = self::extractAddress($from);
         $rcptAddr = self::extractAddress($to);
         if ($fromAddr === '' || $rcptAddr === '') {
-            error_log('[Aquata Mailer] missing from/to address');
+            error_log('[Nixie Flow Mailer] missing from/to address');
             return false;
         }
 
@@ -131,7 +131,7 @@ final class Mailer
             STREAM_CLIENT_CONNECT
         );
         if (!$sock) {
-            error_log("[Aquata Mailer] SMTP connect $host:$port failed: $errstr");
+            error_log("[Nixie Flow Mailer] SMTP connect $host:$port failed: $errstr");
             return false;
         }
         stream_set_timeout($sock, $timeout);
@@ -145,7 +145,7 @@ final class Mailer
                 if (preg_match('/^\d{3}[ -]STARTTLS\b/i', $l)) { $hasStartTls = true; break; }
             }
             if ($encrypt === 'tls' && !$hasStartTls) {
-                error_log('[Aquata Mailer] SMTP_ENCRYPTION=tls but server does not advertise STARTTLS');
+                error_log('[Nixie Flow Mailer] SMTP_ENCRYPTION=tls but server does not advertise STARTTLS');
             }
             if ($encrypt === 'tls') {
                 self::smtpCmd($sock, 'STARTTLS', 220);
@@ -173,7 +173,7 @@ final class Mailer
                     self::smtpCmd($sock, base64_encode($user), 334);
                     self::smtpCmd($sock, base64_encode((string) $pass), 235);
                 } else {
-                    error_log('[Aquata Mailer] EHLO did not advertise PLAIN/LOGIN. Server lines: '
+                    error_log('[Nixie Flow Mailer] EHLO did not advertise PLAIN/LOGIN. Server lines: '
                         . implode(' | ', $ehloLines));
                     throw new \RuntimeException('No supported AUTH mechanism (advertised: '
                         . (empty($authMechs) ? 'none' : implode(',', $authMechs))
@@ -206,7 +206,7 @@ final class Mailer
             self::smtpCmd($sock, 'QUIT', 221);
             return true;
         } catch (\Throwable $e) {
-            error_log('[Aquata Mailer] SMTP: ' . $e->getMessage());
+            error_log('[Nixie Flow Mailer] SMTP: ' . $e->getMessage());
             return false;
         } finally {
             @fclose($sock);
@@ -268,9 +268,9 @@ final class Mailer
 
     private static function writeEmlFile(string $to, string $subject, string $body, array $headers, string $from): bool
     {
-        $dir = AQUATA_ROOT . '/data/mail';
+        $dir = NIXIEFLOW_ROOT . '/data/mail';
         if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
-            error_log("[Aquata Mailer] cannot create $dir");
+            error_log("[Nixie Flow Mailer] cannot create $dir");
             return false;
         }
         $headers[] = "To: $to";

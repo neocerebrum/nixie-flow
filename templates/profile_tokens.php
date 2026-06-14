@@ -33,7 +33,7 @@ use App\Models\ApiToken;
 
             <h3><?= __('tokens.new.claude.heading') ?></h3>
             <p class="muted-small"><?= __('tokens.new.claude.hint') ?></p>
-            <pre class="config-snippet"><code id="claudeAddCmd">claude mcp add --scope user --transport http aquata <?= e($mcpEndpoint) ?> --header "Authorization: Bearer <?= e($newTokenPlaintext) ?>"</code></pre>
+            <pre class="config-snippet"><code id="claudeAddCmd">claude mcp add --scope user --transport http nixieflow <?= e($mcpEndpoint) ?> --header "Authorization: Bearer <?= e($newTokenPlaintext) ?>"</code></pre>
             <button type="button" class="btn" onclick="
                 navigator.clipboard.writeText(document.getElementById('claudeAddCmd').textContent);
                 this.textContent='<?= __('tokens.new.claude.copied') ?>';

@@ -1,6 +1,6 @@
 # The grounding protocol
 
-Grounding is what makes Aquata diagrams *maintained* instead of decorative. It is the feature that turns a per-element note from a comment into a **verifiable contract about the code** — and gives both you and an AI agent a way to tell, at a glance, whether that contract still holds.
+Grounding is what makes Nixie Flow diagrams *maintained* instead of decorative. It is the feature that turns a per-element note from a comment into a **verifiable contract about the code** — and gives both you and an AI agent a way to tell, at a glance, whether that contract still holds.
 
 This document is the reference for how grounding works: the data model, the verification gate, and the tools an agent uses to record verdicts.
 

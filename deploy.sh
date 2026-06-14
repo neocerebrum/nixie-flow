@@ -34,7 +34,7 @@ if [[ ! -f "$CONFIG_FILE" ]]; then
     echo "  FTP_HOST=ftp.example.com"
     echo "  FTP_USER=username"
     echo "  FTP_PASS=password"
-    echo "  FTP_REMOTE_DIR=/public_html/aquata"
+    echo "  FTP_REMOTE_DIR=/public_html/nixieflow"
     exit 1
 fi
 
@@ -58,7 +58,7 @@ if [[ $# -eq 0 ]]; then
 fi
 
 # Protected files: never uploaded (contain credentials or local data)
-PROTECTED_FILES=(".env" ".deploy-config" "deploy.sh" "lint.sh" "test_api.sh" "dev_router.php" "aquata.sqlite" "debug.log" ".gitignore")
+PROTECTED_FILES=(".env" ".deploy-config" "deploy.sh" "lint.sh" "test_api.sh" "dev_router.php" "nixieflow.sqlite" "debug.log" ".gitignore")
 
 # Build file list
 FILES=()

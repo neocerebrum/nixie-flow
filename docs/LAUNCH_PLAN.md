@@ -1,6 +1,6 @@
 # Launch plan
 
-Ordered checklist for taking Aquata public. Living document — check items off as they land.
+Ordered checklist for taking Nixie Flow public. Living document — check items off as they land.
 
 ## Phase 0 — Release packaging (done)
 
@@ -98,7 +98,7 @@ Deferred hardening (none blocking the demo):
       (check each list's acceptance criteria first)
 - [ ] Blog article: the real workflow story (reasoning with the agent over a diagram, a
       `contradicted` note catching a regression). Canonical link for everything below.
-- [ ] Show HN: "Show HN: Aquata – shared diagrams between you and your coding agent,
+- [ ] Show HN: "Show HN: Nixie Flow – shared diagrams between you and your coding agent,
       verified against the code". Weekday morning US time; author's first comment tells
       the why. Be present all day to answer.
 - [ ] Communities, dosed and honest: r/ClaudeAI, r/selfhosted, Mermaid Discord/discussions

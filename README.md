@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="static/aquata_logo.svg" alt="Aquata" width="200">
+  <img src="static/aquata_logo.svg" alt="Nixie Flow" width="200">
 </p>
 
 <p align="center">
@@ -10,9 +10,9 @@
   <a href="https://aquata.neocerebrum.ai">Try the live demo →</a>
 </p>
 
-Aquata is a self-hostable web app that stores [Mermaid](https://mermaid.js.org/) diagrams and exposes them to AI agents over [MCP](https://modelcontextprotocol.io/) (Model Context Protocol). Humans edit diagrams in a rich visual editor; agents read and write the same diagrams through a clean semantic interface. Neither side has to put up with the other's format.
+Nixie Flow is a self-hostable web app that stores [Mermaid](https://mermaid.js.org/) diagrams and exposes them to AI agents over [MCP](https://modelcontextprotocol.io/) (Model Context Protocol). Humans edit diagrams in a rich visual editor; agents read and write the same diagrams through a clean semantic interface. Neither side has to put up with the other's format.
 
-![The Aquata editor — source pane, visual canvas, per-element notes with grounding evidence](docs/assets/editor.png)
+![The Nixie Flow editor — source pane, visual canvas, per-element notes with grounding evidence](docs/assets/editor.png)
 
 ## Why
 
@@ -21,7 +21,7 @@ When you reason about software with an AI agent, words alone are often not enoug
 - an **LLM** wants clean semantics: stable IDs, explicit intent, no visual noise;
 - a **human** wants readability: position, colour, grouping, emphasis.
 
-Mixing the two (inline `style` directives, meaning carried only by colour or placement) degrades both. Aquata separates them:
+Mixing the two (inline `style` directives, meaning carried only by colour or placement) degrades both. Nixie Flow separates them:
 
 - **Mermaid source = semantic layer.** Stable element IDs, per-element notes (`%% [id] text`) that record authorial intent, no orphans, no presentation noise. This is what agents read and write via MCP.
 - **Layout JSON = presentation layer.** Positions, per-element colours, custom palettes, collapsed subgraph "capsules". The web editor manages it; agents never see it.
@@ -48,8 +48,8 @@ On top sits the **grounding protocol**: per-element notes are not mere descripti
 ## Quick start
 
 ```bash
-git clone https://github.com/neocerebrum/Aquata.git
-cd Aquata
+git clone https://github.com/neocerebrum/Nixie Flow.git
+cd Nixie Flow
 cp .env.example .env        # defaults are fine for a local try
 php scripts/seed_admin.php  # create the first admin user (interactive; or use setup.php if no CLI)
 php -S localhost:8080 scripts/dev_router.php
@@ -63,7 +63,7 @@ For production, point an Apache vhost at the project root (the bundled `.htacces
 
 ### Deploying to shared hosting
 
-Aquata runs fine on plain shared hosting where your only access is FTP — no git, no SSH, no Composer needed. Just upload the whole tree to the web root with any FTP client (skip `data/`, `docs/`, `.env*`, `deploy.sh`, `.deploy-config*`), then create `.env` on the server.
+Nixie Flow runs fine on plain shared hosting where your only access is FTP — no git, no SSH, no Composer needed. Just upload the whole tree to the web root with any FTP client (skip `data/`, `docs/`, `.env*`, `deploy.sh`, `.deploy-config*`), then create `.env` on the server.
 
 The bundled `deploy.sh` automates this. Put your FTP credentials in `.deploy-config` (gitignored, never uploaded):
 
@@ -80,7 +80,7 @@ If you lose all admin access, `scripts/reset_password.php <email>` is the CLI es
 
 ## Connecting an AI agent (MCP)
 
-1. In Aquata, go to **Profile → API tokens** and create a token.
+1. In Nixie Flow, go to **Profile → API tokens** and create a token.
 2. Register the server with your agent — e.g. for Claude Code:
 
 ```bash
@@ -118,4 +118,4 @@ Please report vulnerabilities privately — see [`SECURITY.md`](SECURITY.md).
 
 [GNU AGPL-3.0](LICENSE). Copyright © 2026 Lamberto Tedaldi (Neocerebrum.ai).
 
-You are free to use, study, modify and self-host Aquata. If you offer a modified version of it to others as a network service, the AGPL requires you to make your modified source available to its users.
+You are free to use, study, modify and self-host Nixie Flow. If you offer a modified version of it to others as a network service, the AGPL requires you to make your modified source available to its users.

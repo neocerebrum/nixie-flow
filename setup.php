@@ -49,7 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Aquata — First admin setup</title>
+<title>Nixie Flow — First admin setup</title>
 <style>
   body { font-family: sans-serif; max-width: 420px; margin: 60px auto; padding: 0 1rem; }
   h1   { font-size: 1.2rem; }
@@ -63,7 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </style>
 </head>
 <body>
-<h1>Aquata — First admin setup</h1>
+<h1>Nixie Flow — First admin setup</h1>
 
 <?php if ($done): ?>
   <p class="ok"><strong>Admin user created.</strong></p>

@@ -1,11 +1,11 @@
 # Getting started: your first diagram with an AI agent
 
-Aquata supports two complementary workflows:
+Nixie Flow supports two complementary workflows:
 
 - **Document existing code** — point the agent at a codebase, have it draw the structure, and ground the notes against the code. The diagram becomes living, verified documentation.
 - **Design before you write** — start from a blank canvas and co-design the structure with the agent as a diagram with intent notes, argue about it until you both agree, and only *then* write code against it. Grounding runs forward, turning the diagram into a live acceptance contract.
 
-This guide sets up the first workflow end to end (steps 1–7), then shows the second with a worked example ([Design-first](#design-first-agreeing-on-the-structure-before-writing-code)). It assumes you have an Aquata instance running (see the [README](../README.md) for setup) and uses [Claude Code](https://claude.com/claude-code) as the agent — any MCP-capable client works the same way.
+This guide sets up the first workflow end to end (steps 1–7), then shows the second with a worked example ([Design-first](#design-first-agreeing-on-the-structure-before-writing-code)). It assumes you have an Nixie Flow instance running (see the [README](../README.md) for setup) and uses [Claude Code](https://claude.com/claude-code) as the agent — any MCP-capable client works the same way.
 
 ## 1. Create an account
 
@@ -13,7 +13,7 @@ Open your instance and sign up (or log in). Self-service signup may require emai
 
 ## 2. Create an API token
 
-The agent authenticates to Aquata with a bearer token, separate from your browser session.
+The agent authenticates to Nixie Flow with a bearer token, separate from your browser session.
 
 1. Go to **Profile → API tokens** (`/profile/tokens`).
 2. Create a token with a label (e.g. *"claude-code laptop"*).
@@ -21,22 +21,22 @@ The agent authenticates to Aquata with a bearer token, separate from your browse
 
 ## 3. Register the MCP server
 
-Point your agent at the Aquata MCP endpoint (`/mcp`), passing the token as a bearer header. For Claude Code:
+Point your agent at the Nixie Flow MCP endpoint (`/mcp`), passing the token as a bearer header. For Claude Code:
 
 ```bash
 claude mcp add --transport http aquata https://your-host/mcp \
   --header "Authorization: Bearer aqt_your_token_here"
 ```
 
-The token-creation page also shows a ready-to-paste config snippet for clients that take JSON. Verify the connection — the agent should now list Aquata's tools (`list_diagrams`, `get_diagram`, `create_diagram`, `prepare_save`, `commit_save`, `set_grounding`, `set_note`, `get_flows`, `set_flows`, …) and the `ground` prompt.
+The token-creation page also shows a ready-to-paste config snippet for clients that take JSON. Verify the connection — the agent should now list Nixie Flow's tools (`list_diagrams`, `get_diagram`, `create_diagram`, `prepare_save`, `commit_save`, `set_grounding`, `set_note`, `get_flows`, `set_flows`, …) and the `ground` prompt.
 
 ## 4. Have the agent draw a diagram
 
 Ask the agent, in plain language, to map something. For example:
 
-> Map the request flow of this service as an Aquata diagram. Use a Mermaid flowchart, give every node a stable id, and add a `%% [id]` note to each one describing what it's responsible for.
+> Map the request flow of this service as an Nixie Flow diagram. Use a Mermaid flowchart, give every node a stable id, and add a `%% [id]` note to each one describing what it's responsible for.
 
-The agent calls `create_diagram` with a Mermaid flowchart. A few conventions Aquata expects (the tool descriptions remind the agent of these):
+The agent calls `create_diagram` with a Mermaid flowchart. A few conventions Nixie Flow expects (the tool descriptions remind the agent of these):
 
 - **Flowcharts only** (`flowchart`/`graph TD|LR|…`). Sequence/class/ER diagrams aren't supported by the editor.
 - **No styling in the source** — no `style`, `classDef`, or per-node colours. Visual styling lives in the layout layer, which you control in the editor.
@@ -75,7 +75,7 @@ From here it's a cycle:
 3. You re-arrange and colour for readability in the editor.
 4. Re-grounding flags any note the code has drifted away from.
 
-The diagram stays readable for you and clean for the agent, and grounding keeps it honest about the code. That's the whole point of Aquata.
+The diagram stays readable for you and clean for the agent, and grounding keeps it honest about the code. That's the whole point of Nixie Flow.
 
 ## Flows: tracing execution paths
 
@@ -95,7 +95,7 @@ The agent can also read flows you've already defined (`get_flows`), so it can bu
 
 ## Design-first: agreeing on the structure before writing code
 
-The walkthrough above documents code that already exists. The other way to use Aquata is the reverse, and it's where the diagram does its most interesting work: **the diagram comes first, as the design you and the agent agree on before a line of code is written.**
+The walkthrough above documents code that already exists. The other way to use Nixie Flow is the reverse, and it's where the diagram does its most interesting work: **the diagram comes first, as the design you and the agent agree on before a line of code is written.**
 
 Say you're adding a webhook ingestion pipeline.
 
@@ -137,5 +137,5 @@ The diagram precedes the code and outlives the conversation. It's the artifact y
 ## Troubleshooting
 
 - **Agent can't see the tools** — check the token is valid (not revoked) and the URL ends in `/mcp`. The MCP endpoint speaks JSON-RPC over HTTP with bearer auth; a 401 means the token header is missing or wrong.
-- **"locked: another user is editing"** — Aquata uses turn-based locking. The agent auto-acquires the lock on save if it's free; if a human holds it, wait or take the turn in the editor.
+- **"locked: another user is editing"** — Nixie Flow uses turn-based locking. The agent auto-acquires the lock on save if it's free; if a human holds it, wait or take the turn in the editor.
 - **A save returns a conflict** — the diagram moved since the agent last read it. Re-fetch with `get_diagram` (or re-run `prepare_save`) to get the current `revision_id` and retry.

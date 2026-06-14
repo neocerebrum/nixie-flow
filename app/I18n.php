@@ -7,7 +7,7 @@ final class I18n
 {
     private const SUPPORTED  = ['en', 'it', 'fr', 'de', 'es', 'pt', 'zh', 'ja', 'ko'];
     private const FALLBACK   = 'en';
-    private const COOKIE     = 'aquata_lang';
+    private const COOKIE     = 'nixieflow_lang';
     private const COOKIE_TTL = 365 * 86400;
 
     private static string $locale  = self::FALLBACK;
@@ -104,7 +104,7 @@ final class I18n
 
     private static function loadStrings(string $locale): array
     {
-        $path = AQUATA_ROOT . '/lang/' . $locale . '.php';
+        $path = NIXIEFLOW_ROOT . '/lang/' . $locale . '.php';
         return is_file($path) ? require $path : [];
     }
 

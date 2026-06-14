@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Aquata are documented here. The format is based on
+All notable changes to Nixie Flow are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
@@ -8,7 +8,7 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.7.0] - 2026-06-11
 
-First public release. Aquata is feature-complete for day-to-day use; the `0.x`
+First public release. Nixie Flow is feature-complete for day-to-day use; the `0.x`
 line reserves `1.0.0` for once the remaining roadmap items and in-flight
 experiments have settled.
 
@@ -55,5 +55,5 @@ experiments have settled.
 - `.htaccess` denies `lang/` and `tmp/` over HTTP; the mailer rejects CR/LF in
   recipient/subject (header-injection guard).
 
-[Unreleased]: https://github.com/neocerebrum/Aquata/compare/v0.7.0...HEAD
-[0.7.0]: https://github.com/neocerebrum/Aquata/releases/tag/v0.7.0
+[Unreleased]: https://github.com/neocerebrum/Nixie Flow/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/neocerebrum/Nixie Flow/releases/tag/v0.7.0

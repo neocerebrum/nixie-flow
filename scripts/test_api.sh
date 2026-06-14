@@ -2,7 +2,7 @@
 # End-to-end test of the Phase 2 diagram REST API.
 #
 # Usage:
-#   ./scripts/test_api.sh https://aquata.neocerebrum.work admin@example.com 'AdminPass123'
+#   ./scripts/test_api.sh https://nixieflow.neocerebrum.work admin@example.com 'AdminPass123'
 #
 # What it does:
 #   1) Logs in (form POST, captures session cookie)
@@ -87,7 +87,7 @@ H_TK="X-CSRF-Token: $TOKEN"
 
 # --- 3. Create diagram (auto-slug) -------------------------------------------
 echo "[3] POST /api/diagrams (auto-slug)"
-SLUG_RND="aquata-test-$(date +%s)"
+SLUG_RND="nixieflow-test-$(date +%s)"
 RES=$(curl -s -b "$JAR" -H "$H_CT" -H "$H_TK" \
     -d "{\"title\":\"$SLUG_RND title\",\"source\":\"graph TD\\nA-->B\"}" \
     -X POST "$BASE/api/diagrams")

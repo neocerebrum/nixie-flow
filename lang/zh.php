@@ -7,9 +7,9 @@ return [
     'nav.logout'                => '退出登录',
 
     // ── login ──
-    'login.title'               => '登录 — Aquata',
-    'login.heading'             => 'Aquata',
-    'login.subtitle'            => '登录以管理您的图表。',
+    'login.title'               => '登录 — Nixie Flow',
+    'login.heading'             => 'Nixie Flow',
+    'login.subtitle'            => '当文字无法表达时。',
     'login.email'               => '邮箱',
     'login.password'            => '密码',
     'login.submit'              => '登录',
@@ -17,9 +17,9 @@ return [
     'login.create_account'      => '创建账户',
 
     // ── signup ──
-    'signup.title'              => '创建账户 — Aquata',
+    'signup.title'              => '创建账户 — Nixie Flow',
     'signup.heading'            => '创建您的账户',
-    'signup.subtitle'           => '注册以使用 Aquata 编辑器。',
+    'signup.subtitle'           => '注册以使用 Nixie Flow 编辑器。',
     'signup.email'              => '邮箱',
     'signup.display_name'       => '显示名称',
     'signup.password'           => '密码',
@@ -28,7 +28,7 @@ return [
     'signup.submit'             => '注册',
     'signup.has_account'        => '已有账户？',
     'signup.login_link'         => '登录',
-    'signup.check_email.title'  => '检查您的邮箱 — Aquata',
+    'signup.check_email.title'  => '检查您的邮箱 — Nixie Flow',
     'signup.check_email.heading'=> '检查您的邮箱',
     'signup.check_email.body'   => '我们已向您发送了一封确认链接。点击链接以激活您的账户。',
     'signup.check_email.spam'   => '没有收到邮件？请检查您的垃圾邮件文件夹。',
@@ -37,15 +37,15 @@ return [
     'signup.check_email.back'   => '返回登录',
 
     // ── verify ──
-    'verify.done.title'         => '邮箱已验证 — Aquata',
+    'verify.done.title'         => '邮箱已验证 — Nixie Flow',
     'verify.done.heading'       => '邮箱已验证',
     'verify.done.body'          => '您的账户现已激活。',
     'verify.done.login'         => '登录',
-    'verify.confirm.title'      => '确认您的账号 — Aquata',
+    'verify.confirm.title'      => '确认您的账号 — Nixie Flow',
     'verify.confirm.heading'    => '确认您的账号',
     'verify.confirm.body'       => '点击下方按钮以激活您的账号。',
     'verify.confirm.submit'     => '激活账号',
-    'verify.failed.title'       => '验证失败 — Aquata',
+    'verify.failed.title'       => '验证失败 — Nixie Flow',
     'verify.failed.heading'     => '验证失败',
     'verify.failed.body'        => '链接无效或已过期。',
     'verify.failed.hint'        => '您可以在注册页面重新请求一个链接。',
@@ -54,20 +54,20 @@ return [
     'verify.failed.already_active' => '如果您已能登录，则您的账号已激活。',
 
     // ── password reset ──
-    'pwreset.request.title'     => '密码找回 — Aquata',
+    'pwreset.request.title'     => '密码找回 — Nixie Flow',
     'pwreset.request.heading'   => '密码找回',
     'pwreset.request.subtitle'  => '输入您的邮箱以接收重置链接。',
     'pwreset.request.email'     => '邮箱',
     'pwreset.request.submit'    => '发送链接',
     'pwreset.request.back'      => '返回登录',
-    'pwreset.confirm.title'     => '新密码 — Aquata',
+    'pwreset.confirm.title'     => '新密码 — Nixie Flow',
     'pwreset.confirm.heading'   => '设置新密码',
     'pwreset.confirm.password'  => '新密码',
     'pwreset.confirm.confirm'   => '确认密码',
     'pwreset.confirm.submit'    => '更新',
 
     // ── dashboard ──
-    'dashboard.title'           => '仪表板 — Aquata',
+    'dashboard.title'           => '仪表板 — Nixie Flow',
     'dashboard.heading'         => '仪表板',
     'dashboard.new_diagram'     => '新建图表',
     'dashboard.welcome'         => '欢迎回来，<strong>%s</strong>。',
@@ -89,7 +89,7 @@ return [
     'dashboard.move'            => '移动到项目',
     'dashboard.duplicate'       => '复制',
     'dashboard.modal.share_project.title' => '共享项目 ',
-    'dashboard.modal.share_project.help'  => '用户必须拥有 Aquata 账户。访问权限将扩展到该项目中的所有图表。"view" = 只读，"edit" = 可编辑。',
+    'dashboard.modal.share_project.help'  => '用户必须拥有 Nixie Flow 账户。访问权限将扩展到该项目中的所有图表。"view" = 只读，"edit" = 可编辑。',
     'dashboard.modal.new_project.title'       => '新建项目',
     'dashboard.modal.new_project.field_title' => '标题',
     'dashboard.modal.new_project.placeholder' => '例如：身份验证系统',
@@ -111,7 +111,7 @@ return [
     'dashboard.modal.rename.slug_warning' => '警告：更改 slug 会破坏使用当前 slug 的现有链接（书签、共享 URL、MCP 客户端）。',
     'dashboard.modal.rename.save'       => '保存',
     'dashboard.modal.share.title'       => '共享 ',
-    'dashboard.modal.share.help'        => '用户必须拥有 Aquata 账户。"view" = 只读，"edit" = 可编辑。',
+    'dashboard.modal.share.help'        => '用户必须拥有 Nixie Flow 账户。"view" = 只读，"edit" = 可编辑。',
     'dashboard.modal.share.placeholder' => 'email@example.com',
     'dashboard.modal.share.add'         => '添加',
     'dashboard.modal.share.close'       => '关闭',
@@ -224,7 +224,7 @@ return [
     'editor.modal.share.placeholder'    => 'email@example.com',
 
     // ── profile ──
-    'profile.title'             => '个人资料 — Aquata',
+    'profile.title'             => '个人资料 — Nixie Flow',
     'profile.heading'           => '个人资料',
     'profile.account'           => '账户详情',
     'profile.email'             => '邮箱',
@@ -237,14 +237,14 @@ return [
     'profile.confirm_password'  => '确认新密码',
     'profile.save'              => '保存',
     'profile.tokens.heading'    => 'API / MCP 令牌',
-    'profile.tokens.hint'       => '管理用于从 Claude (MCP) 及其他客户端访问 Aquata 的 Bearer 令牌。',
+    'profile.tokens.hint'       => '管理用于从 Claude (MCP) 及其他客户端访问 Nixie Flow 的 Bearer 令牌。',
     'profile.tokens.manage'     => '管理令牌 →',
 
     // ── tokens ──
-    'tokens.title'              => 'API 令牌 — Aquata',
+    'tokens.title'              => 'API 令牌 — Nixie Flow',
     'tokens.heading'            => 'API 令牌',
     'tokens.back'               => '← 个人资料',
-    'tokens.help'               => 'Bearer 令牌供 Claude（通过 MCP）及其他 API 客户端以您的身份操作 Aquata。令牌创建后无法再次查看——请立即复制并保存在密码管理器中。',
+    'tokens.help'               => 'Bearer 令牌供 Claude（通过 MCP）及其他 API 客户端以您的身份操作 Nixie Flow。令牌创建后无法再次查看——请立即复制并保存在密码管理器中。',
     'tokens.new.heading'        => '令牌已创建',
     'tokens.new.hint'           => '仅显示一次。此后数据库中仅存储 sha256 哈希值。',
     'tokens.new.copy'           => '复制',
@@ -273,7 +273,7 @@ return [
     'tokens.endpoint.hint'      => '所有请求都需要包含请求头 <code>Authorization: Bearer aqt_...</code>。传输协议为 MCP Streamable HTTP (JSON-RPC 2.0)。',
 
     // ── admin ──
-    'admin.users.title'         => '用户 — Aquata',
+    'admin.users.title'         => '用户 — Nixie Flow',
     'admin.users.heading'       => '用户',
     'admin.users.new'           => '新建用户',
     'admin.users.email'         => '邮箱',
@@ -296,8 +296,8 @@ return [
     'error.cannot_delete_self'         => '您不能删除自己的账号。',
     'error.must_disable_before_delete' => '请先禁用用户再删除。',
     'error.cannot_delete_admin'        => '请先撤销管理员角色再删除用户。',
-    'admin.user.new_title'      => '新建用户 — Aquata',
-    'admin.user.edit_title'     => '编辑用户 — Aquata',
+    'admin.user.new_title'      => '新建用户 — Nixie Flow',
+    'admin.user.edit_title'     => '编辑用户 — Nixie Flow',
     'admin.user.new_heading'    => '新建用户',
     'admin.user.edit_heading'   => '编辑用户',
     'admin.user.back'           => '← 返回列表',
@@ -310,7 +310,7 @@ return [
     'admin.user.save'           => '保存更改',
 
     // ── 404 ──
-    '404.title'                 => '未找到 — Aquata',
+    '404.title'                 => '未找到 — Nixie Flow',
     '404.heading'               => '404 — 未找到',
     '404.message'               => '请求的资源不存在，或您没有访问权限。',
     '404.back'                  => '← 返回仪表板',
@@ -356,10 +356,10 @@ return [
     'error.diagram_not_found'   => '未找到图表，或您没有访问权限。',
 
     // ── email ──
-    'email.verify.subject'      => '确认您的邮箱 — Aquata',
-    'email.verify.body'         => "您好 %s，\n\n欢迎来到 Aquata。请点击下方链接确认您的邮箱：\n\n%s\n\n链接有效期为 24 小时。\n\n如果您没有注册，请忽略此邮件。\n",
-    'email.reset.subject'       => '重置您的密码 — Aquata',
-    'email.reset.body'          => "您好 %s，\n\n我们收到了您的 Aquata 账户密码重置请求。\n请点击下方链接设置新密码：\n\n%s\n\n链接有效期为 1 小时。\n\n如果您没有请求重置密码，请忽略此邮件——您的当前密码仍然有效。\n",
+    'email.verify.subject'      => '确认您的邮箱 — Nixie Flow',
+    'email.verify.body'         => "您好 %s，\n\n欢迎来到 Nixie Flow。请点击下方链接确认您的邮箱：\n\n%s\n\n链接有效期为 24 小时。\n\n如果您没有注册，请忽略此邮件。\n",
+    'email.reset.subject'       => '重置您的密码 — Nixie Flow',
+    'email.reset.body'          => "您好 %s，\n\n我们收到了您的 Nixie Flow 账户密码重置请求。\n请点击下方链接设置新密码：\n\n%s\n\n链接有效期为 1 小时。\n\n如果您没有请求重置密码，请忽略此邮件——您的当前密码仍然有效。\n",
 
     // ── JS strings (prefixed js. — stripped for frontend) ──
 

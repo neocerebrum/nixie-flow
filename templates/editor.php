@@ -6,10 +6,10 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-    <title><?= e($diagram['title']) ?> — Aquata</title>
-    <link rel="icon" type="image/svg+xml" href="<?= e(asset('/static/aquata_favicon.svg')) ?>">
+    <title><?= e($diagram['title']) ?> — Nixie Flow</title>
+    <link rel="icon" type="image/svg+xml" href="<?= e(asset('/static/nixieflow_favicon.svg')) ?>">
     <meta name="csrf-token" content="<?= e(\App\Csrf::token()) ?>">
-    <meta name="aquata-slug" content="<?= e($diagram['slug']) ?>">
+    <meta name="nixieflow-slug" content="<?= e($diagram['slug']) ?>">
     <link rel="stylesheet" href="<?= e(asset('/static/app.css')) ?>">
     <link rel="stylesheet" href="<?= e(asset('/static/editor.css')) ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">

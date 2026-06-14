@@ -73,7 +73,7 @@ final class ProfileController
         unset($_SESSION['new_token_plaintext']);
 
         $tokens = ApiToken::listForUser((int) $user['id']);
-        $host = $_SERVER['HTTP_HOST'] ?? 'aquata.example.com';
+        $host = $_SERVER['HTTP_HOST'] ?? 'nixieflow.example.com';
         View::render('profile_tokens', [
             'user'              => $user,
             'tokens'            => $tokens,

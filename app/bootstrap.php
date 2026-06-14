@@ -1,20 +1,20 @@
 <?php
 declare(strict_types=1);
 
-define('AQUATA_ROOT', dirname(__DIR__));
+define('NIXIEFLOW_ROOT', dirname(__DIR__));
 
 spl_autoload_register(function (string $class): void {
     if (!str_starts_with($class, 'App\\')) {
         return;
     }
     $relative = substr($class, 4);
-    $path = AQUATA_ROOT . '/app/' . str_replace('\\', '/', $relative) . '.php';
+    $path = NIXIEFLOW_ROOT . '/app/' . str_replace('\\', '/', $relative) . '.php';
     if (is_file($path)) {
         require $path;
     }
 });
 
-App\Config::load(AQUATA_ROOT . '/.env');
+App\Config::load(NIXIEFLOW_ROOT . '/.env');
 
 $debug = App\Config::bool('APP_DEBUG', false);
 error_reporting(E_ALL);
@@ -22,7 +22,7 @@ ini_set('display_errors', $debug ? '1' : '0');
 ini_set('log_errors', '1');
 
 set_exception_handler(function (\Throwable $e) use ($debug): void {
-    error_log('[Aquata] ' . $e::class . ': ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+    error_log('[Nixie Flow] ' . $e::class . ': ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
     if (PHP_SAPI === 'cli') {
         fwrite(STDERR, $e::class . ': ' . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n");
         exit(1);
@@ -41,7 +41,7 @@ set_exception_handler(function (\Throwable $e) use ($debug): void {
 });
 
 if (PHP_SAPI !== 'cli') {
-    $sessionName = App\Config::get('SESSION_NAME', 'aquata_sid');
+    $sessionName = App\Config::get('SESSION_NAME', 'nixieflow_sid');
     $sessionLifetime = App\Config::int('SESSION_LIFETIME', 86400);
     $secureCookie = App\Http::isHttps();
     session_name($sessionName);
@@ -84,9 +84,9 @@ function __(string $key, mixed ...$args): string
  */
 function asset(string $path): string
 {
-    $full = AQUATA_ROOT . $path;
+    $full = NIXIEFLOW_ROOT . $path;
     $v = is_file($full) ? (int) @filemtime($full) : 0;
     return $path . ($v ? ('?v=' . $v) : '');
 }
 
-App\View::init(AQUATA_ROOT . '/templates');
+App\View::init(NIXIEFLOW_ROOT . '/templates');

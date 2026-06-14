@@ -5,7 +5,7 @@ $displayName = $currentUser['display_name'] ?? '';
 ?>
 <header class="topnav">
     <div class="topnav-brand">
-        <a href="/dashboard">Aquata</a>
+        <a href="/dashboard">Nixie Flow</a>
     </div>
     <nav class="topnav-links">
         <a href="/dashboard" class="<?= $active === 'dashboard' ? 'is-active' : '' ?>"><?= __('nav.dashboard') ?></a>
@@ -15,7 +15,7 @@ $displayName = $currentUser['display_name'] ?? '';
         <?php endif; ?>
     </nav>
     <div class="topnav-user">
-        <select class="lang-switch" onchange="document.cookie='aquata_lang='+this.value+';path=/;max-age=31536000';location.reload()">
+        <select class="lang-switch" onchange="document.cookie='nixieflow_lang='+this.value+';path=/;max-age=31536000';location.reload()">
             <?php foreach (App\I18n::supportedLocales() as $loc): ?>
                 <option value="<?= $loc ?>" <?= App\I18n::locale() === $loc ? 'selected' : '' ?>><?= strtoupper($loc) ?></option>
             <?php endforeach; ?>

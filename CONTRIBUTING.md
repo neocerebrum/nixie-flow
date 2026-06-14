@@ -1,4 +1,4 @@
-# Contributing to Aquata
+# Contributing to Nixie Flow
 
 Thanks for your interest in contributing!
 
@@ -27,4 +27,4 @@ Match the surrounding code. Notable conventions:
 
 ## Licensing of contributions
 
-Aquata is licensed under the [GNU AGPL-3.0](LICENSE). By submitting a contribution you agree that it is licensed under the same terms ("inbound = outbound").
+Nixie Flow is licensed under the [GNU AGPL-3.0](LICENSE). By submitting a contribution you agree that it is licensed under the same terms ("inbound = outbound").

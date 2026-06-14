@@ -26,7 +26,7 @@ final class View
         $body = self::capture($template, $vars);
         $layoutVars['body'] = $body;
         $layoutVars['currentUser'] = Auth::currentUser();
-        $layoutVars['title'] ??= 'Aquata';
+        $layoutVars['title'] ??= 'Nixie Flow';
         $layoutVars['active'] ??= '';
         $html = self::capture('layout', $layoutVars);
 

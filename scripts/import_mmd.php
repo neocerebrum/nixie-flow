@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /**
  * One-shot: import `.mmd` files (with optional `.mmd.layout.json`
- * sidecars) into the Aquata DB as fresh diagrams owned by a given user.
+ * sidecars) into the Nixie Flow DB as fresh diagrams owned by a given user.
  *
  * Usage:
  *   php scripts/import_mmd.php --source=/path/to/diagrams --owner=admin@example.com

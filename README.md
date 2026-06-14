@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <strong>Mermaid diagrams as a shared language between humans and AI coding agents.</strong>
+  <strong>A shared visual language between humans and AI agents.</strong>
 </p>
 
 <p align="center">

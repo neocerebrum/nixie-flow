@@ -40,6 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
              VALUES (?, ?, ?, 'admin', 'full', CURRENT_TIMESTAMP)"
         );
         $stmt->execute([$email, $hash, $name]);
+        @unlink(__FILE__);
         $done = true;
     }
 }

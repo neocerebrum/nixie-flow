@@ -52,7 +52,8 @@ final class Db
                 $opts[constant('PDO::MYSQL_ATTR_INIT_COMMAND')] =
                     "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci, "
                     . "sql_mode='STRICT_ALL_TABLES,NO_ENGINE_SUBSTITUTION,ERROR_FOR_DIVISION_BY_ZERO,NO_ZERO_DATE,NO_ZERO_IN_DATE', "
-                    . "time_zone='+00:00'";
+                    . "time_zone='+00:00', "
+                    . "explicit_defaults_for_timestamp=1";
             }
             $pdo = new PDO($dsn, $user, $pass, $opts);
             if ($opts === []) {
@@ -60,6 +61,7 @@ final class Db
                 $pdo->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
                 $pdo->exec("SET SESSION sql_mode='STRICT_ALL_TABLES,NO_ENGINE_SUBSTITUTION,ERROR_FOR_DIVISION_BY_ZERO,NO_ZERO_DATE,NO_ZERO_IN_DATE'");
                 $pdo->exec("SET time_zone='+00:00'");
+                $pdo->exec("SET explicit_defaults_for_timestamp=1");
             }
         } else {
             throw new RuntimeException("Unknown DB_DRIVER: $driver");

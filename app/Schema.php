@@ -32,7 +32,7 @@ CREATE TABLE diagrams (
   owner_id         INTEGER NOT NULL,
   head_revision_id INTEGER,
   edit_lock_user   INTEGER,
-  edit_lock_at     TIMESTAMP,
+  edit_lock_at     TIMESTAMP NULL,
   edit_lock_agent_label TEXT,
   created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -122,7 +122,7 @@ CREATE TABLE edit_requests (
   requester_id INTEGER NOT NULL,
   status       VARCHAR(20) NOT NULL DEFAULT 'pending',
   created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  resolved_at  TIMESTAMP,
+  resolved_at  TIMESTAMP NULL,
   note         TEXT NULL,
   agent_label  TEXT NULL,
   FOREIGN KEY (diagram_id)   REFERENCES diagrams(id),
@@ -153,7 +153,7 @@ CREATE TABLE api_tokens (
   user_id      INTEGER NOT NULL,
   label        TEXT,
   created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  last_used_at TIMESTAMP,
+  last_used_at TIMESTAMP NULL,
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 CREATE INDEX idx_tokens_user ON api_tokens(user_id);

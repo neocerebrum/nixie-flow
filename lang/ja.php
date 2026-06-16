@@ -76,6 +76,7 @@ return [
     'dashboard.updated'         => '更新日 %s',
     'dashboard.share'           => '共有',
     'dashboard.is_shared'       => '他のユーザーと共有',
+    'dashboard.mr_pending'      => '%d 件のマージリクエストが保留中',
     'dashboard.rename'          => '名前を変更',
     'dashboard.delete'          => '削除',
     'dashboard.shared_with_me'  => '共有されたダイアグラム',

@@ -77,6 +77,7 @@ return [
     'dashboard.share'           => 'Share',
     'dashboard.share_project'   => 'Share project',
     'dashboard.is_shared'       => 'Shared with others',
+    'dashboard.mr_pending'      => '%d pending merge request(s)',
     'dashboard.rename'          => 'Rename',
     'dashboard.delete'          => 'Delete',
     'dashboard.shared_with_me'  => 'Shared with me',

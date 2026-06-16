@@ -76,6 +76,7 @@ return [
     'dashboard.updated'         => 'Actualizado %s',
     'dashboard.share'           => 'Compartir',
     'dashboard.is_shared'       => 'Compartido con otros',
+    'dashboard.mr_pending'      => '%d solicitud(es) de fusión pendiente(s)',
     'dashboard.rename'          => 'Renombrar',
     'dashboard.delete'          => 'Eliminar',
     'dashboard.shared_with_me'  => 'Compartidos conmigo',

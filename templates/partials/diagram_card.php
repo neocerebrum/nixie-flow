@@ -17,6 +17,9 @@ $cardReadonly = !empty($readonly);
             <?php if (!$cardReadonly && !empty($d['share_count']) && (int)$d['share_count'] > 0): ?>
                 <span class="card-share-dot" title="<?= __('dashboard.is_shared') ?>"><svg class="icon icon-sm"><use href="#icon-share"/></svg></span>
             <?php endif; ?>
+            <?php if (!$cardReadonly && !empty($d['mr_pending_count']) && (int)$d['mr_pending_count'] > 0): ?>
+                <span class="card-mr-badge" title="<?= __('dashboard.mr_pending', (int)$d['mr_pending_count']) ?>"><?= (int)$d['mr_pending_count'] ?></span>
+            <?php endif; ?>
             <?php
             if (!empty($d['expires_at'])) {
                 $expSec = strtotime($d['expires_at'] . ' UTC') - time();

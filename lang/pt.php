@@ -76,6 +76,7 @@ return [
     'dashboard.updated'         => 'Atualizado %s',
     'dashboard.share'           => 'Compartilhar',
     'dashboard.is_shared'       => 'Compartilhado com outros',
+    'dashboard.mr_pending'      => '%d solicitação(ões) de mesclagem pendente(s)',
     'dashboard.rename'          => 'Renomear',
     'dashboard.delete'          => 'Excluir',
     'dashboard.shared_with_me'  => 'Compartilhados comigo',

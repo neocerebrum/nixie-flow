@@ -76,6 +76,7 @@ return [
     'dashboard.updated'         => '%s에 수정됨',
     'dashboard.share'           => '공유',
     'dashboard.is_shared'       => '다른 사람과 공유',
+    'dashboard.mr_pending'      => '%d개의 병합 요청 대기 중',
     'dashboard.rename'          => '이름 변경',
     'dashboard.delete'          => '삭제',
     'dashboard.shared_with_me'  => '나와 공유된 항목',

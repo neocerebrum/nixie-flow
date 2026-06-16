@@ -76,6 +76,7 @@ return [
     'dashboard.updated'         => 'Aktualisiert %s',
     'dashboard.share'           => 'Teilen',
     'dashboard.is_shared'       => 'Mit anderen geteilt',
+    'dashboard.mr_pending'      => '%d ausstehende Merge-Anfrage(n)',
     'dashboard.rename'          => 'Umbenennen',
     'dashboard.delete'          => 'Löschen',
     'dashboard.shared_with_me'  => 'Mit mir geteilt',

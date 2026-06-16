@@ -76,6 +76,7 @@ return [
     'dashboard.updated'         => 'Aggiornato %s',
     'dashboard.share'           => 'Condividi',
     'dashboard.is_shared'       => 'Condiviso con altri',
+    'dashboard.mr_pending'      => '%d richiesta/e di merge in attesa',
     'dashboard.share_project'   => 'Condividi progetto',
     'dashboard.rename'          => 'Rinomina',
     'dashboard.delete'          => 'Elimina',

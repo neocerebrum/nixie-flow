@@ -417,6 +417,13 @@ table.data th.actions { text-align: right; }
     display: inline-flex; align-items: center; vertical-align: middle;
     color: var(--accent); opacity: 0.7; margin-left: 4px;
 }
+.card-mr-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--accent, #88c0d0); color: var(--bg, #1e2530);
+    font-size: 0.7rem; font-weight: 700; line-height: 1;
+    min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
+    margin-left: 4px; vertical-align: middle;
+}
 .share-perm-badge {
     background: var(--bg-elev, #1c242e);
     color: var(--accent, #88c0d0);

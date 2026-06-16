@@ -76,6 +76,7 @@ return [
     'dashboard.updated'         => '更新于 %s',
     'dashboard.share'           => '共享',
     'dashboard.is_shared'       => '已与他人共享',
+    'dashboard.mr_pending'      => '%d 个待处理的合并请求',
     'dashboard.rename'          => '重命名',
     'dashboard.delete'          => '删除',
     'dashboard.shared_with_me'  => '与我共享',

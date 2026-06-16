@@ -196,7 +196,8 @@ final class Diagram
     {
         $stmt = db()->prepare(
             'SELECT d.*,
-                    (SELECT COUNT(*) FROM diagram_shares ds WHERE ds.diagram_id = d.id) AS share_count
+                    (SELECT COUNT(*) FROM diagram_shares ds WHERE ds.diagram_id = d.id) AS share_count,
+                    (SELECT COUNT(*) FROM merge_requests mr WHERE mr.target_diagram_id = d.id AND mr.status = \'pending\') AS mr_pending_count
              FROM diagrams d
              WHERE d.project_id = ? AND d.deleted_at IS NULL
              ORDER BY d.updated_at DESC'
@@ -213,7 +214,8 @@ final class Diagram
     {
         $stmt = db()->prepare(
             'SELECT d.*,
-                    (SELECT COUNT(*) FROM diagram_shares ds WHERE ds.diagram_id = d.id) AS share_count
+                    (SELECT COUNT(*) FROM diagram_shares ds WHERE ds.diagram_id = d.id) AS share_count,
+                    (SELECT COUNT(*) FROM merge_requests mr WHERE mr.target_diagram_id = d.id AND mr.status = \'pending\') AS mr_pending_count
              FROM diagrams d
              WHERE d.owner_id = ? AND d.project_id IS NULL AND d.deleted_at IS NULL
              ORDER BY d.updated_at DESC'
